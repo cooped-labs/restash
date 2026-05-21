@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Restash — Compact Modal Designs</title>
+<style>
+  :root {
+    --bg: #1c1c1e;
+    --bg-elev: #2a2a2c;
+    --bg-elev-2: #353537;
+    --fg: #f2f2f7;
+    --fg-dim: #aeaeb2;
+    --fg-muted: #6e6e73;
+    --tint: #0a84ff;
+    --tint-soft: rgba(10, 132, 255, 0.22);
+    --tint-strong: rgba(10, 132, 255, 0.45);
+    --orange: #ff9f0a;
+    --green: #30d158;
+    --divider: rgba(255, 255, 255, 0.08);
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    min-height: 100vh;
+    background:
+      radial-gradient(900px 600px at 15% 25%, #4b3a8c 0%, transparent 60%),
+      radial-gradient(700px 500px at 85% 75%, #1e4a6b 0%, transparent 55%),
+      linear-gradient(180deg, #11131a 0%, #0a0c10 100%);
+    color: var(--fg);
+    font: 13px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    overflow-y: auto;
+  }
+  .page-title {
+    text-align: center;
+    padding: 36px 24px 8px;
+    color: white;
+    font-size: 24px;
+    font-weight: 600;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.5);
+  }
+  .page-sub {
+    text-align: center;
+    color: rgba(255,255,255,0.7);
+    padding-bottom: 28px;
+    font-size: 13.5px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 36px 28px;
+    padding: 16px 48px 64px;
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+  .option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+  .option-header {
+    text-align: center;
+  }
+  .option-tag {
+    display: inline-block;
+    background: rgba(255,255,255,0.10);
+    color: rgba(255,255,255,0.9);
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 11px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .option-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: white;
+  }
+  .option-blurb {
+    color: rgba(255,255,255,0.65);
+    font-size: 12.5px;
+    margin-top: 4px;
+    max-width: 360px;
+    line-height: 1.5;
+  }
+  .stage {
+    /* faux cursor area so each modal looks anchored to the cursor */
+    width: 480px;
+    height: 360px;
+    background: rgba(255,255,255,0.025);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+  }
+  .cursor {
+    position: absolute;
+    left: 120px; top: 95px;
+    width: 14px; height: 14px;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .cursor::before {
+    content: '';
+    display: block;
+    width: 0; height: 0;
+    border-left: 8px solid white;
+    border-bottom: 8px solid transparent;
+    border-right: 6px solid transparent;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5));
+    transform: rotate(-12deg);
+  }
+
+  /* ---------- common modal chrome ---------- */
+  .modal {
+    position: absolute;
+    background: rgba(28, 28, 30, 0.96);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid var(--divider);
+    border-radius: var(--radius);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+  }
+
+  kbd {
+    font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid var(--divider);
+    padding: 0 4px;
+    border-radius: 3px;
+    color: var(--fg-dim);
+  }
+
+  .pros-cons {
+    color: rgba(255,255,255,0.75);
+    font-size: 12px;
+    line-height: 1.55;
+    background: rgba(0,0,0,0.25);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 10px 14px;
+    max-width: 400px;
+    width: 100%;
+  }
+  .pros-cons .row { display: flex; gap: 6px; align-items: flex-start; }
+  .pros-cons .row + .row { margin-top: 4px; }
+  .pros-cons .pro { color: var(--green); font-weight: 600; }
+  .pros-cons .con { color: var(--orange); font-weight: 600; }
+
+
+  /* ====================================================== */
+  /* OPTION A — Pill Cloud                                  */
+  /* ====================================================== */
+  .a-modal {
+    left: 140px; top: 115px;
+    width: 280px;
+    padding: 8px;
+  }
+  .a-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .a-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 11px;
+    background: var(--bg-elev);
+    border: 1px solid var(--divider);
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .a-pill:hover { background: var(--bg-elev-2); }
+  .a-pill.pinned { background: var(--tint-soft); border-color: transparent; }
+  .a-pill .glyph { font-size: 11px; opacity: 0.8; }
+  .a-add {
+    background: transparent;
+    border: 1px dashed rgba(255,255,255,0.18);
+    color: var(--fg-muted);
+  }
+
+
+  /* ====================================================== */
+  /* OPTION B — Numpad 3x3                                  */
+  /* ====================================================== */
+  .b-modal {
+    left: 140px; top: 115px;
+    width: 240px;
+    padding: 8px;
+  }
+  .b-search {
+    background: var(--bg-elev);
+    border: 1px solid var(--divider);
+    border-radius: 7px;
+    padding: 5px 9px;
+    font-size: 12px;
+    color: var(--fg-muted);
+    margin-bottom: 7px;
+  }
+  .b-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 5px;
+  }
+  .b-tile {
+    aspect-ratio: 1;
+    background: var(--bg-elev);
+    border: 1px solid var(--divider);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    cursor: pointer;
+    padding: 4px;
+    position: relative;
+  }
+  .b-tile:hover { background: var(--bg-elev-2); border-color: var(--tint); }
+  .b-tile .ic { font-size: 18px; }
+  .b-tile .lbl {
+    font-size: 10px;
+    color: var(--fg-dim);
+    text-align: center;
+    line-height: 1.1;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .b-tile .num {
+    position: absolute;
+    top: 3px; right: 4px;
+    font: 9px ui-monospace, monospace;
+    color: var(--fg-muted);
+  }
+  .b-tile.empty {
+    background: transparent;
+    border-style: dashed;
+    border-color: rgba(255,255,255,0.10);
+    cursor: default;
+  }
+
+
+  /* ====================================================== */
+  /* OPTION C — Spotlight Mini                              */
+  /* ====================================================== */
+  .c-modal {
+    left: 140px; top: 115px;
+    width: 280px;
+    overflow: hidden;
+  }
+  .c-search {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--divider);
+  }
+  .c-search .glyph { color: var(--fg-muted); font-size: 13px; }
+  .c-search input {
+    flex: 1; background: transparent; border: 0; color: var(--fg);
+    font: inherit; font-size: 13.5px; outline: none;
+  }
+  .c-list { padding: 4px 0; }
+  .c-row {
+    display: flex; align-items: center; gap: 9px;
+    padding: 6px 12px;
+    cursor: pointer;
+  }
+  .c-row:hover { background: rgba(255,255,255,0.05); }
+  .c-row.selected { background: var(--tint-strong); }
+  .c-row .ic {
+    width: 20px; height: 20px;
+    background: var(--tint-soft);
+    color: white;
+    border-radius: 5px;
+    display: grid; place-items: center;
+    font-size: 11px;
+    flex: 0 0 20px;
+  }
+  .c-row .lbl {
+    flex: 1; min-width: 0;
+    font-size: 12.5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .c-row .key {
+    font: 10px ui-monospace, monospace;
+    color: var(--fg-muted);
+  }
+  .c-row.selected .key { color: rgba(255,255,255,0.85); }
+  .c-hint {
+    display: flex; gap: 12px;
+    justify-content: center;
+    padding: 5px 10px;
+    border-top: 1px solid var(--divider);
+    background: rgba(0,0,0,0.18);
+    font-size: 10px;
+    color: var(--fg-muted);
+  }
+
+
+  /* ====================================================== */
+  /* OPTION D — Dock Strip                                  */
+  /* ====================================================== */
+  .d-modal {
+    left: 80px; top: 165px;
+    padding: 8px 10px;
+    border-radius: 18px;
+  }
+  .d-row {
+    display: flex; gap: 6px; align-items: center;
+  }
+  .d-tile {
+    width: 42px; height: 42px;
+    background: var(--bg-elev);
+    border: 1px solid var(--divider);
+    border-radius: 10px;
+    display: grid; place-items: center;
+    font-size: 18px;
+    cursor: pointer;
+    position: relative;
+    transition: transform 120ms ease-out;
+  }
+  .d-tile:hover {
+    transform: translateY(-3px) scale(1.08);
+    background: var(--bg-elev-2);
+  }
+  .d-tile .num {
+    position: absolute;
+    bottom: -2px; right: -2px;
+    font: 9px ui-monospace, monospace;
+    background: var(--tint);
+    color: white;
+    border-radius: 999px;
+    padding: 0 4px;
+  }
+  .d-tile.pinned { background: var(--tint-soft); border-color: transparent; }
+  .d-tile .tip {
+    position: absolute;
+    bottom: 50px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.85);
+    color: white;
+    padding: 3px 7px;
+    border-radius: 5px;
+    font-size: 10.5px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms;
+  }
+  .d-tile:hover .tip { opacity: 1; }
+  .d-divider {
+    width: 1px; height: 24px;
+    background: var(--divider);
+    margin: 0 2px;
+  }
+  .d-tile.add {
+    background: transparent;
+    border: 1px dashed rgba(255,255,255,0.18);
+    color: var(--fg-muted);
+  }
+</style>
+</head>
+<body>
+  <h1 class="page-title">Restash — Quick-pick modal designs</h1>
+  <div class="page-sub">Same data, same hotkey, four different feels. Pick one (or mix elements).</div>
+
+  <div class="grid">
+
+    <!-- ============================= OPTION A ============================= -->
+    <div class="option">
+      <div class="option-header">
+        <div class="option-tag">Option A</div>
+        <div class="option-title">Pill Cloud</div>
+        <div class="option-blurb">Free-flowing chips, label-only. Click anywhere on a pill to copy. Feels like a tag cloud — informal, scannable at a glance.</div>
+      </div>
+      <div class="stage">
+        <div class="cursor"></div>
+        <div class="modal a-modal">
+          <div class="a-pills">
+            <button class="a-pill pinned"><span class="glyph">🔗</span>CFA Crypto Pro</button>
+            <button class="a-pill"><span class="glyph">₿</span>ETH wallet</button>
+            <button class="a-pill"><span class="glyph">📝</span>Signature</button>
+            <button class="a-pill"><span class="glyph">📍</span>Home</button>
+            <button class="a-pill"><span class="glyph">🔗</span>Helius docs</button>
+            <button class="a-pill"><span class="glyph">₿</span>SOL wallet</button>
+            <button class="a-pill"><span class="glyph">📝</span>Wire reply</button>
+            <button class="a-pill a-add">＋</button>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons">
+        <div class="row"><span class="pro">+</span><span>Highest density — 8+ items in tiny space.</span></div>
+        <div class="row"><span class="pro">+</span><span>Each item self-sized; long labels still readable.</span></div>
+        <div class="row"><span class="con">−</span><span>No live search; no keyboard nav. Pure mouse.</span></div>
+        <div class="row"><span class="con">−</span><span>Layout shifts as items are added/removed.</span></div>
+      </div>
+    </div>
+
+    <!-- ============================= OPTION B ============================= -->
+    <div class="option">
+      <div class="option-header">
+        <div class="option-tag">Option B</div>
+        <div class="option-title">Numpad 3×3</div>
+        <div class="option-blurb">Top 9 most-used items as a phone-keypad grid. <kbd>1</kbd>–<kbd>9</kbd> on your keyboard to copy without moving the mouse. Best for a curated set.</div>
+      </div>
+      <div class="stage">
+        <div class="cursor"></div>
+        <div class="modal b-modal">
+          <div class="b-search">Search…</div>
+          <div class="b-grid">
+            <button class="b-tile"><span class="num">1</span><div class="ic">🔗</div><div class="lbl">CFA Crypto</div></button>
+            <button class="b-tile"><span class="num">2</span><div class="ic">₿</div><div class="lbl">ETH wallet</div></button>
+            <button class="b-tile"><span class="num">3</span><div class="ic">📝</div><div class="lbl">Signature</div></button>
+            <button class="b-tile"><span class="num">4</span><div class="ic">📍</div><div class="lbl">Home</div></button>
+            <button class="b-tile"><span class="num">5</span><div class="ic">₿</div><div class="lbl">SOL wallet</div></button>
+            <button class="b-tile"><span class="num">6</span><div class="ic">🔗</div><div class="lbl">Helius</div></button>
+            <button class="b-tile"><span class="num">7</span><div class="ic">📝</div><div class="lbl">Wire reply</div></button>
+            <button class="b-tile empty"></button>
+            <button class="b-tile empty"></button>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons">
+        <div class="row"><span class="pro">+</span><span>One-keystroke copy via <kbd>1</kbd>–<kbd>9</kbd>. Fastest possible.</span></div>
+        <div class="row"><span class="pro">+</span><span>Fixed footprint — never grows.</span></div>
+        <div class="row"><span class="con">−</span><span>Caps at 9 visible. Hidden items need search.</span></div>
+        <div class="row"><span class="con">−</span><span>Labels truncate hard at this size.</span></div>
+      </div>
+    </div>
+
+    <!-- ============================= OPTION C ============================= -->
+    <div class="option">
+      <div class="option-header">
+        <div class="option-tag">Option C — recommended</div>
+        <div class="option-title">Spotlight Mini</div>
+        <div class="option-blurb">Search bar + thin row list. Type to filter, <kbd>↑↓</kbd> to select, <kbd>↵</kbd> to copy. Same mental model as Spotlight / Raycast.</div>
+      </div>
+      <div class="stage">
+        <div class="cursor"></div>
+        <div class="modal c-modal">
+          <div class="c-search">
+            <span class="glyph">⌕</span>
+            <input value="cry" placeholder="Search…" />
+          </div>
+          <div class="c-list">
+            <div class="c-row selected">
+              <div class="ic">₿</div>
+              <div class="lbl">ETH wallet — 0x000…</div>
+              <span class="key">↵</span>
+            </div>
+            <div class="c-row">
+              <div class="ic">₿</div>
+              <div class="lbl">SOL wallet — 5x9k…</div>
+              <span class="key">⌘2</span>
+            </div>
+            <div class="c-row">
+              <div class="ic">🔗</div>
+              <div class="lbl">CFA Crypto Pro</div>
+              <span class="key">⌘3</span>
+            </div>
+            <div class="c-row">
+              <div class="ic">📝</div>
+              <div class="lbl">Crypto wire reply</div>
+              <span class="key">⌘4</span>
+            </div>
+          </div>
+          <div class="c-hint">
+            <span><kbd>↑↓</kbd> select</span>
+            <span><kbd>↵</kbd> copy</span>
+            <span><kbd>⌘N</kbd> new</span>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons">
+        <div class="row"><span class="pro">+</span><span>Keyboard-native. Type, enter, gone — never touches mouse.</span></div>
+        <div class="row"><span class="pro">+</span><span>Scales from 3 items to 300.</span></div>
+        <div class="row"><span class="pro">+</span><span>Closest to current full popover — easiest port.</span></div>
+        <div class="row"><span class="con">−</span><span>Slightly taller than the others; less "tiny."</span></div>
+      </div>
+    </div>
+
+    <!-- ============================= OPTION D ============================= -->
+    <div class="option">
+      <div class="option-header">
+        <div class="option-tag">Option D</div>
+        <div class="option-title">Dock Strip</div>
+        <div class="option-blurb">Horizontal row of icon-only tiles, like a tiny floating Dock. Labels reveal on hover. The most compact option — designed to live one cursor-flick from anywhere.</div>
+      </div>
+      <div class="stage">
+        <div class="cursor"></div>
+        <div class="modal d-modal">
+          <div class="d-row">
+            <button class="d-tile pinned">🔗<span class="num">1</span><span class="tip">CFA Crypto Pro</span></button>
+            <button class="d-tile">₿<span class="num">2</span><span class="tip">ETH wallet</span></button>
+            <button class="d-tile">₿<span class="num">3</span><span class="tip">SOL wallet</span></button>
+            <div class="d-divider"></div>
+            <button class="d-tile">📝<span class="num">4</span><span class="tip">Signature</span></button>
+            <button class="d-tile">📝<span class="num">5</span><span class="tip">Wire reply</span></button>
+            <div class="d-divider"></div>
+            <button class="d-tile">📍<span class="num">6</span><span class="tip">Home</span></button>
+            <button class="d-tile add">＋</button>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons">
+        <div class="row"><span class="pro">+</span><span>Tiniest footprint — single 60px-tall strip.</span></div>
+        <div class="row"><span class="pro">+</span><span>Familiar Dock metaphor; macOS-native feel.</span></div>
+        <div class="row"><span class="con">−</span><span>Icon-only = must memorize what each slot holds.</span></div>
+        <div class="row"><span class="con">−</span><span>Lots of items → horizontal scroll, awkward at cursor.</span></div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

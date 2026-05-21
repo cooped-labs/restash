@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Restash — QR URL preview + safety</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #131316;
+    --bg-elev: #1e1e20;
+    --bg-elev-2: #2a2a2d;
+    --fg: #f2f2f7;
+    --fg-dim: #b8b8be;
+    --fg-muted: #8a8a92;
+    --tint: #f2f2f7;
+    --tint-fg: #1c1c1e;
+    --divider: rgba(255, 255, 255, 0.08);
+    --pop-bg: #1e1e20;
+    --pop-fg: #f2f2f7;
+    --pop-dim: #b8b8be;
+    --pop-muted: #8a8a92;
+    --pop-divider: rgba(255, 255, 255, 0.08);
+    --pop-elev: #2a2a2d;
+    --pop-tint: #f2f2f7;
+    --pop-tint-fg: #1c1c1e;
+    --green: #30d158;
+    --orange: #ff9f0a;
+    --red: #ff453a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; min-height: 100vh;
+    background: var(--bg);
+    background-image:
+      radial-gradient(900px 600px at 20% 12%, rgba(94, 58, 165, 0.10) 0%, transparent 60%),
+      radial-gradient(800px 600px at 80% 80%, rgba(30, 60, 140, 0.10) 0%, transparent 60%);
+    color: var(--fg);
+    font: 13px "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 28px;
+    background: rgba(20, 20, 22, 0.55);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--divider);
+  }
+  .topbar h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  .topbar .spacer { flex: 1; }
+
+  main { padding: 28px 28px 80px; max-width: 1280px; margin: 0 auto; }
+  .lead { color: var(--fg-dim); font-size: 14px; max-width: 720px; margin: 0 0 28px; line-height: 1.55; }
+
+  h2 {
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.8px;
+    color: var(--fg-muted);
+    margin: 36px 0 14px;
+  }
+
+  /* ============================================================
+     Preview card — full QR-URL panel with site preview added
+     ============================================================ */
+  .row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+    gap: 22px;
+  }
+  .var {
+    background: var(--bg-elev);
+    border: 1px solid var(--divider);
+    border-radius: 14px;
+    padding: 18px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .var-head { display: flex; align-items: baseline; gap: 10px; }
+  .var-tag {
+    display: inline-block;
+    background: rgba(255,255,255,0.08);
+    color: var(--fg-dim);
+    padding: 2px 8px; border-radius: 999px;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .var-name { font-size: 15px; font-weight: 600; }
+  .var-blurb { color: var(--fg-dim); font-size: 12.5px; line-height: 1.5; margin: 0; }
+
+  /* The Restash QR popover frame */
+  .pop {
+    width: 100%; max-width: 300px;
+    background: var(--pop-bg);
+    color: var(--pop-fg);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 22px 50px rgba(0,0,0,0.50);
+    margin: 0 auto;
+    display: flex; flex-direction: column;
+  }
+
+  .pop-head {
+    display: flex; align-items: center; gap: 9px;
+    padding: 10px 12px 8px;
+    border-bottom: 1px solid var(--pop-divider);
+  }
+  .pop-mini {
+    width: 24px; height: 24px;
+    border-radius: 5px;
+    background: var(--pop-elev);
+    display: grid; place-items: center;
+    color: var(--pop-dim);
+    flex: 0 0 24px;
+  }
+  .pop-mini svg { width: 14px; height: 14px; display: block; }
+  .pop-head-text { min-width: 0; flex: 1; }
+  .pop-title { font-size: 12.5px; font-weight: 600; }
+  .pop-meta { font-size: 10.5px; color: var(--pop-muted); margin-top: 1px;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Safety badge — sits in the header on the right */
+  .safety-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    flex: 0 0 auto;
+  }
+  .safety-badge svg { width: 11px; height: 11px; }
+  .safety-badge.safe   { background: rgba(48, 209, 88, 0.16); color: var(--green); }
+  .safety-badge.warn   { background: rgba(255, 159, 10, 0.18); color: var(--orange); }
+  .safety-badge.danger { background: rgba(255, 69, 58, 0.18); color: var(--red); }
+
+  .pop-body {
+    padding: 12px 12px 10px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+
+  /* SITE PREVIEW BLOCK — favicon + title + description + optional og:image */
+  .site-preview {
+    background: var(--pop-elev);
+    border: 1px solid var(--pop-divider);
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .site-preview .hero-img {
+    width: 100%;
+    height: 110px;
+    object-fit: cover;
+    display: block;
+    background: #444;
+  }
+  .site-preview-body {
+    padding: 9px 11px 11px;
+    display: flex; gap: 9px;
+    align-items: flex-start;
+  }
+  .site-preview .favicon {
+    width: 22px; height: 22px;
+    border-radius: 5px;
+    overflow: hidden;
+    background: white;
+    display: grid; place-items: center;
+    flex: 0 0 22px;
+    margin-top: 1px;
+  }
+  .site-preview .favicon img { width: 100%; height: 100%; display: block; }
+  .site-preview .meta { min-width: 0; flex: 1; }
+  .site-preview .stitle {
+    font-size: 12.5px; font-weight: 600;
+    color: var(--pop-fg);
+    overflow: hidden; text-overflow: ellipsis;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    line-height: 1.3;
+  }
+  .site-preview .sdesc {
+    font-size: 10.5px;
+    color: var(--pop-muted);
+    margin-top: 3px;
+    line-height: 1.4;
+    overflow: hidden;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  }
+  .site-preview .shost {
+    font-size: 10px; color: var(--pop-muted);
+    margin-top: 6px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  /* Loading state — skeleton lines */
+  .site-preview.loading .stitle::before,
+  .site-preview.loading .sdesc::before {
+    content: '';
+    display: block;
+    height: 10px;
+    background: linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.10) 50%, rgba(255,255,255,0.04) 100%);
+    background-size: 200% 100%;
+    border-radius: 4px;
+    animation: shimmer 1.4s linear infinite;
+  }
+  .site-preview.loading .stitle::before { width: 78%; margin-bottom: 6px; }
+  .site-preview.loading .sdesc::before { width: 92%; height: 8px; }
+  @keyframes shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* Danger state — replaces site preview with red warning */
+  .danger-block {
+    background: rgba(255, 69, 58, 0.10);
+    border: 1px solid rgba(255, 69, 58, 0.30);
+    border-radius: 10px;
+    padding: 11px 12px;
+    color: var(--fg);
+  }
+  .danger-block .dtitle {
+    font-size: 12.5px; font-weight: 600; color: var(--red);
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 4px;
+  }
+  .danger-block .dtitle svg { width: 13px; height: 13px; }
+  .danger-block .dbody {
+    font-size: 11.5px; color: var(--fg-dim); line-height: 1.45;
+  }
+
+  /* Raw URL row at bottom (always shown) */
+  .url-row {
+    background: var(--pop-elev);
+    border: 1px solid var(--pop-divider);
+    border-radius: 8px;
+    padding: 7px 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10.5px;
+    color: var(--pop-muted);
+    overflow-wrap: anywhere;
+    line-height: 1.4;
+  }
+
+  .pop-actions {
+    display: flex; gap: 6px;
+    padding: 10px 12px;
+    border-top: 1px solid var(--pop-divider);
+    background: var(--pop-elev);
+  }
+  .pop-btn {
+    flex: 1;
+    background: var(--pop-bg);
+    border: 1px solid var(--pop-divider);
+    border-radius: 7px;
+    padding: 7px 10px;
+    font: inherit; font-size: 11.5px; font-weight: 600;
+    color: var(--pop-fg);
+    cursor: pointer;
+  }
+  .pop-btn.primary {
+    background: var(--pop-tint);
+    color: var(--pop-tint-fg);
+    border-color: transparent;
+  }
+  .pop-btn.danger {
+    background: var(--red);
+    color: white;
+    border-color: transparent;
+  }
+
+
+  /* ============================================================
+     Notes
+     ============================================================ */
+  .notes {
+    background: var(--bg-elev);
+    border: 1px solid var(--divider);
+    border-radius: 12px;
+    padding: 18px 22px;
+    color: var(--fg-dim);
+    font-size: 12.5px; line-height: 1.6;
+  }
+  .notes h3 { margin: 0 0 8px; font-size: 13px; color: var(--fg); font-weight: 600; }
+  .notes code {
+    background: rgba(255,255,255,0.08);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 12px;
+    color: var(--fg);
+  }
+  .notes ul { margin: 6px 0; padding-left: 18px; }
+  .notes li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Restash — QR URL preview &amp; safety</h1>
+  <div class="spacer"></div>
+</div>
+
+<main>
+  <p class="lead">
+    Adding a site-preview block + safety badge to the QR decoder. Lets users see what they're about to open <em>before</em> they tap "Open." Same panel, just richer info pulled from the URL's OG tags + a quick safety heuristic.
+  </p>
+
+
+  <h2>States</h2>
+  <div class="row">
+
+    <!-- ============================================================
+         A. Loading (immediately after decode)
+         ============================================================ -->
+    <div class="var">
+      <div class="var-head"><span class="var-tag">State A</span><span class="var-name">Just decoded · loading</span></div>
+      <p class="var-blurb">URL recognized instantly; metadata fetch is in flight. Skeleton lines until title/description arrive (~200–500 ms).</p>
+      <div class="pop">
+        <div class="pop-head">
+          <div class="pop-mini">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v3M14 21h3M21 17v4h-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="pop-head-text">
+            <div class="pop-title">Decoded · URL</div>
+            <div class="pop-meta">idemia-mobile-id.com</div>
+          </div>
+        </div>
+        <div class="pop-body">
+          <div class="site-preview loading">
+            <div class="site-preview-body">
+              <div class="favicon"><img src="https://www.google.com/s2/favicons?domain=idemia-mobile-id.com&sz=64" alt=""></div>
+              <div class="meta">
+                <div class="stitle"></div>
+                <div class="sdesc"></div>
+                <div class="shost">idemia-mobile-id.com</div>
+              </div>
+            </div>
+          </div>
+          <div class="url-row">https://idemia-mobile-id.com/testqr-success</div>
+        </div>
+        <div class="pop-actions">
+          <button class="pop-btn">Save</button>
+          <button class="pop-btn primary">Open ↵</button>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ============================================================
+         B. Safe — with og:image
+         ============================================================ -->
+    <div class="var">
+      <div class="var-head"><span class="var-tag">State B</span><span class="var-name">Safe · with hero image</span></div>
+      <p class="var-blurb">Metadata loaded. Site has an <code>og:image</code> — it sits at the top of the preview card. Green safety badge in the header.</p>
+      <div class="pop">
+        <div class="pop-head">
+          <div class="pop-mini">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v3M14 21h3M21 17v4h-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="pop-head-text">
+            <div class="pop-title">Decoded · URL</div>
+            <div class="pop-meta">wisemenalpha.com</div>
+          </div>
+          <span class="safety-badge safe">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg>
+            Safe
+          </span>
+        </div>
+        <div class="pop-body">
+          <div class="site-preview">
+            <div class="hero-img" style="background: linear-gradient(135deg, #1a2a4a 0%, #4a1a4a 100%);"></div>
+            <div class="site-preview-body">
+              <div class="favicon" style="background: #ff6b35;">
+                <span style="font-weight: 800; color: white; font-size: 11px;">W</span>
+              </div>
+              <div class="meta">
+                <div class="stitle">Wisemen Alpha — daily signals for serious traders</div>
+                <div class="sdesc">Get real-time crypto trade signals from top performers. Trusted by 25k+ active users on Telegram.</div>
+                <div class="shost">wisemenalpha.com/linktree</div>
+              </div>
+            </div>
+          </div>
+          <div class="url-row">https://wisemenalpha.com/linktree</div>
+        </div>
+        <div class="pop-actions">
+          <button class="pop-btn">Save</button>
+          <button class="pop-btn primary">Open ↵</button>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ============================================================
+         C. Safe — favicon only (no og:image)
+         ============================================================ -->
+    <div class="var">
+      <div class="var-head"><span class="var-tag">State C</span><span class="var-name">Safe · favicon only</span></div>
+      <p class="var-blurb">Site doesn't expose an <code>og:image</code> (very common). Compact card with favicon + title + description. No big hero, more info-dense.</p>
+      <div class="pop">
+        <div class="pop-head">
+          <div class="pop-mini">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v3M14 21h3M21 17v4h-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="pop-head-text">
+            <div class="pop-title">Decoded · URL</div>
+            <div class="pop-meta">cfacryptopro.com</div>
+          </div>
+          <span class="safety-badge safe">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg>
+            Safe
+          </span>
+        </div>
+        <div class="pop-body">
+          <div class="site-preview">
+            <div class="site-preview-body">
+              <div class="favicon" style="background: #0a84ff;">
+                <span style="font-weight: 800; color: white; font-size: 11px;">CFA</span>
+              </div>
+              <div class="meta">
+                <div class="stitle">CFA Crypto Pro</div>
+                <div class="sdesc">Professional crypto market intelligence and analysis tools.</div>
+                <div class="shost">cfacryptopro.com</div>
+              </div>
+            </div>
+          </div>
+          <div class="url-row">https://cfacryptopro.com</div>
+        </div>
+        <div class="pop-actions">
+          <button class="pop-btn">Save</button>
+          <button class="pop-btn primary">Open ↵</button>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ============================================================
+         D. Warning — sketchy heuristics
+         ============================================================ -->
+    <div class="var">
+      <div class="var-head"><span class="var-tag">State D</span><span class="var-name">Warning · heuristic flags</span></div>
+      <p class="var-blurb">URL has yellow flags — HTTP only, a URL shortener, or a sketchy TLD. Not blocked, but the badge tells the user to look twice.</p>
+      <div class="pop">
+        <div class="pop-head">
+          <div class="pop-mini">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v3M14 21h3M21 17v4h-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="pop-head-text">
+            <div class="pop-title">Decoded · URL</div>
+            <div class="pop-meta">bit.ly</div>
+          </div>
+          <span class="safety-badge warn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l10 17H2z"/><path d="M12 10v5"/><circle cx="12" cy="18" r=".9" fill="currentColor"/></svg>
+            Check
+          </span>
+        </div>
+        <div class="pop-body">
+          <div class="site-preview">
+            <div class="site-preview-body">
+              <div class="favicon" style="background: #444;">
+                <span style="font-weight: 800; color: white; font-size: 10px;">?</span>
+              </div>
+              <div class="meta">
+                <div class="stitle" style="color: var(--orange);">URL shortener — destination unknown</div>
+                <div class="sdesc">bit.ly hides the real destination. The link could go anywhere. Restash can follow it if you want to see where it leads.</div>
+                <div class="shost">bit.ly/3aB2X9Q</div>
+              </div>
+            </div>
+          </div>
+          <div class="url-row">http://bit.ly/3aB2X9Q</div>
+        </div>
+        <div class="pop-actions">
+          <button class="pop-btn">Save</button>
+          <button class="pop-btn">Follow link</button>
+          <button class="pop-btn primary">Open ↵</button>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ============================================================
+         E. Danger — flagged by Safe Browsing / Phishtank
+         ============================================================ -->
+    <div class="var">
+      <div class="var-head"><span class="var-tag">State E</span><span class="var-name">Danger · flagged unsafe</span></div>
+      <p class="var-blurb">Hard match against Google Safe Browsing / Phishtank — known phishing or malware. Site preview hides; warning replaces it; primary button changes to red.</p>
+      <div class="pop">
+        <div class="pop-head">
+          <div class="pop-mini">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v3M14 21h3M21 17v4h-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="pop-head-text">
+            <div class="pop-title">Decoded · URL</div>
+            <div class="pop-meta">cfa-crypto-pro.zip</div>
+          </div>
+          <span class="safety-badge danger">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+            Phishing
+          </span>
+        </div>
+        <div class="pop-body">
+          <div class="danger-block">
+            <div class="dtitle">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l10 17H2z"/><path d="M12 10v5"/><circle cx="12" cy="18" r=".9" fill="currentColor"/></svg>
+              Known phishing domain
+            </div>
+            <div class="dbody">
+              Reported by Google Safe Browsing. This domain impersonates <strong>cfacryptopro.com</strong> using a <code>.zip</code> TLD. Do not paste a wallet, sign anything, or enter a password here.
+            </div>
+          </div>
+          <div class="url-row">https://cfa-crypto-pro.zip/connect-wallet</div>
+        </div>
+        <div class="pop-actions">
+          <button class="pop-btn">Report</button>
+          <button class="pop-btn danger">Open anyway</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+
+  <h2>Implementation notes</h2>
+  <div class="notes">
+    <h3>Site preview</h3>
+    <ul>
+      <li>Fetch the URL HTML in the main process (no CORS issues there) with a short timeout (~3 s) and a small byte cap (~256 KB).</li>
+      <li>Parse <code>&lt;title&gt;</code>, <code>og:title</code>, <code>og:description</code>, <code>og:image</code>, <code>meta[name="description"]</code>.</li>
+      <li>Favicon: try <code>/favicon.ico</code>, then <code>icon</code>/<code>apple-touch-icon</code> from the HTML, then Google's <code>s2/favicons?domain=…</code> as a fallback.</li>
+      <li>Cache by hostname in memory for ~10 min so re-decoding the same domain is instant.</li>
+      <li>Render the loading skeleton immediately — fetch resolves underneath. Never blocks the popover from appearing.</li>
+    </ul>
+    <h3>Safety</h3>
+    <p style="margin-top:0">Two layers:</p>
+    <ul>
+      <li><strong>Heuristics (instant, no network):</strong> HTTP-only → warn. URL shortener (bit.ly, t.co, ow.ly, tinyurl, …) → warn. Sketchy TLD (.zip, .top, .tk, .xyz subdomains) → warn. Punycode (<code>xn--</code>) → warn. IP literal as host → warn.</li>
+      <li><strong>Google Safe Browsing API (definitive, ~100 ms):</strong> free up to 10k checks/day with an API key. Returns malware / phishing / unwanted-software flags. Cached by hostname.</li>
+    </ul>
+    <p>Heuristics gate the warning badge. Safe Browsing gates the danger badge. If both pass → safe.</p>
+    <h3>Privacy</h3>
+    <ul>
+      <li>Both lookups send the hostname (not the full URL) to third parties. Disclose in Settings; offer an off switch.</li>
+      <li>OG fetch is direct to the destination site — Restash doesn't route through any intermediary.</li>
+    </ul>
+  </div>
+
+</main>
+</body>
+</html>

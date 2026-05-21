@@ -1,0 +1,11 @@
+<!--
+  Restash brandmark — Concept A "Stash Stack"
+  Three stacked cards (newest on top). 24x24 viewBox so it maps cleanly to
+  every surface (16/22/48/128/512 px). Uses `currentColor` so it inherits
+  whatever color we render it in (white on dark, black on light).
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="4" y="11" width="16" height="7" rx="1.5"/>
+  <path d="M6 8h12"/>
+  <path d="M8 5h8"/>
+</svg>

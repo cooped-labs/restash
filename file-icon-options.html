@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Restash — File icon style options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #1e1e20;
+    --bg-elev: #2a2a2d;
+    --bg-elev-2: #34343a;
+    --fg: #f2f2f7;
+    --fg-dim: #b8b8be;
+    --fg-muted: #8a8a92;
+    --tint: #f2f2f7;
+    --tint-fg: #1c1c1e;
+    --tint-soft: rgba(255, 255, 255, 0.08);
+    --divider: rgba(255, 255, 255, 0.08);
+    --c-pdf: #ff4f3a;
+    --c-img: #30b06f;
+    --c-vid: #b58bff;
+    --c-aud: #ff9f0a;
+    --c-doc: #4d9fff;
+    --c-xls: #1ea861;
+    --c-ppt: #ff6f3a;
+    --c-zip: #c4a86a;
+    --c-txt: #b8b8be;
+    --c-gen: #b8b8be;
+  }
+  body.theme-light {
+    --bg: #f5f5f4;
+    --bg-elev: #ebebe9;
+    --bg-elev-2: #dedcd9;
+    --fg: #1c1c1e;
+    --fg-dim: #5a5a5c;
+    --fg-muted: #8a8a8c;
+    --tint: #1c1c1e;
+    --tint-fg: #ffffff;
+    --tint-soft: rgba(28, 28, 30, 0.06);
+    --divider: rgba(0, 0, 0, 0.07);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; min-height: 100vh;
+    background: var(--bg);
+    background-image:
+      radial-gradient(900px 600px at 20% 10%, rgba(94, 58, 165, 0.10) 0%, transparent 60%),
+      radial-gradient(800px 600px at 80% 80%, rgba(30, 60, 140, 0.10) 0%, transparent 60%);
+    color: var(--fg);
+    font: 13px "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  }
+  .topbar {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 28px;
+    background: rgba(20, 20, 22, 0.55);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--divider);
+  }
+  body.theme-light .topbar { background: rgba(245, 245, 244, 0.88); }
+  .topbar h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  .topbar .spacer { flex: 1; }
+  .topbar button {
+    background: var(--bg-elev); border: 1px solid var(--divider);
+    border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 12.5px;
+    color: var(--fg); cursor: pointer;
+  }
+  main { padding: 24px 28px 80px; max-width: 1240px; margin: 0 auto; }
+  .lead { color: var(--fg-dim); font-size: 13px; max-width: 720px; margin: 0 0 28px; line-height: 1.55; }
+
+  h2 {
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.8px;
+    color: var(--fg-muted);
+    margin: 30px 0 14px;
+  }
+
+  .style-card {
+    background: var(--bg-elev);
+    border: 1px solid var(--divider);
+    border-radius: 14px;
+    padding: 22px 24px;
+    margin-bottom: 18px;
+  }
+  .style-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+  .style-tag {
+    display: inline-block;
+    background: rgba(255,255,255,0.06);
+    color: var(--fg-dim);
+    padding: 2px 8px; border-radius: 999px;
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px;
+  }
+  body.theme-light .style-tag { background: rgba(0,0,0,0.06); }
+  .style-name { font-size: 16px; font-weight: 600; }
+  .style-blurb {
+    color: var(--fg-dim); font-size: 12.5px;
+    margin: 0 0 18px; max-width: 620px; line-height: 1.5;
+  }
+
+  /* ============================================================
+     Icon row — show all 9 file-type icons in a row
+     ============================================================ */
+  .icon-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+    gap: 12px;
+  }
+  .icon-cell {
+    background: var(--bg);
+    border: 1px solid var(--divider);
+    border-radius: 10px;
+    padding: 14px 8px 10px;
+    text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+  }
+  body.theme-light .icon-cell { background: #ffffff; }
+  .icon-cell svg {
+    width: 36px; height: 36px;
+    display: block;
+  }
+  .icon-cell .lbl {
+    font-size: 10px; color: var(--fg-muted);
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+
+  /* ============================================================
+     "In context" preview — popover row + grid tile
+     ============================================================ */
+  .preview-grid {
+    display: grid;
+    grid-template-columns: 320px 260px;
+    gap: 26px;
+    margin-top: 18px;
+    align-items: flex-start;
+  }
+  .pop-mock {
+    background: var(--bg);
+    border: 1px solid var(--divider);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 16px 36px rgba(0,0,0,0.35);
+  }
+  body.theme-light .pop-mock { background: #f5f5f4; box-shadow: 0 16px 36px rgba(0,0,0,0.10); }
+  .pop-topbar {
+    display: flex; align-items: center; gap: 6px;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--divider);
+    color: var(--fg-muted);
+    font-size: 12px;
+  }
+  .pop-list { padding: 3px 0; }
+  .row-mock {
+    display: flex; align-items: center; gap: 9px;
+    padding: 7px 11px; font-size: 12.5px;
+  }
+  .row-mock .icn {
+    width: 22px; height: 22px;
+    border-radius: 5px;
+    background: var(--tint-soft);
+    display: grid; place-items: center;
+    flex: 0 0 22px;
+  }
+  .row-mock .icn svg { width: 16px; height: 16px; }
+  .row-mock .text { flex: 1; min-width: 0; }
+  .row-mock .lbl { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row-mock .sub {
+    font-size: 10.5px; color: var(--fg-muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .row-mock .key { font: 10px ui-monospace, monospace; color: var(--fg-muted); }
+
+  .grid-mock {
+    background: var(--bg);
+    border: 1px solid var(--divider);
+    border-radius: 12px;
+    padding: 6px;
+    box-shadow: 0 16px 36px rgba(0,0,0,0.35);
+  }
+  body.theme-light .grid-mock { background: #f5f5f4; box-shadow: 0 16px 36px rgba(0,0,0,0.10); }
+  .grid-pages {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-auto-rows: 70px;
+    gap: 5px;
+  }
+  .tile {
+    background: var(--bg-elev);
+    border: 1px solid var(--divider);
+    border-radius: 8px;
+    padding: 4px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; position: relative; min-width: 0;
+    font-size: 10px;
+  }
+  body.theme-light .tile { background: #ebebe9; }
+  .tile .num {
+    position: absolute; top: 2px; right: 5px;
+    font: 9px ui-monospace, monospace; color: var(--fg-muted);
+  }
+  .tile svg { width: 22px; height: 22px; }
+  .tile .lbl {
+    text-align: center; line-height: 1.18; max-width: 100%;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .caption {
+    margin-top: 8px;
+    font-size: 11px; color: var(--fg-muted);
+    text-transform: uppercase; letter-spacing: 0.4px;
+  }
+
+  .pros {
+    margin-top: 16px; font-size: 12px; color: var(--fg-dim);
+    line-height: 1.6;
+  }
+  .pros .pro { color: #30d158; font-weight: 600; margin-right: 4px; }
+  .pros .con { color: #ff9f0a; font-weight: 600; margin-right: 4px; }
+  body.theme-light .pros .pro { color: #1f8a3b; }
+  body.theme-light .pros .con { color: #c97a00; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1>Restash — File icon set</h1>
+  <div class="spacer"></div>
+  <button id="themeBtn">Toggle light</button>
+</div>
+
+<main>
+  <p class="lead">
+    Three SVG icon directions for file items, each covering the same nine file kinds (generic, image, video, audio, PDF, document, spreadsheet, presentation, archive). Pick one and I'll wire it into the live app.
+  </p>
+
+
+  <!-- ============================================================
+       STYLE 1 — Document-with-label (PDF/IMG/DOC inside a sheet)
+       ============================================================ -->
+  <div class="style-card">
+    <div class="style-head">
+      <span class="style-tag">Style 1</span>
+      <span class="style-name">Document with type label</span>
+    </div>
+    <p class="style-blurb">
+      A document silhouette with the file extension lettered inside. Unmistakable at small sizes; each kind reads as a real "document with a thing on it" — what Finder and the Files app trained everyone to expect.
+    </p>
+
+    <div class="icon-row">
+      <!-- Generic FILE -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="#3a3a40" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M19 4v6h5" fill="#262629" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+        <span class="lbl">File</span>
+      </div>
+      <!-- IMAGE -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-img)" opacity="0.18"/>
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-img)" stroke-width="1.5" fill="none"/>
+          <path d="M19 4v6h5" stroke="var(--c-img)" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+          <text x="16" y="23" text-anchor="middle" font-family="Inter" font-weight="700" font-size="6" fill="var(--c-img)">IMG</text>
+        </svg>
+        <span class="lbl">Image</span>
+      </div>
+      <!-- VIDEO -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-vid)" opacity="0.18"/>
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-vid)" stroke-width="1.5" fill="none"/>
+          <path d="M19 4v6h5" stroke="var(--c-vid)" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+          <text x="16" y="23" text-anchor="middle" font-family="Inter" font-weight="700" font-size="6" fill="var(--c-vid)">MP4</text>
+        </svg>
+        <span class="lbl">Video</span>
+      </div>
+      <!-- AUDIO -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-aud)" opacity="0.18"/>
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-aud)" stroke-width="1.5" fill="none"/>
+          <path d="M19 4v6h5" stroke="var(--c-aud)" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+          <text x="16" y="23" text-anchor="middle" font-family="Inter" font-weight="700" font-size="6" fill="var(--c-aud)">MP3</text>
+        </svg>
+        <span class="lbl">Audio</span>
+      </div>
+      <!-- PDF -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-pdf)" opacity="0.18"/>
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-pdf)" stroke-width="1.5" fill="none"/>
+          <path d="M19 4v6h5" stroke="var(--c-pdf)" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+          <text x="16" y="23" text-anchor="middle" font-family="Inter" font-weight="700" font-size="6" fill="var(--c-pdf)">PDF</text>
+        </svg>
+        <span class="lbl">PDF</span>
+      </div>
+      <!-- DOC -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-doc)" opacity="0.18"/>
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-doc)" stroke-width="1.5" fill="none"/>
+          <path d="M19 4v6h5" stroke="var(--c-doc)" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+          <text x="16" y="23" text-anchor="middle" font-family="Inter" font-weight="700" font-size="6" fill="var(--c-doc)">DOC</text>
+        </svg>
+        <span class="lbl">Document</span>
+      </div>
+      <!-- XLS -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-xls)" opacity="0.18"/>
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-xls)" stroke-width="1.5" fill="none"/>
+          <path d="M19 4v6h5" stroke="var(--c-xls)" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+          <text x="16" y="23" text-anchor="middle" font-family="Inter" font-weight="700" font-size="6" fill="var(--c-xls)">XLS</text>
+        </svg>
+        <span class="lbl">Sheet</span>
+      </div>
+      <!-- PPT -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-ppt)" opacity="0.18"/>
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-ppt)" stroke-width="1.5" fill="none"/>
+          <path d="M19 4v6h5" stroke="var(--c-ppt)" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+          <text x="16" y="23" text-anchor="middle" font-family="Inter" font-weight="700" font-size="6" fill="var(--c-ppt)">PPT</text>
+        </svg>
+        <span class="lbl">Slides</span>
+      </div>
+      <!-- ZIP -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-zip)" opacity="0.18"/>
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-zip)" stroke-width="1.5" fill="none"/>
+          <path d="M19 4v6h5" stroke="var(--c-zip)" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+          <text x="16" y="23" text-anchor="middle" font-family="Inter" font-weight="700" font-size="6" fill="var(--c-zip)">ZIP</text>
+        </svg>
+        <span class="lbl">Archive</span>
+      </div>
+    </div>
+
+    <div class="preview-grid">
+      <div>
+        <div class="pop-mock">
+          <div class="pop-topbar">⌕ Search and paste…</div>
+          <div class="pop-list">
+            <div class="row-mock">
+              <div class="icn">
+                <svg viewBox="0 0 32 32" fill="none">
+                  <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-pdf)" opacity="0.20"/>
+                  <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-pdf)" stroke-width="2" fill="none"/>
+                  <path d="M19 4v6h5" stroke="var(--c-pdf)" stroke-width="2" stroke-linejoin="round" fill="none"/>
+                  <text x="16" y="23" text-anchor="middle" font-family="Inter" font-weight="700" font-size="7" fill="var(--c-pdf)">PDF</text>
+                </svg>
+              </div>
+              <div class="text">
+                <div class="lbl">Resume 2026</div>
+                <div class="sub">Kevin_Resume_2026.pdf · 142 KB</div>
+              </div>
+              <span class="key">⌘1</span>
+            </div>
+            <div class="row-mock">
+              <div class="icn">
+                <svg viewBox="0 0 32 32" fill="none">
+                  <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-vid)" opacity="0.20"/>
+                  <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-vid)" stroke-width="2" fill="none"/>
+                  <path d="M19 4v6h5" stroke="var(--c-vid)" stroke-width="2" stroke-linejoin="round" fill="none"/>
+                  <text x="16" y="23" text-anchor="middle" font-family="Inter" font-weight="700" font-size="7" fill="var(--c-vid)">MP4</text>
+                </svg>
+              </div>
+              <div class="text">
+                <div class="lbl">Product demo</div>
+                <div class="sub">demo.mp4 · 8.2 MB</div>
+              </div>
+              <span class="key">⌘2</span>
+            </div>
+            <div class="row-mock">
+              <div class="icn">
+                <svg viewBox="0 0 32 32" fill="none">
+                  <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-xls)" opacity="0.20"/>
+                  <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-xls)" stroke-width="2" fill="none"/>
+                  <path d="M19 4v6h5" stroke="var(--c-xls)" stroke-width="2" stroke-linejoin="round" fill="none"/>
+                  <text x="16" y="23" text-anchor="middle" font-family="Inter" font-weight="700" font-size="7" fill="var(--c-xls)">XLS</text>
+                </svg>
+              </div>
+              <div class="text">
+                <div class="lbl">Q1 forecast</div>
+                <div class="sub">forecast.xlsx · 38 KB</div>
+              </div>
+              <span class="key">⌘3</span>
+            </div>
+          </div>
+        </div>
+        <div class="caption">In list-mode rows</div>
+      </div>
+    </div>
+
+    <div class="pros">
+      <div><span class="pro">+</span>Most informative — type readable instantly.</div>
+      <div><span class="pro">+</span>Color-coded but tasteful (not loud).</div>
+      <div><span class="con">−</span>The lettering shrinks tight at 16 px; could be illegible at tray-icon sizes.</div>
+    </div>
+  </div>
+
+
+  <!-- ============================================================
+       STYLE 2 — Document with abstract glyph
+       ============================================================ -->
+  <div class="style-card">
+    <div class="style-head">
+      <span class="style-tag">Style 2</span>
+      <span class="style-name">Document with glyph</span>
+    </div>
+    <p class="style-blurb">
+      Same document outline, but instead of text labels each shows a mini glyph of what's inside (mountain for image, play triangle for video, music notes for audio). More visual / less typographic.
+    </p>
+
+    <div class="icon-row">
+      <!-- Generic FILE -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M19 4v6h5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+        <span class="lbl">File</span>
+      </div>
+      <!-- IMAGE -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-img)" opacity="0.18"/>
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-img)" stroke-width="1.5" fill="none"/>
+          <path d="M19 4v6h5" stroke="var(--c-img)" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+          <path d="M11 22l3-3 2 2 4-4 4 4" stroke="var(--c-img)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          <circle cx="14.5" cy="16" r="1.2" fill="var(--c-img)"/>
+        </svg>
+        <span class="lbl">Image</span>
+      </div>
+      <!-- VIDEO -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-vid)" opacity="0.18"/>
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-vid)" stroke-width="1.5" fill="none"/>
+          <path d="M19 4v6h5" stroke="var(--c-vid)" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+          <path d="M13 17l6 3.5L13 24z" fill="var(--c-vid)"/>
+        </svg>
+        <span class="lbl">Video</span>
+      </div>
+      <!-- AUDIO -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-aud)" opacity="0.18"/>
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-aud)" stroke-width="1.5" fill="none"/>
+          <path d="M19 4v6h5" stroke="var(--c-aud)" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+          <path d="M14 22V15l6-1v7" stroke="var(--c-aud)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          <circle cx="13" cy="22" r="1.4" fill="var(--c-aud)"/>
+          <circle cx="19" cy="21" r="1.4" fill="var(--c-aud)"/>
+        </svg>
+        <span class="lbl">Audio</span>
+      </div>
+      <!-- PDF — keep label for unmistakability -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-pdf)" opacity="0.18"/>
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-pdf)" stroke-width="1.5" fill="none"/>
+          <path d="M19 4v6h5" stroke="var(--c-pdf)" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+          <text x="16" y="23" text-anchor="middle" font-family="Inter" font-weight="700" font-size="6" fill="var(--c-pdf)">PDF</text>
+        </svg>
+        <span class="lbl">PDF</span>
+      </div>
+      <!-- DOC -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-doc)" opacity="0.18"/>
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-doc)" stroke-width="1.5" fill="none"/>
+          <path d="M19 4v6h5" stroke="var(--c-doc)" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+          <path d="M12 17h8M12 20h8M12 23h5" stroke="var(--c-doc)" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <span class="lbl">Document</span>
+      </div>
+      <!-- XLS -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-xls)" opacity="0.18"/>
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-xls)" stroke-width="1.5" fill="none"/>
+          <path d="M19 4v6h5" stroke="var(--c-xls)" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+          <path d="M12 17h9v6h-9zM12 20h9M16 17v6" stroke="var(--c-xls)" stroke-width="1.3" fill="none"/>
+        </svg>
+        <span class="lbl">Sheet</span>
+      </div>
+      <!-- PPT -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-ppt)" opacity="0.18"/>
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-ppt)" stroke-width="1.5" fill="none"/>
+          <path d="M19 4v6h5" stroke="var(--c-ppt)" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+          <rect x="12" y="16" width="9" height="6" stroke="var(--c-ppt)" stroke-width="1.3" fill="none"/>
+          <path d="M12 23h9" stroke="var(--c-ppt)" stroke-width="1.5"/>
+        </svg>
+        <span class="lbl">Slides</span>
+      </div>
+      <!-- ZIP -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-zip)" opacity="0.18"/>
+          <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-zip)" stroke-width="1.5" fill="none"/>
+          <path d="M19 4v6h5" stroke="var(--c-zip)" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+          <path d="M16 5v2M16 9v2M16 13v2M16 17v2" stroke="var(--c-zip)" stroke-width="1.5" stroke-linecap="round"/>
+          <rect x="14" y="20" width="4" height="4" rx="0.5" stroke="var(--c-zip)" stroke-width="1.3" fill="none"/>
+        </svg>
+        <span class="lbl">Archive</span>
+      </div>
+    </div>
+
+    <div class="preview-grid">
+      <div>
+        <div class="pop-mock">
+          <div class="pop-topbar">⌕ Search and paste…</div>
+          <div class="pop-list">
+            <div class="row-mock">
+              <div class="icn">
+                <svg viewBox="0 0 32 32" fill="none">
+                  <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-img)" opacity="0.20"/>
+                  <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-img)" stroke-width="2" fill="none"/>
+                  <path d="M19 4v6h5" stroke="var(--c-img)" stroke-width="2" stroke-linejoin="round" fill="none"/>
+                  <path d="M11 22l3-3 2 2 4-4 4 4" stroke="var(--c-img)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                  <circle cx="14.5" cy="16" r="1.5" fill="var(--c-img)"/>
+                </svg>
+              </div>
+              <div class="text">
+                <div class="lbl">Wisemen brand logo</div>
+                <div class="sub">logo@2x.png · 86 KB</div>
+              </div>
+              <span class="key">⌘1</span>
+            </div>
+            <div class="row-mock">
+              <div class="icn">
+                <svg viewBox="0 0 32 32" fill="none">
+                  <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-vid)" opacity="0.20"/>
+                  <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-vid)" stroke-width="2" fill="none"/>
+                  <path d="M19 4v6h5" stroke="var(--c-vid)" stroke-width="2" stroke-linejoin="round" fill="none"/>
+                  <path d="M13 17l6 3.5L13 24z" fill="var(--c-vid)"/>
+                </svg>
+              </div>
+              <div class="text">
+                <div class="lbl">Product demo</div>
+                <div class="sub">demo.mp4 · 8.2 MB</div>
+              </div>
+              <span class="key">⌘2</span>
+            </div>
+            <div class="row-mock">
+              <div class="icn">
+                <svg viewBox="0 0 32 32" fill="none">
+                  <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="var(--c-doc)" opacity="0.20"/>
+                  <path d="M9 4h10l5 5v18a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="var(--c-doc)" stroke-width="2" fill="none"/>
+                  <path d="M19 4v6h5" stroke="var(--c-doc)" stroke-width="2" stroke-linejoin="round" fill="none"/>
+                  <path d="M12 17h8M12 20h8M12 23h5" stroke="var(--c-doc)" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <div class="text">
+                <div class="lbl">Onboarding doc</div>
+                <div class="sub">onboarding.docx · 24 KB</div>
+              </div>
+              <span class="key">⌘3</span>
+            </div>
+          </div>
+        </div>
+        <div class="caption">In list-mode rows</div>
+      </div>
+    </div>
+
+    <div class="pros">
+      <div><span class="pro">+</span>More visual / icon-driven — feels designed, less spreadsheet-y.</div>
+      <div><span class="pro">+</span>Holds up at 16 px (glyphs simplify better than text).</div>
+      <div><span class="con">−</span>Sheet/Slide/Doc all use "lines" → less differentiated than Style 1.</div>
+    </div>
+  </div>
+
+
+  <!-- ============================================================
+       STYLE 3 — Glyph only (no document frame)
+       ============================================================ -->
+  <div class="style-card">
+    <div class="style-head">
+      <span class="style-tag">Style 3</span>
+      <span class="style-name">Glyph only</span>
+    </div>
+    <p class="style-blurb">
+      Drop the document outline entirely — each kind is just its iconic glyph. Cleanest, most modern; less "file system," more "object." Loses the "this is a file" affordance which other items don't get.
+    </p>
+
+    <div class="icon-row">
+      <!-- Generic — paperclip -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M27 14l-10.5 10.5a7 7 0 0 1-9.9-9.9L19 1.6a5 5 0 0 1 7 7L13.5 21a2.5 2.5 0 0 1-3.5-3.5L20 7.4"/>
+        </svg>
+        <span class="lbl">File</span>
+      </div>
+      <!-- Image — landscape -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none">
+          <rect x="4" y="6" width="24" height="20" rx="2" stroke="var(--c-img)" stroke-width="2"/>
+          <circle cx="11" cy="13" r="2" fill="var(--c-img)"/>
+          <path d="M7 22l6-6 5 5 4-4 4 4" stroke="var(--c-img)" stroke-width="2" stroke-linejoin="round" fill="none"/>
+        </svg>
+        <span class="lbl">Image</span>
+      </div>
+      <!-- Video — play in circle -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none">
+          <circle cx="16" cy="16" r="12" stroke="var(--c-vid)" stroke-width="2"/>
+          <path d="M14 12l7 4-7 4z" fill="var(--c-vid)"/>
+        </svg>
+        <span class="lbl">Video</span>
+      </div>
+      <!-- Audio — waveform -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none" stroke="var(--c-aud)" stroke-width="2" stroke-linecap="round">
+          <path d="M5 16v0"/>
+          <path d="M9 12v8M13 9v14M17 11v10M21 8v16M25 13v6"/>
+        </svg>
+        <span class="lbl">Audio</span>
+      </div>
+      <!-- PDF -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none">
+          <rect x="4" y="6" width="24" height="20" rx="3" fill="var(--c-pdf)" opacity="0.15"/>
+          <rect x="4" y="6" width="24" height="20" rx="3" stroke="var(--c-pdf)" stroke-width="2"/>
+          <text x="16" y="20" text-anchor="middle" font-family="Inter" font-weight="800" font-size="9" fill="var(--c-pdf)">PDF</text>
+        </svg>
+        <span class="lbl">PDF</span>
+      </div>
+      <!-- Document — lined paper -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none" stroke="var(--c-doc)" stroke-width="2" stroke-linecap="round">
+          <path d="M6 12h20M6 16h20M6 20h14"/>
+        </svg>
+        <span class="lbl">Document</span>
+      </div>
+      <!-- Sheet — grid -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none" stroke="var(--c-xls)" stroke-width="2">
+          <rect x="5" y="6" width="22" height="20" rx="2"/>
+          <path d="M5 13h22M5 19h22M16 6v20"/>
+        </svg>
+        <span class="lbl">Sheet</span>
+      </div>
+      <!-- Slides — bar chart-ish -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none" stroke="var(--c-ppt)" stroke-width="2" stroke-linecap="round">
+          <rect x="5" y="6" width="22" height="20" rx="2"/>
+          <path d="M9 22v-5M14 22v-9M19 22v-3M24 22v-7"/>
+        </svg>
+        <span class="lbl">Slides</span>
+      </div>
+      <!-- Archive — box -->
+      <div class="icon-cell">
+        <svg viewBox="0 0 32 32" fill="none" stroke="var(--c-zip)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
+          <path d="M4 10l3-4h18l3 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/>
+          <path d="M4 10h24M12 15h8"/>
+        </svg>
+        <span class="lbl">Archive</span>
+      </div>
+    </div>
+
+    <div class="preview-grid">
+      <div>
+        <div class="pop-mock">
+          <div class="pop-topbar">⌕ Search and paste…</div>
+          <div class="pop-list">
+            <div class="row-mock">
+              <div class="icn">
+                <svg viewBox="0 0 32 32" fill="none">
+                  <rect x="4" y="6" width="24" height="20" rx="3" fill="var(--c-pdf)" opacity="0.15"/>
+                  <rect x="4" y="6" width="24" height="20" rx="3" stroke="var(--c-pdf)" stroke-width="2.5"/>
+                  <text x="16" y="20" text-anchor="middle" font-family="Inter" font-weight="800" font-size="10" fill="var(--c-pdf)">PDF</text>
+                </svg>
+              </div>
+              <div class="text">
+                <div class="lbl">Resume 2026</div>
+                <div class="sub">Kevin_Resume_2026.pdf · 142 KB</div>
+              </div>
+              <span class="key">⌘1</span>
+            </div>
+            <div class="row-mock">
+              <div class="icn">
+                <svg viewBox="0 0 32 32" fill="none">
+                  <circle cx="16" cy="16" r="12" stroke="var(--c-vid)" stroke-width="2.5"/>
+                  <path d="M14 12l7 4-7 4z" fill="var(--c-vid)"/>
+                </svg>
+              </div>
+              <div class="text">
+                <div class="lbl">Product demo</div>
+                <div class="sub">demo.mp4 · 8.2 MB</div>
+              </div>
+              <span class="key">⌘2</span>
+            </div>
+            <div class="row-mock">
+              <div class="icn">
+                <svg viewBox="0 0 32 32" fill="none">
+                  <rect x="4" y="6" width="24" height="20" rx="2" stroke="var(--c-img)" stroke-width="2.5"/>
+                  <circle cx="11" cy="13" r="2" fill="var(--c-img)"/>
+                  <path d="M7 22l6-6 5 5 4-4 4 4" stroke="var(--c-img)" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+                </svg>
+              </div>
+              <div class="text">
+                <div class="lbl">Brand logo</div>
+                <div class="sub">logo@2x.png · 86 KB</div>
+              </div>
+              <span class="key">⌘3</span>
+            </div>
+          </div>
+        </div>
+        <div class="caption">In list-mode rows</div>
+      </div>
+    </div>
+
+    <div class="pros">
+      <div><span class="pro">+</span>Most contemporary; sits well next to the rest of the icon set (URL link, wallet, pin, Aa).</div>
+      <div><span class="pro">+</span>Best at 16 px — no document frame to crush.</div>
+      <div><span class="con">−</span>Loses "file-ness" — a docx row looks like just lines.</div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+  document.getElementById('themeBtn').addEventListener('click', () => {
+    document.body.classList.toggle('theme-light');
+    document.getElementById('themeBtn').textContent =
+      document.body.classList.contains('theme-light') ? 'Toggle dark' : 'Toggle light';
+  });
+</script>
+</body>
+</html>

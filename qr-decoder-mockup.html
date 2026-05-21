@@ -1,0 +1,626 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Restash — QR decoder mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #131316;
+    --bg-elev: #1e1e20;
+    --bg-elev-2: #2a2a2d;
+    --fg: #f2f2f7;
+    --fg-dim: #b8b8be;
+    --fg-muted: #8a8a92;
+    --tint: #f2f2f7;
+    --tint-fg: #1c1c1e;
+    --tint-soft: rgba(255, 255, 255, 0.08);
+    --divider: rgba(255, 255, 255, 0.08);
+    --pop-bg: #f5f5f4;
+    --pop-fg: #1c1c1e;
+    --pop-dim: #5a5a5c;
+    --pop-muted: #8a8a8c;
+    --pop-divider: rgba(0, 0, 0, 0.07);
+    --pop-elev: #ebebe9;
+    --green: #30d158;
+    --orange: #ff9f0a;
+    --tint-blue: #0a84ff;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; min-height: 100vh;
+    background: var(--bg);
+    background-image:
+      radial-gradient(900px 600px at 18% 12%, rgba(94, 58, 165, 0.10) 0%, transparent 60%),
+      radial-gradient(800px 600px at 82% 80%, rgba(30, 60, 140, 0.10) 0%, transparent 60%);
+    color: var(--fg);
+    font: 13px "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 28px;
+    background: rgba(20, 20, 22, 0.55);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--divider);
+  }
+  .topbar h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  .topbar .spacer { flex: 1; }
+
+  main { padding: 28px 28px 80px; max-width: 1240px; margin: 0 auto; }
+  .lead { color: var(--fg-dim); font-size: 14px; max-width: 720px; margin: 0 0 28px; line-height: 1.55; }
+
+  h2 {
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.8px;
+    color: var(--fg-muted);
+    margin: 36px 0 14px;
+  }
+
+  /* ============================================================
+     FLOW — three cards showing trigger → capture → preview
+     ============================================================ */
+  .flow {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+    margin-bottom: 32px;
+  }
+  @media (max-width: 900px) { .flow { grid-template-columns: 1fr; } }
+
+  .flow-card {
+    background: var(--bg-elev);
+    border: 1px solid var(--divider);
+    border-radius: 14px;
+    padding: 20px;
+  }
+  .flow-step {
+    display: inline-block;
+    background: var(--tint);
+    color: var(--tint-fg);
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    text-align: center;
+    line-height: 22px;
+    font-weight: 700; font-size: 11px;
+    margin-bottom: 10px;
+  }
+  .flow-card h3 { margin: 0 0 4px; font-size: 16px; font-weight: 600; }
+  .flow-card p { margin: 0 0 14px; color: var(--fg-dim); font-size: 12.5px; line-height: 1.5; }
+  .flow-card .visual {
+    background: #0a0a0d;
+    border-radius: 10px;
+    padding: 14px;
+    min-height: 160px;
+    display: grid; place-items: center;
+    border: 1px solid var(--divider);
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Step 1: keyboard */
+  .kb-stage {
+    display: flex; gap: 5px; align-items: center; justify-content: center;
+  }
+  .kb-stage .cap {
+    min-width: 36px; height: 42px;
+    background: var(--bg-elev-2);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-bottom-width: 3px;
+    border-radius: 7px;
+    display: grid; place-items: center;
+    font-weight: 700; font-size: 14px;
+    color: var(--fg);
+    padding: 0 8px;
+  }
+  .kb-stage .plus { color: var(--fg-muted); font-weight: 600; }
+
+  /* Step 2: faux screen with selection box around a QR */
+  .screen-mock {
+    width: 100%; height: 100%;
+    background:
+      linear-gradient(135deg, #1a2a4a 0%, #2a1a4a 100%);
+    border-radius: 8px;
+    padding: 18px;
+    position: relative;
+  }
+  .screen-mock::before {
+    content: ''; position: absolute; inset: 0;
+    background: repeating-linear-gradient(45deg, transparent 0 8px, rgba(255,255,255,0.02) 8px 16px);
+    border-radius: 8px;
+  }
+  .selection {
+    position: absolute;
+    left: 36%; top: 22%;
+    width: 56px; height: 56px;
+    border: 2px solid white;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,0.55);
+    border-radius: 4px;
+  }
+  .selection::after {
+    content: ''; position: absolute; inset: -4px;
+    border: 2px dashed rgba(255,255,255,0.45);
+    border-radius: 6px;
+    animation: marching 1.4s linear infinite;
+  }
+  @keyframes marching {
+    from { opacity: 0.5; transform: scale(1); }
+    to   { opacity: 1;   transform: scale(1.02); }
+  }
+  /* Tiny faux QR pattern */
+  .mini-qr {
+    width: 100%; height: 100%;
+    background:
+      conic-gradient(from 0deg, #fff 25%, transparent 25% 50%, #fff 50% 75%, transparent 75%) 0 0/8px 8px,
+      #fff;
+    border-radius: 2px;
+  }
+  .mini-qr::before, .mini-qr::after {
+    content: ''; position: absolute;
+    width: 16px; height: 16px;
+    background: #fff;
+    box-shadow: inset 0 0 0 3px #0a0a0d, inset 0 0 0 5px #fff;
+  }
+  .mini-qr::before { top: 4px; left: 4px; }
+  .mini-qr::after  { top: 4px; right: 4px; }
+
+  /* Step 3: preview popover */
+  .pop {
+    width: 100%; max-width: 280px;
+    background: var(--pop-bg);
+    color: var(--pop-fg);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 18px 40px rgba(0,0,0,0.45);
+  }
+  .pop-head {
+    padding: 9px 11px 7px;
+    border-bottom: 1px solid var(--pop-divider);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .pop-head .qr-mini {
+    width: 24px; height: 24px;
+    background: white;
+    border-radius: 4px;
+    display: grid; place-items: center;
+    box-shadow: 0 0 0 1px var(--pop-divider);
+    flex: 0 0 24px;
+  }
+  .pop-head .qr-mini::before {
+    content: ''; width: 16px; height: 16px;
+    background:
+      linear-gradient(45deg, #1c1c1e 0 25%, transparent 25% 50%, #1c1c1e 50% 75%, transparent 75%) 0 0/4px 4px;
+  }
+  .pop-head .title { font-size: 12.5px; font-weight: 600; color: var(--pop-fg); }
+  .pop-head .meta { font-size: 10px; color: var(--pop-muted); margin-top: 1px; }
+  .pop-body { padding: 12px 11px 10px; }
+  .pop-row { display: flex; align-items: baseline; gap: 8px; font-size: 12px; padding: 4px 0; }
+  .pop-row .key { color: var(--pop-muted); flex: 0 0 60px; }
+  .pop-row .val {
+    flex: 1; min-width: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    color: var(--pop-fg);
+    word-break: break-all;
+  }
+  .pop-actions {
+    padding: 8px 11px 10px;
+    display: flex; gap: 6px;
+    border-top: 1px solid var(--pop-divider);
+    background: var(--pop-elev);
+  }
+  .pop-btn {
+    flex: 1; font: inherit;
+    font-size: 11.5px; font-weight: 600;
+    padding: 7px 10px;
+    border-radius: 7px;
+    border: 1px solid var(--pop-divider);
+    background: white;
+    color: var(--pop-fg);
+    cursor: pointer;
+    text-align: center;
+  }
+  .pop-btn.primary {
+    background: #1c1c1e;
+    color: white;
+    border-color: transparent;
+  }
+  .pop-brandbar {
+    display: flex; justify-content: center; align-items: center; gap: 5px;
+    padding: 5px 10px;
+    border-top: 1px solid var(--pop-divider);
+    background: var(--pop-elev);
+    color: var(--pop-muted);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  .pop-brandbar svg { width: 10px; height: 10px; opacity: 0.7; }
+
+  /* ============================================================
+     VARIATIONS — preview card for each QR content type
+     ============================================================ */
+  .variations {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 24px;
+    align-items: flex-start;
+  }
+  .var-card {
+    background: var(--bg-elev);
+    border: 1px solid var(--divider);
+    border-radius: 14px;
+    padding: 18px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .var-head { display: flex; align-items: baseline; gap: 10px; }
+  .var-tag {
+    display: inline-block;
+    background: rgba(255,255,255,0.08);
+    color: var(--fg-dim);
+    padding: 2px 8px; border-radius: 999px;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .var-name { font-size: 15px; font-weight: 600; }
+  .var-blurb {
+    color: var(--fg-dim); font-size: 12.5px; line-height: 1.5;
+    margin: 0;
+  }
+  .var-card .pop { margin: 0 auto; }
+
+  /* Hero icon shown above the value (small chain badge, link glyph, etc.) */
+  .hero-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 4px 4px;
+  }
+  .hero-row .hero-ic {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    display: grid; place-items: center;
+    flex: 0 0 36px;
+  }
+  .hero-row .hero-ic svg { width: 20px; height: 20px; }
+  .hero-row .hero-ic img { width: 100%; height: 100%; display: block; }
+  .hero-row .hero-title { font-size: 13.5px; font-weight: 600; color: var(--pop-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hero-row .hero-sub { font-size: 10.5px; color: var(--pop-muted); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ============================================================
+     NOTES
+     ============================================================ */
+  .notes {
+    background: var(--bg-elev);
+    border: 1px solid var(--divider);
+    border-radius: 12px;
+    padding: 18px 22px;
+    color: var(--fg-dim);
+    font-size: 12.5px;
+    line-height: 1.6;
+  }
+  .notes h3 { margin: 0 0 8px; font-size: 13px; color: var(--fg); font-weight: 600; }
+  .notes code {
+    background: rgba(255,255,255,0.08);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 12px;
+    color: var(--fg);
+  }
+  .notes ul { margin: 6px 0; padding-left: 18px; }
+  .notes li { margin-bottom: 4px; }
+
+  kbd {
+    font-family: ui-monospace, monospace;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.16);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 11px;
+    color: var(--fg);
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Restash — QR decoder</h1>
+  <div class="spacer"></div>
+</div>
+
+<main>
+
+  <p class="lead">
+    See a QR code on screen? Hit a hotkey, drag a box around it, and Restash decodes it in place — no phone, no camera, no extra app. The preview tells you exactly what's encoded and lets you act on it.
+  </p>
+
+
+  <!-- ============================================================
+       FLOW
+       ============================================================ -->
+  <h2>How it works</h2>
+  <div class="flow">
+
+    <!-- Step 1: hotkey -->
+    <div class="flow-card">
+      <span class="flow-step">1</span>
+      <h3>Hit the hotkey</h3>
+      <p>Anywhere on your Mac, regardless of what app is focused.</p>
+      <div class="visual">
+        <div class="kb-stage">
+          <div class="cap">⌘</div>
+          <div class="plus">+</div>
+          <div class="cap">⇧</div>
+          <div class="plus">+</div>
+          <div class="cap">Q</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 2: select -->
+    <div class="flow-card">
+      <span class="flow-step">2</span>
+      <h3>Drag a box around it</h3>
+      <p>Same selection UX as macOS screenshot (⌘⇧4). Press <kbd>Esc</kbd> to cancel.</p>
+      <div class="visual">
+        <div class="screen-mock">
+          <div class="selection">
+            <div style="position: absolute; inset: 0; background: white; border-radius: 2px; overflow: hidden;">
+              <div style="position: absolute; inset: 6px; background:
+                linear-gradient(90deg, #000 0 6%, #fff 6% 12%, #000 12% 22%, #fff 22% 28%, #000 28% 38%, #fff 38% 50%, #000 50% 60%, #fff 60% 68%, #000 68% 80%, #fff 80% 88%, #000 88% 100%) 0 0/100% 6px,
+                linear-gradient(180deg, #000 0 7%, #fff 7% 14%, #000 14% 24%, #fff 24% 30%, #000 30% 40%, #fff 40% 52%, #000 52% 62%, #fff 62% 70%, #000 70% 82%, #fff 82% 90%, #000 90% 100%) 0 0/6px 100%;
+                background-blend-mode: multiply;"></div>
+              <div style="position: absolute; top: 5px; left: 5px; width: 14px; height: 14px; background: #000; box-shadow: inset 0 0 0 3px #fff, inset 0 0 0 5px #000;"></div>
+              <div style="position: absolute; top: 5px; right: 5px; width: 14px; height: 14px; background: #000; box-shadow: inset 0 0 0 3px #fff, inset 0 0 0 5px #000;"></div>
+              <div style="position: absolute; bottom: 5px; left: 5px; width: 14px; height: 14px; background: #000; box-shadow: inset 0 0 0 3px #fff, inset 0 0 0 5px #000;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 3: preview -->
+    <div class="flow-card">
+      <span class="flow-step">3</span>
+      <h3>Preview &amp; act</h3>
+      <p>Decoded content + one-tap actions. <kbd>↵</kbd> = primary action, <kbd>S</kbd> = save to Restash.</p>
+      <div class="visual" style="background: #1a1a1d;">
+        <div class="pop">
+          <div class="pop-head">
+            <div class="qr-mini"></div>
+            <div>
+              <div class="title">QR decoded · URL</div>
+              <div class="meta">cfacryptopro.com</div>
+            </div>
+          </div>
+          <div class="pop-body">
+            <div class="pop-row">
+              <span class="val" style="font-family: 'Inter', sans-serif; font-size: 12.5px; font-weight: 500;">CFA Crypto Pro</span>
+            </div>
+            <div class="pop-row">
+              <span class="val">https://cfacryptopro.com</span>
+            </div>
+          </div>
+          <div class="pop-actions">
+            <button class="pop-btn">Save</button>
+            <button class="pop-btn primary">Open</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+
+  <!-- ============================================================
+       VARIATIONS — preview per content type
+       ============================================================ -->
+  <h2>Preview cards by content type</h2>
+  <div class="variations">
+
+    <!-- URL -->
+    <div class="var-card">
+      <div class="var-head">
+        <span class="var-tag">Type 1</span>
+        <span class="var-name">URL</span>
+      </div>
+      <p class="var-blurb">Most common case. Show domain prominently; primary action opens in default browser; save adds as a URL item to Restash.</p>
+      <div class="pop">
+        <div class="pop-head">
+          <div class="qr-mini"></div>
+          <div>
+            <div class="title">QR decoded · URL</div>
+            <div class="meta">wisemenalpha.com</div>
+          </div>
+        </div>
+        <div class="pop-body">
+          <div class="hero-row">
+            <div class="hero-ic" style="background: rgba(0, 122, 255, 0.10); color: #007aff;">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10.6 14.6a4 4 0 0 0 5.66 0l3.18-3.18a4 4 0 0 0-5.66-5.66l-1.59 1.59 1.41 1.41 1.59-1.59a2 2 0 0 1 2.83 2.83l-3.18 3.18a2 2 0 0 1-2.83 0 1 1 0 0 0-1.41 1.41z"/><path d="M13.4 9.4a4 4 0 0 0-5.66 0L4.56 12.58a4 4 0 0 0 5.66 5.66l1.59-1.59-1.41-1.41-1.59 1.59a2 2 0 0 1-2.83-2.83l3.18-3.18a2 2 0 0 1 2.83 0 1 1 0 0 0 1.41-1.41z"/></svg>
+            </div>
+            <div style="min-width: 0; flex: 1;">
+              <div class="hero-title">Wisemen Alpha</div>
+              <div class="hero-sub">wisemenalpha.com/linktree</div>
+            </div>
+          </div>
+          <div class="pop-row">
+            <span class="val" style="font-size: 10.5px; color: var(--pop-muted);">https://wisemenalpha.com/linktree</span>
+          </div>
+        </div>
+        <div class="pop-actions">
+          <button class="pop-btn">Save</button>
+          <button class="pop-btn">Copy</button>
+          <button class="pop-btn primary">Open ↵</button>
+        </div>
+        <div class="pop-brandbar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="7" rx="1.5"/><path d="M6 8h12"/><path d="M8 5h8"/></svg>
+          Restash
+        </div>
+      </div>
+    </div>
+
+
+    <!-- Wallet -->
+    <div class="var-card">
+      <div class="var-head">
+        <span class="var-tag">Type 2</span>
+        <span class="var-name">Crypto wallet</span>
+      </div>
+      <p class="var-blurb">Restash detects the chain from address format (SOL base58, ETH hex, BTC bech32, etc.) and shows the matching badge. Save creates a pre-labelled crypto item.</p>
+      <div class="pop">
+        <div class="pop-head">
+          <div class="qr-mini"></div>
+          <div>
+            <div class="title">QR decoded · Solana address</div>
+            <div class="meta">SOL · base58</div>
+          </div>
+        </div>
+        <div class="pop-body">
+          <div class="hero-row">
+            <div class="hero-ic" style="background: #000; padding: 6px;">
+              <svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#000"/><path d="M9.93 19.69a.59.59 0 0 1 .41-.17h14.37a.29.29 0 0 1 .2.5l-2.83 2.81a.59.59 0 0 1-.42.17H7.29a.29.29 0 0 1-.2-.5l2.84-2.81zm0-10.52A.59.59 0 0 1 10.34 9h14.37c.26 0 .39.31.2.5l-2.83 2.81a.59.59 0 0 1-.42.17H7.29a.29.29 0 0 1-.2-.5L9.93 9.17zm12.15 5.23a.59.59 0 0 0-.42-.17H7.29a.29.29 0 0 0-.2.5l2.84 2.81c.11.11.26.17.41.17h14.37a.29.29 0 0 0 .2-.5l-2.83-2.81z" fill="#fff"/></svg>
+            </div>
+            <div style="min-width: 0; flex: 1;">
+              <div class="hero-title">Solana address</div>
+              <div class="hero-sub">SOL · 44 chars · base58</div>
+            </div>
+          </div>
+          <div class="pop-row">
+            <span class="val" style="font-size: 10px; color: var(--pop-muted);">CJbUGxnVG2oXdsYD2dVVkhkoR8WQJEjch35VRa7xifsi</span>
+          </div>
+        </div>
+        <div class="pop-actions">
+          <button class="pop-btn">Save as wallet</button>
+          <button class="pop-btn">Copy</button>
+          <button class="pop-btn primary">Solscan ↵</button>
+        </div>
+        <div class="pop-brandbar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="7" rx="1.5"/><path d="M6 8h12"/><path d="M8 5h8"/></svg>
+          Restash
+        </div>
+      </div>
+    </div>
+
+
+    <!-- Wi-Fi -->
+    <div class="var-card">
+      <div class="var-head">
+        <span class="var-tag">Type 3</span>
+        <span class="var-name">Wi-Fi credentials</span>
+      </div>
+      <p class="var-blurb">QR codes at cafés / Airbnbs encode <code>WIFI:S:…;T:WPA;P:…</code>. Restash parses the network name, password, security type, and offers a one-click "Copy password" + "Join network" via macOS.</p>
+      <div class="pop">
+        <div class="pop-head">
+          <div class="qr-mini"></div>
+          <div>
+            <div class="title">QR decoded · Wi-Fi</div>
+            <div class="meta">WPA2</div>
+          </div>
+        </div>
+        <div class="pop-body">
+          <div class="hero-row">
+            <div class="hero-ic" style="background: rgba(48, 209, 88, 0.14); color: var(--green);">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9.5a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8 15.5a5 5 0 0 1 8 0"/><circle cx="12" cy="19" r="1.2" fill="currentColor"/></svg>
+            </div>
+            <div style="min-width: 0; flex: 1;">
+              <div class="hero-title">Wisemen Café Wi-Fi</div>
+              <div class="hero-sub">WPA2 · password ready to copy</div>
+            </div>
+          </div>
+          <div class="pop-row">
+            <span class="key">Password</span>
+            <span class="val">latte42!coffee</span>
+          </div>
+        </div>
+        <div class="pop-actions">
+          <button class="pop-btn">Save</button>
+          <button class="pop-btn primary">Copy password ↵</button>
+        </div>
+        <div class="pop-brandbar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="7" rx="1.5"/><path d="M6 8h12"/><path d="M8 5h8"/></svg>
+          Restash
+        </div>
+      </div>
+    </div>
+
+
+    <!-- Plain text -->
+    <div class="var-card">
+      <div class="var-head">
+        <span class="var-tag">Type 4</span>
+        <span class="var-name">Plain text / unknown</span>
+      </div>
+      <p class="var-blurb">Anything that isn't a recognized URL, wallet, or Wi-Fi falls here — phone numbers, vCards, raw strings, app deep-links. Copy goes to clipboard; Save stores as a text item.</p>
+      <div class="pop">
+        <div class="pop-head">
+          <div class="qr-mini"></div>
+          <div>
+            <div class="title">QR decoded · Text</div>
+            <div class="meta">218 characters</div>
+          </div>
+        </div>
+        <div class="pop-body">
+          <div class="hero-row">
+            <div class="hero-ic" style="background: rgba(255,255,255,0.08); color: var(--pop-dim);">
+              <svg viewBox="0 0 24 24" fill="currentColor"><text x="3" y="17" font-family="Inter" font-weight="700" font-size="15">A</text><text x="13" y="19" font-family="Inter" font-weight="400" font-size="12">a</text></svg>
+            </div>
+            <div style="min-width: 0; flex: 1;">
+              <div class="hero-title">Text content</div>
+              <div class="hero-sub">No URL or wallet detected</div>
+            </div>
+          </div>
+          <div class="pop-row">
+            <span class="val" style="font-family: 'Inter', sans-serif; font-size: 11.5px; max-height: 60px; overflow: hidden; line-height: 1.4; color: var(--pop-fg);">Wisemen Morning Tea is live!  May 19, 2026 with @Docsthename20 — 🤎 and 🔁 this post. Join the Wisemen FREE Telegram, 🔗 in bio.</span>
+          </div>
+        </div>
+        <div class="pop-actions">
+          <button class="pop-btn">Save</button>
+          <button class="pop-btn primary">Copy ↵</button>
+        </div>
+        <div class="pop-brandbar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="7" rx="1.5"/><path d="M6 8h12"/><path d="M8 5h8"/></svg>
+          Restash
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+
+  <!-- ============================================================
+       IMPLEMENTATION NOTES
+       ============================================================ -->
+  <h2>Implementation notes</h2>
+  <div class="notes">
+    <h3>Hotkey + capture</h3>
+    <ul>
+      <li>Default: <kbd>⌘⇧Q</kbd> (configurable in Settings, same recorder as the main hotkey).</li>
+      <li>For region selection, shell out to <code>screencapture -i -s</code> (built-in macOS) — captures the region as a temp PNG and returns. Free, zero deps, same UX as <kbd>⌘⇧4</kbd>.</li>
+      <li>Cancellation is automatic (<code>screencapture</code> returns nothing on Esc).</li>
+    </ul>
+    <h3>Decode</h3>
+    <ul>
+      <li>Native: <code>VNDetectBarcodesRequest</code> from macOS Vision framework via a small Swift helper. Detects QR + many other formats (Code 128, EAN, Data Matrix, …).</li>
+      <li>JS fallback: <code>jsqr</code> npm package in the main process if Vision is unavailable.</li>
+      <li>If no QR found in the captured region → friendly "No QR code found" preview with a "Try again" button.</li>
+    </ul>
+    <h3>Content detection</h3>
+    <ul>
+      <li><strong>URL:</strong> starts with <code>http(s)://</code> or has a recognized TLD. Strip tracking params on copy/save (existing toggle).</li>
+      <li><strong>Wallet:</strong> regex match per chain. SOL = 32–44 base58. ETH = <code>0x</code> + 40 hex. BTC = <code>bc1…</code>, <code>1…</code>, or <code>3…</code>.</li>
+      <li><strong>Wi-Fi:</strong> starts with <code>WIFI:</code>. Parse <code>S:</code>, <code>T:</code>, <code>P:</code> fields.</li>
+      <li><strong>vCard:</strong> starts with <code>BEGIN:VCARD</code>. Parse name + phone + email.</li>
+      <li><strong>Otherwise:</strong> plain text.</li>
+    </ul>
+    <h3>Save flow</h3>
+    <ul>
+      <li>"Save" appends to the user's currently-selected stash (same default as the main editor).</li>
+      <li>Pre-fills label based on detected type — URL → site title (fetched on save); Wallet → chain name; Wi-Fi → SSID; Text → first 40 chars.</li>
+    </ul>
+  </div>
+
+</main>
+
+</body>
+</html>

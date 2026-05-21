@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Restash — Upgrade nudge options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #1e1e20; --bg-elev: #2a2a2d; --bg-elev-2: #34343a;
+    --fg: #f2f2f7; --fg-dim: #b8b8be; --fg-muted: #8a8a92;
+    --tint: #f2f2f7; --tint-fg: #1c1c1e;
+    --divider: rgba(255,255,255,0.08);
+    --orange: #e0b341;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; min-height: 100vh;
+    background: radial-gradient(800px 600px at 20% 10%, rgba(94,58,165,0.12) 0%, transparent 60%), #0e0e12;
+    color: #f2f2f7;
+    font: 14px "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  }
+  .topbar {
+    position: sticky; top: 0; z-index: 10;
+    padding: 14px 28px;
+    background: rgba(20,20,22,0.6); backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--divider);
+  }
+  .topbar h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  main { padding: 30px 28px 80px; max-width: 1200px; margin: 0 auto; }
+  .lead { color: var(--fg-dim); font-size: 13.5px; max-width: 700px; margin: 0 0 28px; line-height: 1.55; }
+
+  .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; justify-items: center; }
+  @media (max-width: 1000px) { .row { grid-template-columns: 1fr; } }
+  .col { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .tag {
+    background: rgba(255,255,255,0.08); color: var(--fg-dim);
+    padding: 3px 11px; border-radius: 999px;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px;
+  }
+  .col-name { font-size: 15px; font-weight: 600; }
+  .blurb { color: var(--fg-dim); font-size: 12px; line-height: 1.5; text-align: center; max-width: 290px; }
+
+  /* popover card */
+  .card {
+    width: 300px; height: 380px;
+    background: var(--bg);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 14px; overflow: hidden;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+    display: flex; flex-direction: column; position: relative;
+  }
+  .topsearch {
+    display: flex; align-items: center; gap: 6px;
+    padding: 9px 11px; border-bottom: 1px solid var(--divider);
+    color: var(--fg-muted); font-size: 13px;
+  }
+  .list { flex: 1; overflow: hidden; padding: 4px 0; }
+  .item {
+    display: flex; align-items: center; gap: 9px;
+    padding: 7px 11px; font-size: 12.5px;
+  }
+  .item .ic {
+    width: 22px; height: 22px; border-radius: 6px;
+    background: rgba(255,255,255,0.08);
+    display: grid; place-items: center; flex: 0 0 22px;
+    color: var(--fg-dim);
+  }
+  .item .ic svg { width: 13px; height: 13px; }
+  .item .lbl { flex: 1; }
+  .item .key { font: 10px ui-monospace, monospace; color: var(--fg-muted); }
+  .foot {
+    display: flex; align-items: center; gap: 4px;
+    padding: 7px 9px; border-top: 1px solid var(--divider);
+    font-size: 12px; color: var(--fg-dim);
+  }
+  .foot .spacer { flex: 1; }
+  .foot .fbtn { color: var(--fg-muted); font-size: 13px; padding: 2px 5px; }
+
+  /* ============ A: inline banner ============ */
+  .nudge-banner {
+    display: flex; align-items: center; gap: 9px;
+    margin: 6px 8px;
+    padding: 8px 10px;
+    background: rgba(224,179,65,0.12);
+    border: 1px solid rgba(224,179,65,0.30);
+    border-radius: 9px;
+  }
+  .nudge-banner .nb-ic { color: var(--orange); flex: 0 0 16px; }
+  .nudge-banner .nb-ic svg { width: 16px; height: 16px; display: block; }
+  .nudge-banner .nb-text { flex: 1; min-width: 0; }
+  .nudge-banner .nb-title { font-size: 11.5px; font-weight: 600; }
+  .nudge-banner .nb-sub { font-size: 10px; color: var(--fg-muted); margin-top: 1px; }
+  .nudge-banner .nb-btn {
+    font: inherit; font-size: 11px; font-weight: 700;
+    background: var(--tint); color: var(--tint-fg);
+    border: 0; border-radius: 6px; padding: 5px 10px; cursor: pointer;
+    white-space: nowrap;
+  }
+
+  /* ============ B: mini-card overlay ============ */
+  .nudge-overlay {
+    position: absolute; inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: grid; place-items: center;
+    border-radius: 14px;
+  }
+  .nudge-mini {
+    width: 230px;
+    background: var(--bg-elev);
+    border: 1px solid var(--divider);
+    border-radius: 12px;
+    padding: 18px 16px 14px;
+    text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+  }
+  .nudge-mini .nm-ic {
+    width: 42px; height: 42px; border-radius: 11px;
+    background: rgba(224,179,65,0.16); color: var(--orange);
+    display: grid; place-items: center;
+  }
+  .nudge-mini .nm-ic svg { width: 22px; height: 22px; }
+  .nudge-mini .nm-title { font-size: 14px; font-weight: 700; }
+  .nudge-mini .nm-sub { font-size: 11.5px; color: var(--fg-dim); line-height: 1.45; }
+  .nudge-mini .nm-actions { display: flex; flex-direction: column; gap: 6px; width: 100%; margin-top: 4px; }
+  .nudge-mini .nm-primary {
+    font: inherit; font-size: 12.5px; font-weight: 700;
+    background: var(--tint); color: var(--tint-fg);
+    border: 0; border-radius: 8px; padding: 9px; cursor: pointer;
+  }
+  .nudge-mini .nm-ghost {
+    font: inherit; font-size: 11.5px; font-weight: 500;
+    background: transparent; color: var(--fg-muted);
+    border: 0; padding: 5px; cursor: pointer;
+  }
+
+  /* ============ C: action toast ============ */
+  .nudge-toast {
+    position: absolute; left: 12px; right: 12px; bottom: 48px;
+    display: flex; align-items: center; gap: 9px;
+    background: var(--bg-elev-2);
+    border: 1px solid var(--divider);
+    border-radius: 10px;
+    padding: 9px 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+  }
+  .nudge-toast .nt-ic { color: var(--orange); flex: 0 0 16px; }
+  .nudge-toast .nt-ic svg { width: 16px; height: 16px; display: block; }
+  .nudge-toast .nt-text { flex: 1; min-width: 0; font-size: 11.5px; }
+  .nudge-toast .nt-sub { color: var(--fg-muted); font-size: 10px; margin-top: 1px; }
+  .nudge-toast .nt-btn {
+    font: inherit; font-size: 11px; font-weight: 700;
+    background: var(--tint); color: var(--tint-fg);
+    border: 0; border-radius: 6px; padding: 5px 10px; cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .lock-svg, .bolt-svg { }
+
+  .ctx-note {
+    margin-top: 4px; font-size: 10.5px; color: var(--fg-muted);
+    text-align: center;
+  }
+  .pros { color: var(--fg-dim); font-size: 12px; line-height: 1.55; }
+  .pros .pro { color: #30d158; font-weight: 600; margin-right: 4px; }
+  .pros .con { color: var(--orange); font-weight: 600; margin-right: 4px; }
+</style>
+</head>
+<body>
+<div class="topbar"><h1>Restash — Upgrade nudges</h1></div>
+<main>
+  <p class="lead">
+    What the user sees when they hit a free-tier limit (here: the 15-item cap). The nudge must point to the billing page without punishing them — never destroys data, always escapable. Three placements below.
+  </p>
+
+  <div class="row">
+
+    <!-- ============================================================
+         A — Inline banner
+         ============================================================ -->
+    <div class="col">
+      <span class="tag">Option A</span>
+      <div class="col-name">Inline banner</div>
+      <div class="card">
+        <div class="topsearch">⌕ Search and paste…</div>
+        <div class="nudge-banner">
+          <span class="nb-ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+          </span>
+          <span class="nb-text">
+            <span class="nb-title">You've used all 15 free items</span>
+            <span class="nb-sub">Upgrade for unlimited saves</span>
+          </span>
+          <button class="nb-btn">Upgrade</button>
+        </div>
+        <div class="list">
+          <div class="item"><span class="ic">₿</span><span class="lbl">Wisemen Wallet</span><span class="key">⌘1</span></div>
+          <div class="item"><span class="ic">₿</span><span class="lbl">Wisemen Marketing</span><span class="key">⌘2</span></div>
+          <div class="item"><span class="ic">Aa</span><span class="lbl">Morning Tea</span><span class="key">⌘3</span></div>
+          <div class="item"><span class="ic">🔗</span><span class="lbl">Link Tree</span><span class="key">⌘4</span></div>
+        </div>
+        <div class="foot">＋ New<span class="spacer"></span><span class="fbtn">☾</span><span class="fbtn">⚙</span><span class="fbtn">＄</span></div>
+      </div>
+      <div class="ctx-note">Persistent — stays at the top of the list while over the limit.</div>
+      <div class="pros">
+        <div><span class="pro">+</span>Always-visible reminder, never interrupts.</div>
+        <div><span class="pro">+</span>Calm — no popup, no blocking.</div>
+        <div><span class="con">−</span>Easy to bank-blindness past it after a while.</div>
+      </div>
+    </div>
+
+
+    <!-- ============================================================
+         B — Mini-card overlay
+         ============================================================ -->
+    <div class="col">
+      <span class="tag">Option B — recommended</span>
+      <div class="col-name">Mini-card</div>
+      <div class="card">
+        <div class="topsearch">⌕ Search and paste…</div>
+        <div class="list">
+          <div class="item"><span class="ic">₿</span><span class="lbl">Wisemen Wallet</span><span class="key">⌘1</span></div>
+          <div class="item"><span class="ic">₿</span><span class="lbl">Wisemen Marketing</span><span class="key">⌘2</span></div>
+          <div class="item"><span class="ic">Aa</span><span class="lbl">Morning Tea</span><span class="key">⌘3</span></div>
+          <div class="item"><span class="ic">🔗</span><span class="lbl">Link Tree</span><span class="key">⌘4</span></div>
+        </div>
+        <div class="foot">＋ New<span class="spacer"></span><span class="fbtn">☾</span><span class="fbtn">⚙</span><span class="fbtn">＄</span></div>
+        <div class="nudge-overlay">
+          <div class="nudge-mini">
+            <div class="nm-ic">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+            </div>
+            <div class="nm-title">Free limit reached</div>
+            <div class="nm-sub">You've saved 15 of 15 items. Upgrade to Pro for unlimited stashes, items &amp; pins.</div>
+            <div class="nm-actions">
+              <button class="nm-primary">See plans</button>
+              <button class="nm-ghost">Not now</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ctx-note">Pops the moment the user tries the blocked action.</div>
+      <div class="pros">
+        <div><span class="pro">+</span>Impossible to miss — fires exactly when relevant.</div>
+        <div><span class="pro">+</span>Clear context (15 of 15) + escape hatch.</div>
+        <div><span class="con">−</span>A popup; use once per action, not nagging.</div>
+      </div>
+    </div>
+
+
+    <!-- ============================================================
+         C — Action toast
+         ============================================================ -->
+    <div class="col">
+      <span class="tag">Option C</span>
+      <div class="col-name">Action toast</div>
+      <div class="card">
+        <div class="topsearch">⌕ Search and paste…</div>
+        <div class="list">
+          <div class="item"><span class="ic">₿</span><span class="lbl">Wisemen Wallet</span><span class="key">⌘1</span></div>
+          <div class="item"><span class="ic">₿</span><span class="lbl">Wisemen Marketing</span><span class="key">⌘2</span></div>
+          <div class="item"><span class="ic">Aa</span><span class="lbl">Morning Tea</span><span class="key">⌘3</span></div>
+          <div class="item"><span class="ic">🔗</span><span class="lbl">Link Tree</span><span class="key">⌘4</span></div>
+          <div class="item"><span class="ic">📍</span><span class="lbl">Home</span><span class="key">⌘5</span></div>
+        </div>
+        <div class="foot">＋ New<span class="spacer"></span><span class="fbtn">☾</span><span class="fbtn">⚙</span><span class="fbtn">＄</span></div>
+        <div class="nudge-toast">
+          <span class="nt-ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+          </span>
+          <span class="nt-text">
+            Item limit reached (15/15)
+            <span class="nt-sub">Free plan</span>
+          </span>
+          <button class="nt-btn">Upgrade</button>
+        </div>
+      </div>
+      <div class="ctx-note">Slides up on the blocked action, auto-hides after ~5 s.</div>
+      <div class="pros">
+        <div><span class="pro">+</span>Lightweight — no overlay, doesn't block.</div>
+        <div><span class="pro">+</span>Fires exactly on the action.</div>
+        <div><span class="con">−</span>Transient — easy to miss if you look away.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="margin-top: 34px; padding: 16px 20px; background: var(--bg-elev); border-radius: 12px; color: var(--fg-dim); font-size: 12.5px; line-height: 1.6;">
+    <strong style="color: var(--fg);">My pick: Option B (mini-card)</strong> for the hard blocks — stash / item / pin limits — because it fires exactly when the user is blocked, states the limit plainly, and has a one-tap path to plans plus a "Not now". For the <strong>file-size</strong> limit you already have the inline orange warning row in the editor — just add an "Upgrade for 5 GB" link to it (a touch of Option A). So: <strong>B for blocked actions, a small A-style link on the file warning.</strong> Option C is too easy to miss for something the user needs to act on.
+  </div>
+</main>
+</body>
+</html>

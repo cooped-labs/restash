@@ -1,0 +1,744 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Restash — Feature demos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --fg: #f2f2f7; --fg-dim: #b8b8be; --fg-muted: #8a8a92;
+    --tint: #f2f2f7; --tint-fg: #1c1c1e;
+    --divider: rgba(255,255,255,0.08);
+    --pop-bg: #f5f5f4; --pop-fg: #1c1c1e; --pop-muted: #8a8a8c; --pop-div: rgba(0,0,0,0.07); --pop-elev: #ebebe9;
+    --green: #30d158; --gold: #d99e2b; --blue: #007aff;
+    --bubble-in: #2c2c30; --bubble-out: #007aff;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background:
+      radial-gradient(1000px 700px at 15% 0%, rgba(94,58,165,0.16) 0%, transparent 55%),
+      radial-gradient(900px 700px at 90% 40%, rgba(20,60,140,0.14) 0%, transparent 55%),
+      #0c0c10;
+    color: var(--fg);
+    font: 15px "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 28px; }
+
+  /* hero */
+  .hero { text-align: center; padding: 90px 0 50px; }
+  .brand-mark {
+    width: 72px; height: 72px; margin: 0 auto 22px;
+    background: var(--tint); color: var(--tint-fg);
+    border-radius: 18px; display: grid; place-items: center;
+    box-shadow: 0 12px 36px rgba(0,0,0,0.5);
+  }
+  .brand-mark svg { width: 38px; height: 38px; }
+  .hero h1 { margin: 0 0 10px; font-size: 44px; font-weight: 800; letter-spacing: -1.5px; }
+  .hero p { margin: 0 auto; max-width: 480px; color: var(--fg-dim); font-size: 16px; line-height: 1.55; }
+
+  /* section */
+  .section { padding: 56px 0; border-top: 1px solid var(--divider); }
+  .eyebrow {
+    font-size: 11px; font-weight: 800; letter-spacing: 1.4px;
+    text-transform: uppercase; color: var(--fg-muted); margin-bottom: 10px;
+  }
+  .section h2 { margin: 0 0 10px; font-size: 28px; font-weight: 700; letter-spacing: -0.6px; }
+  .section .desc { color: var(--fg-dim); font-size: 15px; line-height: 1.6; max-width: 560px; margin: 0 0 28px; }
+
+  /* ============ 1 — item kinds grid ============ */
+  .kinds {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+  }
+  .kind {
+    background: rgba(255,255,255,0.035);
+    border: 1px solid var(--divider);
+    border-radius: 13px;
+    padding: 16px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .kind .k-ic {
+    width: 38px; height: 38px; border-radius: 10px;
+    background: rgba(255,255,255,0.07);
+    display: grid; place-items: center; color: var(--fg);
+  }
+  .kind .k-ic svg { width: 20px; height: 20px; }
+  .kind .k-ic img { width: 38px; height: 38px; display: block; border-radius: 10px; }
+  .kind .k-name { font-size: 14px; font-weight: 600; }
+  .kind .k-eg { font-size: 12px; color: var(--fg-muted); line-height: 1.45; }
+
+  /* ============ shared popover card ============ */
+  .pop {
+    width: 290px;
+    background: var(--pop-bg); color: var(--pop-fg);
+    border-radius: 13px; overflow: hidden;
+    box-shadow: 0 22px 50px rgba(0,0,0,0.5);
+  }
+  .pop-top {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 11px; border-bottom: 1px solid var(--pop-div);
+    color: var(--pop-muted); font-size: 12.5px;
+  }
+  .pop-row {
+    display: flex; align-items: center; gap: 9px;
+    padding: 7px 11px; font-size: 12.5px;
+  }
+  .pop-row.sel { background: #1c1c1e; color: #fff; }
+  .pop-row .ic {
+    width: 22px; height: 22px; border-radius: 6px;
+    display: grid; place-items: center; flex: 0 0 22px;
+    background: rgba(0,0,0,0.06);
+  }
+  .pop-row.sel .ic { background: rgba(255,255,255,0.2); }
+  .pop-row .ic svg { width: 13px; height: 13px; }
+  .pop-row .ic img { width: 22px; height: 22px; border-radius: 6px; display: block; }
+  .pop-row .lbl { flex: 1; }
+  .pop-row .key { font: 10px ui-monospace, monospace; color: var(--pop-muted); }
+  .pop-row.sel .key { color: rgba(255,255,255,0.85); }
+
+  /* ============ 2 — speed numpad ============ */
+  .speed-stage { display: flex; align-items: center; gap: 30px; flex-wrap: wrap; }
+  .numpad {
+    width: 230px; background: var(--pop-bg);
+    border-radius: 13px; overflow: hidden; padding: 7px;
+    box-shadow: 0 22px 50px rgba(0,0,0,0.5);
+  }
+  .numpad .np-head { text-align: center; font-size: 12px; font-weight: 700; color: var(--pop-fg); padding: 4px 0 7px; }
+  .np-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 5px; }
+  .np-tile {
+    aspect-ratio: 1; border-radius: 9px;
+    background: var(--pop-elev);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; position: relative; padding: 4px;
+  }
+  .np-tile.hot { background: #1c1c1e; }
+  .np-tile.hot .np-lbl { color: #fff; }
+  .np-tile .np-num { position: absolute; top: 3px; right: 6px; font: 9px ui-monospace,monospace; color: var(--pop-muted); }
+  .np-tile.hot .np-num { color: rgba(255,255,255,0.6); }
+  .np-tile .np-ic svg { width: 16px; height: 16px; color: var(--pop-fg); }
+  .np-tile.hot .np-ic svg { color: #fff; }
+  .np-tile .np-ic img { width: 20px; height: 20px; border-radius: 5px; }
+  .np-tile .np-lbl { font-size: 9px; font-weight: 500; color: var(--pop-fg); text-align: center; line-height: 1.1; }
+  .np-empty { background: transparent; border: 1px dashed var(--pop-div); }
+
+  .speed-steps { flex: 1; min-width: 240px; display: flex; flex-direction: column; gap: 14px; }
+  .speed-step { display: flex; align-items: flex-start; gap: 12px; }
+  .speed-step .sn {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--tint); color: var(--tint-fg);
+    font-weight: 800; font-size: 12px;
+    display: grid; place-items: center; flex: 0 0 24px;
+  }
+  .speed-step .st { font-size: 14px; }
+  .speed-step .st b { font-weight: 700; }
+  .speed-step .st small { display: block; color: var(--fg-muted); font-size: 12px; margin-top: 2px; }
+  kbd {
+    font: 11px ui-monospace, monospace;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.16);
+    border-bottom-width: 2px;
+    border-radius: 4px; padding: 1px 5px; color: var(--fg);
+  }
+
+  /* ============ chat scenario ============ */
+  .scenario { display: flex; gap: 26px; flex-wrap: wrap; align-items: flex-start; }
+  .chat {
+    width: 360px; max-width: 100%;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--divider);
+    border-radius: 15px; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .chat-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 13px 16px; border-bottom: 1px solid var(--divider);
+  }
+  .avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: linear-gradient(135deg,var(--a1),var(--a2));
+    display: grid; place-items: center; font-weight: 700; font-size: 12px; color: #fff;
+    flex: 0 0 32px;
+  }
+  .chat-head .nm { font-size: 13.5px; font-weight: 600; }
+  .chat-head .rl { font-size: 11px; color: var(--fg-muted); }
+  .chat-body { padding: 16px; display: flex; flex-direction: column; gap: 9px; }
+  .bubble {
+    max-width: 80%; padding: 9px 13px; border-radius: 16px;
+    font-size: 13.5px; line-height: 1.4;
+  }
+  .bubble.in { background: var(--bubble-in); align-self: flex-start; border-bottom-left-radius: 5px; }
+  .bubble.out { background: var(--bubble-out); color: #fff; align-self: flex-end; border-bottom-right-radius: 5px; }
+  .bubble.out.mono { font-family: ui-monospace, monospace; font-size: 11.5px; word-break: break-all; }
+  .bubble.file {
+    display: flex; align-items: center; gap: 9px;
+    background: var(--bubble-out); color: #fff; align-self: flex-end;
+    border-bottom-right-radius: 5px;
+  }
+  .bubble.file .f-ic {
+    width: 30px; height: 30px; border-radius: 7px;
+    background: rgba(255,255,255,0.2); display: grid; place-items: center; flex: 0 0 30px;
+  }
+  .bubble.file .f-ic svg { width: 16px; height: 16px; }
+  .bubble.file .f-name { font-size: 12.5px; font-weight: 600; }
+  .bubble.file .f-meta { font-size: 10.5px; opacity: 0.8; }
+
+  .scenario-note { flex: 1; min-width: 230px; }
+  .scenario-note h3 { margin: 0 0 6px; font-size: 17px; font-weight: 600; }
+  .scenario-note p { margin: 0; color: var(--fg-dim); font-size: 13.5px; line-height: 1.6; }
+  .scenario-note .kchain {
+    display: inline-flex; gap: 4px; margin-top: 12px; align-items: center;
+    color: var(--fg-muted); font-size: 12px;
+  }
+
+  /* ============ QR demo ============ */
+  .qr-stage { display: flex; gap: 26px; flex-wrap: wrap; align-items: center; }
+  .qr-screen {
+    width: 360px; max-width: 100%; aspect-ratio: 4/3;
+    border-radius: 14px; position: relative; overflow: hidden;
+    background: radial-gradient(700px 500px at 60% 30%, #2a2a4a, #14141f);
+    border: 1px solid var(--divider);
+  }
+  .qr-screen .qr-on {
+    position: absolute; left: 54%; top: 30%;
+    width: 74px; height: 74px; background: #fff; border-radius: 5px; padding: 5px;
+  }
+  .qr-screen .qr-on::before {
+    content:''; position:absolute; inset:5px;
+    background:
+      linear-gradient(90deg,#000 0 9%,#fff 9% 18%,#000 18% 30%,#fff 30% 40%,#000 40% 52%,#fff 52% 64%,#000 64% 74%,#fff 74% 84%,#000 84% 100%) 0 0/100% 6px,
+      linear-gradient(180deg,#000 0 9%,#fff 9% 18%,#000 18% 30%,#fff 30% 40%,#000 40% 52%,#fff 52% 64%,#000 64% 74%,#fff 74% 84%,#000 84% 100%) 0 0/6px 100%;
+    background-blend-mode: multiply;
+  }
+  .qr-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.6); }
+  .viewfinder {
+    position: absolute; left: 54%; top: 30%;
+    transform: translate(-8px,-8px);
+    width: 90px; height: 90px;
+    border-radius: 14px;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,0.55);
+  }
+  .viewfinder .vf-c { position: absolute; width: 20px; height: 20px; border: 3px solid #fff; }
+  .viewfinder .vf-c.tl { top:0; left:0; border-right:0; border-bottom:0; border-radius:14px 0 0 0; }
+  .viewfinder .vf-c.tr { top:0; right:0; border-left:0; border-bottom:0; border-radius:0 14px 0 0; }
+  .viewfinder .vf-c.bl { bottom:0; left:0; border-right:0; border-top:0; border-radius:0 0 0 14px; }
+  .viewfinder .vf-c.br { bottom:0; right:0; border-left:0; border-top:0; border-radius:0 0 14px 0; }
+  .qr-result {
+    flex: 1; min-width: 240px;
+  }
+  .qr-card {
+    width: 250px; background: var(--pop-bg); color: var(--pop-fg);
+    border-radius: 12px; overflow: hidden;
+    box-shadow: 0 18px 44px rgba(0,0,0,0.45);
+  }
+  .qr-card .qc-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 11px; border-bottom: 1px solid var(--pop-div);
+  }
+  .qr-card .qc-head .qc-glyph {
+    width: 22px; height: 22px; border-radius: 5px; background: rgba(0,0,0,0.06);
+    display: grid; place-items: center;
+  }
+  .qr-card .qc-head .qc-glyph svg { width: 13px; height: 13px; }
+  .qr-card .qc-title { font-size: 12px; font-weight: 600; }
+  .qr-card .qc-sub { font-size: 10px; color: var(--pop-muted); }
+  .qr-card .qc-safe {
+    margin-left: auto; font-size: 9.5px; font-weight: 700;
+    background: rgba(31,138,59,0.14); color: #1f8a3b;
+    padding: 2px 7px; border-radius: 999px;
+  }
+  .qr-card .qc-body { padding: 11px; }
+  .qr-card .qc-val {
+    font: 10.5px ui-monospace, monospace; color: var(--pop-muted);
+    background: var(--pop-elev); border-radius: 6px; padding: 7px 8px;
+    word-break: break-all;
+  }
+  .qr-card .qc-actions {
+    display: flex; gap: 5px; padding: 8px 11px;
+    border-top: 1px solid var(--pop-div); background: var(--pop-elev);
+  }
+  .qr-card .qc-btn {
+    flex: 1; font-size: 11px; font-weight: 600; text-align: center;
+    padding: 6px; border-radius: 6px; border: 1px solid var(--pop-div); background: #fff;
+  }
+  .qr-card .qc-btn.primary { background: #1c1c1e; color: #fff; border-color: transparent; }
+
+  /* ---- logo gate ---- */
+  .brand-mark {
+    cursor: pointer; border: 0; padding: 0; font: inherit;
+    transition: transform 150ms ease;
+    animation: markPulse 2.6s ease-in-out infinite;
+  }
+  .brand-mark:hover { transform: translateY(-2px) scale(1.05); }
+  @keyframes markPulse {
+    0%, 100% { box-shadow: 0 12px 36px rgba(0,0,0,0.5), 0 0 0 0 rgba(255,255,255,0); }
+    50%      { box-shadow: 0 12px 36px rgba(0,0,0,0.5), 0 0 0 11px rgba(255,255,255,0.05); }
+  }
+  body.entered .brand-mark { animation: none; }
+  .enter-hint {
+    margin-top: 28px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    color: var(--fg-muted); font-size: 13px;
+    transition: opacity 300ms ease;
+  }
+  .enter-arrow { font-size: 17px; animation: bob 1.7s ease-in-out infinite; }
+  @keyframes bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(6px); } }
+  body.entered .enter-hint { opacity: 0; pointer-events: none; }
+
+  /* ---- story reveal ---- */
+  .story { display: none; }
+  body.entered .story {
+    display: block;
+    animation: storyIn 560ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  @keyframes storyIn {
+    from { opacity: 0; transform: translateY(26px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ---- kind-card hover ---- */
+  .kind {
+    min-height: 184px;
+    transition: transform 140ms ease, border-color 140ms ease,
+                background 140ms ease, box-shadow 170ms ease;
+  }
+  .kind:hover {
+    transform: translateY(-3px);
+    border-color: rgba(255,255,255,0.20);
+    background: rgba(255,255,255,0.055);
+    box-shadow: 0 14px 32px rgba(0,0,0,0.38);
+  }
+  .kind:hover .k-ic { background: rgba(255,255,255,0.12); }
+  .k-sample {
+    margin-top: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10.5px;
+    color: var(--fg-dim);
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--divider);
+    border-radius: 6px;
+    padding: 5px 7px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    opacity: 0; transform: translateY(3px);
+    transition: opacity 150ms ease, transform 150ms ease;
+  }
+  .kind:hover .k-sample { opacity: 1; transform: translateY(0); }
+  .k-sample code { background: transparent; border: 0; color: #4fd873; padding: 0; font-size: 10.5px; }
+
+  /* crypto card — chain hover popover */
+  .kind-crypto { position: relative; }
+  .chain-pop {
+    position: absolute;
+    left: 0; top: calc(100% + 8px);
+    width: 270px;
+    background: #17171b;
+    border: 1px solid var(--divider);
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: 0 18px 44px rgba(0,0,0,0.6);
+    opacity: 0; transform: translateY(-6px);
+    pointer-events: none;
+    transition: opacity 150ms ease, transform 150ms ease;
+    z-index: 6;
+  }
+  .kind-crypto:hover .chain-pop { opacity: 1; transform: translateY(0); }
+  .chain-pop-title {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.7px;
+    text-transform: uppercase; color: var(--fg-muted); margin-bottom: 9px;
+  }
+  .chain-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .chain-grid img { width: 100%; aspect-ratio: 1; border-radius: 50%; display: block; }
+
+  /* command card — coder vibes */
+  .kind-command .k-ic { background: rgba(48,209,88,0.13); color: #30d158; }
+  .kind-command .k-eg code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    background: rgba(48,209,88,0.10);
+    border: 1px solid rgba(48,209,88,0.24);
+    color: #4fd873;
+    padding: 2px 6px; border-radius: 5px;
+    display: inline-block; margin-bottom: 5px;
+  }
+
+  /* ============ cycle demo ============ */
+  .cycle-demo {
+    display: flex; flex-direction: column; align-items: center; gap: 22px;
+    padding: 12px 0 6px;
+  }
+  .cycle-caps { display: flex; align-items: center; gap: 7px; }
+  .cycle-caps .cap {
+    min-width: 34px; height: 38px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-bottom-width: 3px;
+    border-radius: 8px;
+    display: grid; place-items: center;
+    font-weight: 700; font-size: 15px; color: var(--fg);
+    padding: 0 9px;
+    transition: transform 100ms ease, background 100ms ease, border-color 100ms ease;
+  }
+  .cycle-caps .cap.held { background: rgba(255,255,255,0.12); }
+  .cycle-caps .cap.tap {
+    transform: translateY(3px) scale(0.95);
+    background: var(--tint); color: var(--tint-fg); border-color: var(--tint);
+  }
+  .cycle-caps .cap-note { font-size: 12.5px; color: var(--fg-muted); margin-left: 8px; }
+
+  .cycle-numpad {
+    width: 256px;
+    background: var(--pop-bg);
+    border-radius: 14px; overflow: hidden;
+    box-shadow: 0 26px 58px rgba(0,0,0,0.58);
+  }
+  .cn-head {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: 10px 0 8px;
+    border-bottom: 1px solid var(--pop-div);
+  }
+  .cn-dots { display: flex; gap: 5px; }
+  .cn-dots .d {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: rgba(0,0,0,0.18);
+    transition: width 220ms ease, background 220ms ease, border-radius 220ms ease;
+  }
+  .cn-dots .d.on { background: #1c1c1e; width: 16px; border-radius: 3px; }
+  .cn-name { font-size: 13px; font-weight: 700; color: var(--pop-fg); }
+  .cn-stage { position: relative; height: 252px; overflow: hidden; }
+  .cn-page {
+    position: absolute; inset: 0;
+    display: grid; grid-template-columns: repeat(3,1fr); grid-auto-rows: 1fr;
+    gap: 5px; padding: 6px;
+    transition: transform 360ms cubic-bezier(0.22,1,0.36,1), opacity 360ms ease;
+  }
+  .cn-page.center      { transform: translateX(0);     opacity: 1; }
+  .cn-page.exit-left   { transform: translateX(-103%); opacity: 0; }
+  .cn-page.enter-right { transform: translateX(103%);  opacity: 0; }
+  .cn-tile {
+    border-radius: 9px; background: var(--pop-elev);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; position: relative; padding: 4px; min-width: 0;
+  }
+  .cn-tile.empty { background: transparent; border: 1px dashed var(--pop-div); }
+  .cn-tile .n { position: absolute; top: 3px; right: 6px; font: 9px ui-monospace, monospace; color: var(--pop-muted); }
+  .cn-tile .i { display: grid; place-items: center; }
+  .cn-tile .i svg { width: 17px; height: 17px; color: var(--pop-fg); }
+  .cn-tile .i img { width: 21px; height: 21px; border-radius: 5px; display: block; }
+  .cn-tile .t {
+    font-size: 9px; font-weight: 500; color: var(--pop-fg);
+    text-align: center; line-height: 1.12;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+
+  footer { padding: 50px 0 70px; text-align: center; color: var(--fg-muted); font-size: 12.5px; border-top: 1px solid var(--divider); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HERO -->
+  <div class="hero">
+    <button class="brand-mark" id="enterBtn" aria-label="See how Restash works">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4" y="11" width="16" height="7" rx="1.5"/><path d="M6 8h12"/><path d="M8 5h8"/>
+      </svg>
+    </button>
+    <h1>Everything you keep sending</h1>
+    <p>Restash holds the things you hand out all day — and pastes them into any app with one shortcut.</p>
+    <div class="enter-hint" id="enterHint">
+      <span>Tap the mark to see how it works</span>
+      <span class="enter-arrow">↓</span>
+    </div>
+  </div>
+
+  <!-- STORY — hidden until the user taps the brand mark -->
+  <div class="story" id="story">
+
+
+  <!-- 1 — WHAT YOU CAN SAVE -->
+  <div class="section">
+    <div class="eyebrow">Demo 1 · What you can save</div>
+    <h2>Seven kinds of item</h2>
+    <p class="desc">Anything you find yourself retyping or re-attaching. Each kind gets its own icon, smart fields, and paste behavior.</p>
+    <div class="kinds">
+      <div class="kind">
+        <div class="k-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M10.6 14.6a4 4 0 0 0 5.66 0l3.18-3.18a4 4 0 0 0-5.66-5.66l-1.59 1.59 1.41 1.41 1.59-1.59a2 2 0 0 1 2.83 2.83l-3.18 3.18a2 2 0 0 1-2.83 0 1 1 0 0 0-1.41 1.41z"/><path d="M13.4 9.4a4 4 0 0 0-5.66 0L4.56 12.58a4 4 0 0 0 5.66 5.66l1.59-1.59-1.41-1.41-1.59 1.59a2 2 0 0 1-2.83-2.83l3.18-3.18a2 2 0 0 1 2.83 0 1 1 0 0 0 1.41-1.41z"/></svg></div>
+        <div class="k-name">URL</div>
+        <div class="k-eg">Your site, link tree, booking page. Opens in the browser or pastes as plain text.</div>
+        <div class="k-sample">restash.app/pricing</div>
+      </div>
+      <div class="kind kind-crypto">
+        <div class="k-ic"><img src="assets/chains/btc.svg" alt=""></div>
+        <div class="k-name">Crypto wallet</div>
+        <div class="k-eg">10+ chains, each with its badge. Pasted byte-for-byte — no typos. Hover to see them.</div>
+        <div class="k-sample">0x742d35Cc…3F3aB1</div>
+        <div class="chain-pop">
+          <div class="chain-pop-title">Compatible chains</div>
+          <div class="chain-grid">
+            <img src="assets/chains/btc.svg"  title="Bitcoin">
+            <img src="assets/chains/eth.svg"  title="Ethereum">
+            <img src="assets/chains/sol.svg"  title="Solana">
+            <img src="assets/chains/bnb.svg"  title="BNB Chain">
+            <img src="assets/chains/xrp.svg"  title="XRP">
+            <img src="assets/chains/ada.svg"  title="Cardano">
+            <img src="assets/chains/doge.svg" title="Dogecoin">
+            <img src="assets/chains/ton.svg"  title="Toncoin">
+            <img src="assets/chains/trx.svg"  title="Tron">
+            <img src="assets/chains/avax.svg" title="Avalanche">
+          </div>
+        </div>
+      </div>
+      <div class="kind">
+        <div class="k-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.5 7 13 7 13s7-7.5 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg></div>
+        <div class="k-name">Address</div>
+        <div class="k-eg">Home, office, a shipping address. Multi-line, dropped in exactly as saved.</div>
+        <div class="k-sample">17936 NW 59th Ave, Unit 102</div>
+      </div>
+      <div class="kind">
+        <div class="k-ic"><svg viewBox="0 0 24 24" fill="currentColor"><text x="3" y="17" font-family="Inter" font-weight="700" font-size="15">A</text><text x="13" y="19" font-family="Inter" font-weight="400" font-size="12">a</text></svg></div>
+        <div class="k-name">Text</div>
+        <div class="k-eg">Signatures, boilerplate, canned replies — any snippet you send more than once.</div>
+        <div class="k-sample">— Kevin · CFA Crypto Pro</div>
+      </div>
+      <div class="kind kind-command">
+        <div class="k-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 9.5l3 2.5-3 2.5"/><path d="M12.5 15h4.5"/></svg></div>
+        <div class="k-name">Command</div>
+        <div class="k-eg">Terminal one-liners and shell incantations you keep retyping into the prompt.</div>
+        <div class="k-sample"><code>npm run deploy --prod</code></div>
+      </div>
+      <div class="kind">
+        <div class="k-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>
+        <div class="k-name">Contact</div>
+        <div class="k-eg">Email, phone, company, wallet — one card, pasted as a tidy block.</div>
+        <div class="k-sample">alice@acme.com · +1 555 0142</div>
+      </div>
+      <div class="kind">
+        <div class="k-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5l-8.5 8.5a5.5 5.5 0 0 1-7.78-7.78L13.5 3.7a3.5 3.5 0 0 1 4.95 4.95L9.93 17.17a1.5 1.5 0 0 1-2.12-2.12L16 6.86"/></svg></div>
+        <div class="k-name">File</div>
+        <div class="k-eg">PDFs, images, videos. Group several in one item — they all attach together.</div>
+        <div class="k-sample">Onboarding.mp4 + 2 more</div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- 2 — STASH CYCLING (auto-playing demo) -->
+  <div class="section">
+    <div class="eyebrow">Demo 2 · Stashes</div>
+    <h2>Flip between stashes mid-air</h2>
+    <p class="desc">Group items into stashes — a client, your team, personal. Summon the numpad, then keep the shortcut held and tap the last key to cycle. Watch:</p>
+    <div class="cycle-demo">
+      <div class="cycle-caps">
+        <span class="cap held">⌃</span>
+        <span class="cap held">⇧</span>
+        <span class="cap" id="capV">V</span>
+        <span class="cap-note" id="capNote">hold ⌃⇧, tap V to cycle</span>
+      </div>
+      <div class="cycle-numpad">
+        <div class="cn-head">
+          <div class="cn-dots" id="cnDots"></div>
+          <div class="cn-name" id="cnName">All</div>
+        </div>
+        <div class="cn-stage" id="cnStage"></div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- 3 — CRYPTO TRANSACTION -->
+  <div class="section">
+    <div class="eyebrow">Demo 3 · Crypto</div>
+    <h2>"Send me your wallet"</h2>
+    <p class="desc">The address nobody can afford to mistype. Saved once with its chain badge — pasted exact, every time.</p>
+    <div class="scenario">
+      <div class="chat">
+        <div class="chat-head">
+          <div class="avatar" style="--a1:#22d3ee;--a2:#0e7490">S</div>
+          <div><div class="nm">Sarah · Acme Corp</div><div class="rl">Payment thread</div></div>
+        </div>
+        <div class="chat-body">
+          <div class="bubble in">Invoice approved 🎉 Send me your SOL wallet and I'll push the payment tonight.</div>
+          <div class="bubble out mono">CJbUGxnVG2oXdsYD2dVVkhkoR8WQJEjch35VRa7xifsi</div>
+          <div class="bubble in">Got it — sending now. 👍</div>
+        </div>
+      </div>
+      <div class="scenario-note">
+        <h3>Zero room for typos</h3>
+        <p>One slipped character on a wallet address means lost funds. Restash stores the exact string, shows you the chain it belongs to, and pastes it byte-for-byte. Pull it up mid-conversation without leaving the thread.</p>
+        <div class="kchain">
+          <img src="assets/chains/sol.svg" alt="" style="width:18px;height:18px;border-radius:50%">
+          Solana wallet · saved in the “Wisemen” stash
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- 4 — BUSINESS / ONBOARDING VIDEO -->
+  <div class="section">
+    <div class="eyebrow">Demo 4 · Business</div>
+    <h2>Onboard the whole team</h2>
+    <p class="desc">A new hire starts and you send the same welcome pack again. Save the onboarding video once — paste it into every Slack DM and email in seconds.</p>
+    <div class="scenario">
+      <div class="chat">
+        <div class="chat-head">
+          <div class="avatar" style="--a1:#f59e0b;--a2:#b45309">M</div>
+          <div><div class="nm">Marcus · New hire</div><div class="rl">Slack · #welcome</div></div>
+        </div>
+        <div class="chat-body">
+          <div class="bubble in">Hey! Excited to start Monday — anything I should review first?</div>
+          <div class="bubble file">
+            <div class="f-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M10 8.5l6 3.5-6 3.5z" fill="currentColor"/></svg></div>
+            <div><div class="f-name">Team Onboarding.mp4</div><div class="f-meta">148 MB · video</div></div>
+          </div>
+          <div class="bubble out">Start with this — covers tools, process, and who's who. See you Monday! 🚀</div>
+        </div>
+      </div>
+      <div class="scenario-note">
+        <h3>Saved once, sent forever</h3>
+        <p>The onboarding video, the brand kit, the contract template — heavy files you send to every new person. Restash keeps them a shortcut away and pastes the real file straight into Slack, Mail, or Messages. Group several into one item and they all attach at once.</p>
+        <div class="kchain">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width:16px;height:16px"><circle cx="12" cy="12" r="9"/><path d="M10 8.5l6 3.5-6 3.5z" fill="currentColor"/></svg>
+          File item · up to 5 GB on Pro
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- 5 — QR DECODER -->
+  <div class="section">
+    <div class="eyebrow">Demo 5 · QR decoder</div>
+    <h2>Scan a QR without your phone</h2>
+    <p class="desc">A QR on your screen? Hit the hotkey, drop the viewfinder over it, and Restash decodes it in place — with a safety check and a one-tap action.</p>
+    <div class="qr-stage">
+      <div class="qr-screen">
+        <div class="qr-on"></div>
+        <div class="qr-overlay"></div>
+        <div class="viewfinder">
+          <div class="vf-c tl"></div><div class="vf-c tr"></div>
+          <div class="vf-c bl"></div><div class="vf-c br"></div>
+        </div>
+      </div>
+      <div class="qr-result">
+        <div class="qr-card">
+          <div class="qc-head">
+            <div class="qc-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v3M14 21h3"/></svg></div>
+            <div><div class="qc-title">Decoded · URL</div><div class="qc-sub">wisemenalpha.com</div></div>
+            <span class="qc-safe">✓ Safe</span>
+          </div>
+          <div class="qc-body"><div class="qc-val">https://wisemenalpha.com/linktree</div></div>
+          <div class="qc-actions">
+            <div class="qc-btn">Save</div>
+            <div class="qc-btn">Copy</div>
+            <div class="qc-btn primary">Open ↵</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>Restash — stash once, paste anywhere.</footer>
+
+  </div><!-- /.story -->
+</div>
+
+<script>
+  // Logo gate — the story (demos) stays hidden until the user taps the mark.
+  (function logoGate() {
+    const btn = document.getElementById('enterBtn');
+    const story = document.getElementById('story');
+    if (!btn || !story) return;
+    btn.addEventListener('click', () => {
+      if (document.body.classList.contains('entered')) {
+        story.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+      document.body.classList.add('entered');
+      // Let the story mount, then glide down into it.
+      setTimeout(() => {
+        story.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 160);
+    });
+  })();
+
+  // Demo 2 — auto-cycling stash numpad. Loops All → Wisemen → Personal, sliding
+  // the grid and flashing the "V" keycap on each cycle.
+  (function cycleDemo() {
+    const ICONS = {
+      sol:  '<img src="assets/chains/sol.svg" alt="">',
+      eth:  '<img src="assets/chains/eth.svg" alt="">',
+      aa:   '<svg viewBox="0 0 24 24" fill="currentColor"><text x="3" y="17" font-family="Inter" font-weight="700" font-size="15">A</text><text x="13" y="19" font-family="Inter" font-weight="400" font-size="12">a</text></svg>',
+      link: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M10.6 14.6a4 4 0 0 0 5.66 0l3.18-3.18a4 4 0 0 0-5.66-5.66l-1.59 1.59 1.41 1.41 1.59-1.59a2 2 0 0 1 2.83 2.83l-3.18 3.18a2 2 0 0 1-2.83 0 1 1 0 0 0-1.41 1.41z"/><path d="M13.4 9.4a4 4 0 0 0-5.66 0L4.56 12.58a4 4 0 0 0 5.66 5.66l1.59-1.59-1.41-1.41-1.59 1.59a2 2 0 0 1-2.83-2.83l3.18-3.18a2 2 0 0 1 2.83 0 1 1 0 0 0 1.41-1.41z"/></svg>',
+      pin:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.5 7 13 7 13s7-7.5 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>',
+      cmd:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8l3.5 3L5 14"/><path d="M11 15h7"/></svg>',
+    };
+    const STASHES = [
+      { name: 'All', items: [
+        {t:'sol',l:'Wisemen Wallet'},{t:'eth',l:'ETH Wallet'},{t:'aa',l:'Signature'},
+        {t:'link',l:'Link Tree'},{t:'pin',l:'Home'},null, null,null,null ]},
+      { name: 'Wisemen', items: [
+        {t:'sol',l:'Wisemen Wallet'},{t:'sol',l:'Wisemen Marketing'},{t:'aa',l:'Morning Tea'},
+        {t:'link',l:'Link Tree'},null,null, null,null,null ]},
+      { name: 'Personal', items: [
+        {t:'pin',l:'Home'},{t:'pin',l:"Sara's House"},{t:'cmd',l:'Deploy script'},
+        null,null,null, null,null,null ]},
+    ];
+    const stage  = document.getElementById('cnStage');
+    const nameEl = document.getElementById('cnName');
+    const dotsEl = document.getElementById('cnDots');
+    const capV   = document.getElementById('capV');
+    if (!stage) return;
+
+    dotsEl.innerHTML = STASHES.map(() => '<span class="d"></span>').join('');
+
+    function buildPage(stash) {
+      const p = document.createElement('div');
+      p.className = 'cn-page';
+      p.innerHTML = stash.items.map((it, i) => {
+        if (!it) return '<div class="cn-tile empty"></div>';
+        return `<div class="cn-tile"><span class="n">${i + 1}</span><span class="i">${ICONS[it.t] || ''}</span><span class="t">${it.l}</span></div>`;
+      }).join('');
+      return p;
+    }
+    function paint() {
+      nameEl.textContent = STASHES[idx].name;
+      [...dotsEl.children].forEach((d, i) => d.classList.toggle('on', i === idx));
+    }
+
+    let idx = 0;
+    let cur = buildPage(STASHES[0]);
+    cur.classList.add('center');
+    stage.appendChild(cur);
+    paint();
+
+    function cycle() {
+      capV.classList.add('tap');
+      setTimeout(() => capV.classList.remove('tap'), 200);
+
+      const next = (idx + 1) % STASHES.length;
+      const page = buildPage(STASHES[next]);
+      page.classList.add('enter-right');
+      stage.appendChild(page);
+      void page.offsetWidth;             // flush so the transition runs
+      cur.classList.remove('center');
+      cur.classList.add('exit-left');
+      page.classList.remove('enter-right');
+      page.classList.add('center');
+
+      const old = cur;
+      setTimeout(() => { if (old.parentNode) old.remove(); }, 400);
+      cur = page;
+      idx = next;
+      paint();
+    }
+    setInterval(cycle, 2600);
+  })();
+</script>
+
+</body>
+</html>

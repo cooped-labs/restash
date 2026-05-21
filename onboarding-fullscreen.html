@@ -1,0 +1,1624 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Restash — Onboarding (story-driven prototype)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<style>
+  :root {
+    /* Aligned with the live app's dark-mode palette so the tutorial feels
+       continuous with Restash itself. */
+    --bg: #1c1c1e;
+    --bg-elev: #2a2a2d;
+    --bg-elev-2: #34343a;
+    --fg: #f2f2f7;
+    --fg-dim: #b8b8be;
+    --fg-muted: #8a8a92;
+    --tint: #f2f2f7;
+    --tint-fg: #1c1c1e;
+    --tint-soft: rgba(255, 255, 255, 0.08);
+    --divider: rgba(255, 255, 255, 0.08);
+    --bubble-in: #2c2c30;
+    --bubble-out: #007aff;     /* iMessage blue — outgoing bubble + send button */
+    --bubble-out-fg: #ffffff;
+    /* The demo popover inside scenarios reads as a real light-mode Restash
+       popover floating on the user's screen — kept light regardless of the
+       surrounding dark chrome so it looks like the actual app surface. */
+    --bg-pop: #f5f5f4;
+    --pop-fg: #1c1c1e;
+    --pop-fg-muted: #8a8a8c;
+    --pop-divider: rgba(0, 0, 0, 0.07);
+    --pop-tint: #1c1c1e;
+    --pop-tint-fg: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100vh; width: 100vw;
+    overflow: hidden;
+    background:
+      radial-gradient(1100px 700px at 18% 12%, rgba(94, 58, 165, 0.20) 0%, transparent 60%),
+      radial-gradient(900px 700px at 85% 80%, rgba(30, 60, 140, 0.18) 0%, transparent 60%),
+      linear-gradient(180deg, #131316 0%, #0d0e11 100%);
+    color: var(--fg);
+    font: 14px "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .stage {
+    position: relative;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .scene {
+    width: 100%; max-width: 960px;
+    padding: 30px 50px 80px;
+    display: none;
+  }
+  .scene.active { display: block; animation: sceneIn 320ms cubic-bezier(0.22, 1, 0.36, 1); }
+  @keyframes sceneIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .step-tag {
+    display: inline-block;
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.75);
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 16px;
+  }
+  .scene h2 {
+    margin: 0 0 12px;
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    line-height: 1.15;
+  }
+  .scene .lead {
+    color: rgba(255,255,255,0.72);
+    font-size: 16px;
+    max-width: 560px;
+    margin: 0 0 28px;
+    line-height: 1.5;
+  }
+  .scene.center { text-align: center; }
+  .scene.center .lead { margin-left: auto; margin-right: auto; }
+
+  /* Brand mark */
+  .brand-mark {
+    width: 88px; height: 88px;
+    margin: 0 auto 18px;
+    background: var(--tint);
+    color: var(--tint-fg);
+    border-radius: 22px;
+    display: grid; place-items: center;
+    box-shadow: 0 12px 36px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.12);
+  }
+  .brand-mark svg { width: 46px; height: 46px; }
+  /* Wordmark sits directly under the brand mark on the welcome scene. */
+  .welcome-wordmark {
+    margin: 0 auto 22px;
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -0.6px;
+    color: var(--fg);
+    line-height: 1;
+  }
+
+  .row { display: flex; gap: 14px; align-items: center; }
+  .row.center { justify-content: center; }
+  .btn {
+    background: var(--tint);
+    color: var(--tint-fg);
+    border: 0;
+    border-radius: 10px;
+    padding: 13px 24px;
+    font: inherit; font-weight: 600; font-size: 14px;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+    transition: transform 80ms, box-shadow 120ms;
+  }
+  .btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,0,0,0.35); }
+  .btn.ghost {
+    background: transparent; color: var(--fg-dim); box-shadow: none; font-weight: 500;
+  }
+  .btn.ghost:hover { color: var(--fg); transform: none; box-shadow: none; }
+
+  /* Hotkey scene */
+  .kb-stage {
+    display: flex; gap: 14px; align-items: center; justify-content: center;
+    margin: 28px 0;
+  }
+  .key-cap {
+    min-width: 86px; height: 92px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-bottom-width: 4px;
+    border-radius: 14px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 4px;
+    padding: 0 14px;
+    font-weight: 700; font-size: 30px;
+    color: var(--fg);
+    cursor: pointer;
+    transition: transform 90ms, background 90ms, border-color 200ms;
+  }
+  .key-cap:hover:not(.confirmed):not(.hit) {
+    background: rgba(255,255,255,0.12);
+    border-color: rgba(255,255,255,0.26);
+    transform: translateY(-1px);
+  }
+  .key-cap .sub { font-size: 10.5px; font-weight: 500; color: var(--fg-muted); letter-spacing: 0.4px; text-transform: uppercase; }
+  .key-cap.pulse { animation: kbPulse 1.6s ease-in-out infinite; }
+  .key-cap.hit { transform: translateY(3px) scale(0.96); background: var(--tint); color: var(--tint-fg); border-color: var(--tint); }
+  .key-cap.hit .sub { color: rgba(28,28,30,0.5); }
+  /* Sticky confirmed glow — applied after the user actually presses the
+     hotkey. Stays on until they advance, so they can see the press registered. */
+  .key-cap.confirmed {
+    background: var(--tint);
+    color: var(--tint-fg);
+    border-color: var(--tint);
+    box-shadow:
+      0 0 0 4px rgba(255,255,255,0.08),
+      0 6px 24px rgba(255,255,255,0.20);
+    animation: confirmedPulse 1.8s ease-in-out infinite;
+  }
+  .key-cap.confirmed .sub { color: rgba(28,28,30,0.55); }
+  @keyframes confirmedPulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(255,255,255,0.08), 0 6px 24px rgba(255,255,255,0.20); }
+    50%      { box-shadow: 0 0 0 8px rgba(255,255,255,0.06), 0 10px 36px rgba(255,255,255,0.32); }
+  }
+  /* The Set button gets an attention-pulse once the press is confirmed. */
+  .btn.armed {
+    animation: btnArmedPulse 1.6s ease-in-out infinite;
+  }
+  @keyframes btnArmedPulse {
+    0%, 100% { box-shadow: 0 4px 14px rgba(0,0,0,0.25); }
+    50%      { box-shadow: 0 4px 20px rgba(255,255,255,0.25), 0 0 0 4px rgba(255,255,255,0.06); }
+  }
+  /* Bouncing "↓" inserted above the Set button after the press is detected,
+     so the user's eye lands on what they need to click. */
+  @keyframes bounceDown {
+    0%, 100% { transform: translateY(0); opacity: 0.55; }
+    50%      { transform: translateY(6px); opacity: 1; }
+  }
+  @keyframes kbPulse {
+    0%, 100% { transform: translateY(0); background: rgba(255,255,255,0.06); }
+    50%       { transform: translateY(-3px); background: rgba(255,255,255,0.10); }
+  }
+  .kb-plus { font-size: 24px; color: var(--fg-muted); font-weight: 600; }
+
+  /* Scenario chat */
+  .scenario {
+    display: grid;
+    grid-template-columns: 460px 1fr;
+    gap: 40px;
+    align-items: stretch;
+    margin-top: 12px;
+  }
+  .chat {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    height: 480px;
+    backdrop-filter: blur(8px);
+  }
+  .chat-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .avatar {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--av1, #8b5cf6), var(--av2, #5b21b6));
+    display: grid; place-items: center;
+    font-weight: 700; font-size: 13px;
+    color: white;
+    flex: 0 0 34px;
+  }
+  .chat-header .name { font-size: 14px; font-weight: 600; }
+  .chat-header .role { font-size: 11.5px; color: var(--fg-muted); margin-top: 1px; }
+  .chat-body {
+    flex: 1; padding: 16px 18px;
+    display: flex; flex-direction: column; gap: 10px; overflow: hidden;
+  }
+  .bubble {
+    max-width: 78%; padding: 9px 14px;
+    border-radius: 18px; font-size: 14px; line-height: 1.4;
+    word-break: break-word;
+  }
+  .bubble.in {
+    background: var(--bubble-in); color: var(--fg);
+    align-self: flex-start; border-bottom-left-radius: 5px;
+  }
+  .bubble.out {
+    background: var(--bubble-out); color: white;
+    align-self: flex-end; border-bottom-right-radius: 5px;
+    animation: bubbleSlide 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  @keyframes bubbleSlide {
+    from { opacity: 0; transform: translateY(6px) scale(0.96); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .bubble.out.monospace { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; word-break: break-all; }
+
+  .compose {
+    padding: 10px 12px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .compose .field {
+    flex: 1; background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 18px; padding: 8px 14px;
+    font-size: 13.5px; color: var(--fg);
+    min-height: 36px; display: flex; align-items: center;
+    transition: border-color 200ms, box-shadow 200ms;
+  }
+  /* Real <input> version — match the fake-div appearance */
+  input.field.real {
+    font-family: inherit;
+    outline: none;
+    width: 100%;
+  }
+  input.field.real::placeholder { color: var(--fg-muted); font-style: italic; }
+  input.field.real:focus {
+    border-color: rgba(255,255,255,0.30);
+    box-shadow: 0 0 0 3px rgba(255,255,255,0.06);
+  }
+  .compose .field.glow { border-color: rgba(255,255,255,0.5); box-shadow: 0 0 0 3px rgba(255,255,255,0.06); }
+  .compose .field .placeholder { color: var(--fg-muted); font-style: italic; }
+  .compose .field .typed { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .compose .field .typed::after { content: ''; display: inline-block; width: 1px; height: 14px; margin-left: 2px; background: var(--fg); animation: blink 0.9s steps(1) infinite; vertical-align: middle; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .compose .send {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: var(--bubble-out);
+    color: white; border: 0;
+    display: grid; place-items: center;
+    cursor: pointer; opacity: 0.5;
+    transition: opacity 200ms;
+  }
+  .compose .send.ready { opacity: 1; }
+  .compose .send svg { width: 14px; height: 14px; }
+
+  .instruction {
+    display: flex; flex-direction: column;
+    justify-content: center; gap: 18px;
+  }
+  .instruction h3 {
+    margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.3px;
+  }
+  .instruction p {
+    margin: 0; color: var(--fg-dim); font-size: 13.5px; line-height: 1.55; max-width: 360px;
+  }
+  .instruction .small-kb {
+    display: inline-flex; align-items: center; gap: 5px;
+    margin: 4px 0 6px;
+  }
+  .instruction .small-kb kbd {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.16);
+    border-bottom-width: 2px;
+    border-radius: 5px;
+    padding: 3px 8px;
+    font-family: ui-monospace, monospace; font-size: 12.5px;
+    color: var(--fg); font-weight: 600;
+  }
+  /* Clickable kbd buttons (the "1" / "2" / "⌘S" that the user can tap) */
+  .instruction .small-kb kbd.clickable {
+    cursor: pointer;
+    transition: transform 80ms, background 80ms, border-color 80ms;
+  }
+  .instruction .small-kb kbd.clickable:hover {
+    background: rgba(255,255,255,0.16);
+    border-color: rgba(255,255,255,0.30);
+    transform: translateY(-1px);
+  }
+  .instruction .small-kb kbd.clickable:active {
+    transform: translateY(0);
+    background: var(--tint);
+    color: var(--tint-fg);
+  }
+  .instruction .small-kb kbd.clickable.pulse-key {
+    animation: kbdPulse 1.5s ease-in-out infinite;
+  }
+  @keyframes kbdPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0); border-color: rgba(255,255,255,0.16); }
+    50%       { box-shadow: 0 0 0 5px rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.40); }
+  }
+
+  /* Cursor pointer hint (positioned next to popover to suggest "at cursor") */
+  .cursor-tag {
+    position: absolute;
+    top: -16px; left: -22px;
+    display: flex; align-items: center; gap: 6px;
+    pointer-events: none;
+  }
+  .cursor-tag .pointer {
+    width: 18px; height: 18px;
+    filter: drop-shadow(0 1px 3px rgba(0,0,0,0.4));
+  }
+  .cursor-tag .label {
+    background: rgba(255,255,255,0.92);
+    color: #1c1c1e;
+    padding: 2px 7px;
+    border-radius: 6px;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+    white-space: nowrap;
+  }
+
+  /* ============================================================
+     Grid popover — cursor-summoned 3×3
+     ============================================================ */
+  .demo-grid-wrap { position: relative; }
+  .demo-grid {
+    width: 220px; height: 268px;
+    background: var(--bg-pop); color: var(--pop-fg);
+    border-radius: 14px;
+    box-shadow: 0 30px 60px rgba(0,0,0,0.55);
+    overflow: hidden;
+    text-align: left;
+    display: flex; flex-direction: column;
+    border: 1px solid var(--pop-divider);
+  }
+  .demo-grid.appearing { animation: popIn 240ms cubic-bezier(0.22, 1, 0.36, 1); transform-origin: top center; }
+  @keyframes popIn {
+    from { opacity: 0; transform: scale(0.94) translateY(-6px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  .grid-body {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-auto-rows: 1fr;
+    gap: 5px; padding: 6px; box-sizing: border-box;
+  }
+  .tile-mock {
+    background: rgba(0,0,0,0.04);
+    border: 1px solid rgba(0,0,0,0.07);
+    border-radius: 8px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 2px; padding: 4px 4px 6px;
+    position: relative;
+    font-size: 10.5px;
+    color: #1c1c1e;
+    overflow: hidden; min-width: 0;
+    cursor: pointer;
+    transition: transform 100ms ease-out;
+  }
+  .tile-mock:hover { transform: translateY(-1px); }
+  .tile-mock.highlighted { background: #1c1c1e; color: white; border-color: transparent; }
+  .tile-mock.empty { border-style: dashed; opacity: 0.4; cursor: default; }
+  .tile-mock.empty:hover { transform: none; }
+  .tile-mock .num {
+    position: absolute; top: 2px; right: 5px;
+    font: 9px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: rgba(0,0,0,0.4);
+  }
+  .tile-mock.highlighted .num { color: rgba(255,255,255,0.65); }
+  .tile-mock .ic { width: 22px; height: 22px; display: grid; place-items: center; }
+  .tile-mock .ic svg { width: 16px; height: 16px; }
+  .tile-mock .ic img { width: 22px; height: 22px; display: block; border-radius: 5px; }
+  .tile-mock .lbl {
+    line-height: 1.18; text-align: center; max-width: 100%; overflow: hidden;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word;
+  }
+  .grid-brandbar {
+    display: flex; justify-content: center; align-items: center; gap: 5px;
+    padding: 4px 10px;
+    border-top: 1px solid rgba(0,0,0,0.07);
+    color: #8a8a8c;
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+  }
+  .grid-brandbar svg { width: 9px; height: 9px; opacity: 0.7; }
+
+  /* Hidden by default; revealed when hotkey pressed */
+  .popover-slot {
+    min-height: 280px;
+    display: flex; align-items: center; justify-content: center;
+    padding-top: 20px;
+  }
+  .popover-slot .placeholder-text {
+    color: var(--fg-muted); font-size: 13px; text-align: center;
+    max-width: 240px; line-height: 1.5;
+  }
+
+  /* ============================================================
+     QR / Share popover (list-mode mock for scenes 5 & 6)
+     ============================================================ */
+  .qr-scenario {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 48px; align-items: center;
+    margin-top: 14px;
+  }
+  .qr-popover {
+    width: 280px;
+    background: var(--bg-pop);
+    color: var(--pop-fg);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 30px 60px rgba(0,0,0,0.55);
+    border: 1px solid var(--pop-divider);
+  }
+  .qr-popover .pop-topbar {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--pop-divider);
+  }
+  .qr-popover .pop-topbar svg { width: 12px; height: 12px; color: var(--fg-muted); }
+  .qr-popover .pop-topbar input {
+    flex: 1; background: transparent; border: 0; outline: none;
+    font: inherit; font-size: 12.5px; color: var(--pop-fg);
+  }
+  .qr-popover .pop-topbar input::placeholder { color: var(--fg-muted); }
+  .qr-popover .row-mock {
+    display: flex; align-items: center; gap: 9px;
+    padding: 7px 12px; font-size: 12.5px; position: relative;
+  }
+  .qr-popover .row-mock.hovered { background: var(--pop-tint); color: var(--pop-tint-fg); }
+  .qr-popover .row-mock .icn {
+    width: 22px; height: 22px; border-radius: 5px; overflow: hidden;
+    display: grid; place-items: center;
+  }
+  .qr-popover .row-mock .icn img { width: 100%; height: 100%; display: block; }
+  .qr-popover .row-mock .lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .qr-popover .row-mock .actions {
+    display: flex; gap: 4px; opacity: 0;
+    transition: opacity 200ms;
+  }
+  .qr-popover .row-mock.hovered .actions { opacity: 1; }
+  /* These buttons only show on the hovered/selected row, which uses the
+     popover's dark tint (#1c1c1e) — so the buttons are styled light-on-dark. */
+  .qr-popover .row-mock .act-btn {
+    width: 22px; height: 22px;
+    background: rgba(255,255,255,0.18);
+    border: 0; border-radius: 5px;
+    color: #ffffff; cursor: pointer;
+    display: grid; place-items: center;
+    transition: background 100ms;
+  }
+  .qr-popover .row-mock .act-btn:hover { background: rgba(255,255,255,0.32); }
+  .qr-popover .row-mock .act-btn svg { width: 12px; height: 12px; }
+  .qr-popover .row-mock .act-btn.pulse-now {
+    animation: actPulse 1.4s ease-in-out infinite;
+  }
+  @keyframes actPulse {
+    0%, 100% { background: rgba(255,255,255,0.20); box-shadow: 0 0 0 0 rgba(255,255,255,0); }
+    50%      { background: rgba(255,255,255,0.55); box-shadow: 0 0 0 4px rgba(255,255,255,0.10); }
+  }
+  .qr-popover .row-mock + .row-mock { border-top: 1px solid var(--pop-divider); }
+
+  .qr-modal-wrap { position: relative; }
+
+  /* QR modal */
+  .qr-modal {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 240px;
+    background: #ffffff; color: #1c1c1e;
+    border-radius: 12px;
+    box-shadow: 0 30px 60px rgba(0,0,0,0.55);
+    padding: 18px;
+    text-align: center;
+    z-index: 20;
+    opacity: 0; pointer-events: none;
+    transition: opacity 220ms, transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .qr-modal.visible {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+    pointer-events: auto;
+  }
+  .qr-modal:not(.visible) { transform: translate(-50%, -45%) scale(0.94); }
+  .qr-modal .qr-label { font-weight: 600; font-size: 13px; margin-bottom: 12px; }
+  .qr-modal .qr-img {
+    width: 180px; height: 180px;
+    margin: 0 auto 12px;
+    background: white;
+    border: 1px solid rgba(0,0,0,0.06);
+    border-radius: 8px;
+    padding: 8px;
+    display: grid; place-items: center;
+  }
+  .qr-modal .qr-img img { width: 100%; height: 100%; image-rendering: pixelated; }
+  .qr-modal .qr-val {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 9.5px; color: #8a8a8c;
+    word-break: break-all; max-height: 24px; overflow: hidden;
+  }
+
+  /* Native macOS share sheet mock */
+  .share-sheet {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 240px;
+    background: rgba(48, 48, 50, 0.95);
+    color: white;
+    border-radius: 12px;
+    box-shadow: 0 30px 60px rgba(0,0,0,0.55);
+    padding: 12px 0;
+    z-index: 20;
+    opacity: 0; pointer-events: none;
+    transition: opacity 220ms, transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+    overflow: hidden;
+  }
+  .share-sheet.visible {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+    pointer-events: auto;
+  }
+  .share-sheet:not(.visible) { transform: translate(-50%, -45%) scale(0.94); }
+
+  .share-section { padding: 8px 14px; }
+  .share-header {
+    font-size: 11px; color: rgba(255,255,255,0.55);
+    text-transform: uppercase; letter-spacing: 0.5px;
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+  .share-airdrops {
+    display: flex; gap: 12px; padding: 0 14px 10px;
+  }
+  .share-contact {
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+    flex: 1; min-width: 0; cursor: pointer;
+  }
+  .share-contact .ph {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--c1), var(--c2));
+    display: grid; place-items: center;
+    color: white; font-weight: 700; font-size: 12px;
+  }
+  .share-contact .nm { font-size: 9.5px; color: white; }
+  .share-divider { height: 1px; background: rgba(255,255,255,0.10); }
+  .share-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 14px;
+    font-size: 13px; color: white;
+    cursor: pointer;
+  }
+  .share-row:hover { background: rgba(255,255,255,0.06); }
+  .share-row .icon {
+    width: 22px; height: 22px;
+    border-radius: 5px;
+    display: grid; place-items: center;
+    background: var(--app-bg, #007aff);
+    color: white;
+    font-size: 13px;
+  }
+
+  /* Completion */
+  .check-big {
+    width: 120px; height: 120px;
+    background: var(--tint); color: var(--tint-fg);
+    border-radius: 50%;
+    margin: 0 auto 26px;
+    display: grid; place-items: center;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.45);
+    animation: checkPop 480ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .check-big svg { width: 60px; height: 60px; }
+  @keyframes checkPop {
+    0% { transform: scale(0); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  /* Progress dots + nav */
+  .progress {
+    position: fixed; bottom: 28px; left: 0; right: 0;
+    display: flex; gap: 8px;
+    justify-content: center; align-items: center;
+    z-index: 50;
+  }
+  .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.16);
+    transition: all 200ms;
+  }
+  .dot.active { background: var(--tint); width: 24px; border-radius: 3px; }
+  .dot.done   { background: var(--tint); opacity: 0.4; }
+
+  .nav {
+    position: fixed; bottom: 24px; right: 28px;
+    display: flex; gap: 14px; z-index: 50;
+  }
+  .nav button {
+    background: transparent; color: var(--fg-muted);
+    border: 0; cursor: pointer;
+    font: inherit; font-size: 12.5px;
+    padding: 6px 10px; border-radius: 6px;
+  }
+  .nav button:hover { color: var(--fg); background: rgba(255,255,255,0.05); }
+
+  .top-corner {
+    position: fixed; top: 30px; right: 28px;
+    z-index: 50;
+    display: flex; align-items: center; gap: 12px;
+    font-size: 12px; color: var(--fg-muted);
+  }
+  .top-corner kbd {
+    font-family: ui-monospace, monospace;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 11px; color: var(--fg);
+  }
+
+  .hidden { display: none !important; }
+  .center { text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="stage">
+
+  <!-- ============================== SCENE 1: Welcome ============================== -->
+  <section class="scene center active" data-scene="welcome">
+    <div class="brand-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4" y="11" width="16" height="7" rx="1.5"/>
+        <path d="M6 8h12"/>
+        <path d="M8 5h8"/>
+      </svg>
+    </div>
+    <h1 class="welcome-wordmark">Restash</h1>
+    <span class="step-tag">60 seconds</span>
+    <h2>The stuff you keep retyping</h2>
+    <p class="lead">Save it once. Paste anywhere.</p>
+    <div class="row center">
+      <button class="btn" data-go="hotkey">Show me</button>
+      <button class="btn ghost" data-go="done">Skip</button>
+    </div>
+  </section>
+
+
+  <!-- ============================== SCENE 2: Hotkey ============================== -->
+  <section class="scene center" data-scene="hotkey">
+    <span class="step-tag">Step 1</span>
+    <h2 id="hotkeyTitle">Your shortcut</h2>
+    <p class="lead" id="hotkeyLead">Press <strong style="color: var(--fg)">⌘ ⇧ V</strong> — or click the keys below.</p>
+
+    <!-- Default mode: shows the three keycaps + an explicit confirm button -->
+    <div class="kb-stage" id="kbStage">
+      <div class="key-cap pulse" data-key="meta">⌘<span class="sub">command</span></div>
+      <span class="kb-plus">+</span>
+      <div class="key-cap pulse" data-key="shift" style="animation-delay:0.15s">⇧<span class="sub">shift</span></div>
+      <span class="kb-plus">+</span>
+      <div class="key-cap pulse" data-key="v" style="animation-delay:0.3s">V<span class="sub">key</span></div>
+    </div>
+    <div id="confirmStage" style="display: flex; justify-content: center; margin-top: 18px;">
+      <button class="btn" id="setHotkeyBtn" disabled style="opacity: 0.4; cursor: not-allowed;">Set <span id="setHotkeyLabel">⌘⇧V</span> as my hotkey</button>
+    </div>
+
+    <!-- Custom-record mode: empty field that captures any combo -->
+    <div class="kb-stage hidden" id="recordStage" style="flex-direction: column; gap: 12px;">
+      <div id="recordCapture" style="
+        min-width: 280px; padding: 18px 22px;
+        background: rgba(255,255,255,0.06);
+        border: 1.5px dashed rgba(255,255,255,0.30);
+        border-radius: 14px;
+        font-size: 22px; font-weight: 700;
+        color: var(--fg-dim);
+        letter-spacing: 1px;
+      ">Press any combo…</div>
+      <div style="display:flex; gap: 10px; justify-content: center;">
+        <button class="btn ghost" id="recordCancel">Cancel</button>
+        <button class="btn" id="recordConfirm" disabled style="opacity: 0.4">Use this</button>
+      </div>
+    </div>
+
+    <p style="color: var(--fg-muted); font-size: 13px; margin-top: 18px;">
+      <a id="pickCustomLink" href="#" style="color: var(--fg-dim); text-decoration: underline; text-decoration-color: var(--fg-muted); text-underline-offset: 3px;">Or pick your own combo →</a>
+    </p>
+    <p id="hotkeyTip" style="color: var(--fg-muted); font-size: 12px; margin-top: 4px;">
+      Modifier + key (avoid ⌘S, ⌘C, ⌘V — those are reserved).
+    </p>
+  </section>
+
+
+  <!-- ============================== SCENE 3: Scenario A — Home address ============================== -->
+  <section class="scene" data-scene="scenario-1">
+    <span class="step-tag">Step 2</span>
+    <h2>"What's your address?"</h2>
+    <p class="lead">Press your hotkey. Click the tile, or press <kbd style="font-family:ui-monospace;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:2px 6px;font-size:0.9em">1</kbd>.</p>
+
+    <div class="scenario">
+      <div class="chat">
+        <div class="chat-header">
+          <div class="avatar" style="--av1:#ec4899;--av2:#be185d">M</div>
+          <div>
+            <div class="name">Mom</div>
+            <div class="role">imessage · just now</div>
+          </div>
+        </div>
+        <div class="chat-body" id="chat1">
+          <div class="bubble in">Hey honey! What's your address? Sending your birthday gift this week 🎁</div>
+        </div>
+        <div class="compose">
+          <input type="text" class="field real" id="field1" placeholder="iMessage" autocomplete="off" />
+          <button class="send" id="send1">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 12l16-9-6 17-3-7-7-1z"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="instruction">
+        <h3>At your cursor</h3>
+        <div class="small-kb">
+          <kbd class="clickable" data-tutorial-key="summon-1">⌘</kbd>
+          <kbd class="clickable" data-tutorial-key="summon-1">⇧</kbd>
+          <kbd class="clickable" data-tutorial-key="summon-1">V</kbd>
+          <span style="margin:0 4px;color:var(--fg-muted)">then</span>
+          <kbd class="clickable pulse-key" data-tutorial-key="paste-1">1</kbd>
+        </div>
+
+        <div class="popover-slot" id="slot1">
+          <div class="placeholder-text">Try it ↑</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ============================== SCENE 4: Scenario B — ETH wallet ============================== -->
+  <section class="scene" data-scene="scenario-2">
+    <span class="step-tag">Step 3</span>
+    <h2>"Send me your wallet."</h2>
+    <p class="lead">Same flow. Slot 2 this time.</p>
+
+    <div class="scenario">
+      <div class="chat">
+        <div class="chat-header">
+          <div class="avatar" style="--av1:#22d3ee;--av2:#0e7490">S</div>
+          <div>
+            <div class="name">Sarah — Acme Corp</div>
+            <div class="role">slack · 2 min ago</div>
+          </div>
+        </div>
+        <div class="chat-body" id="chat2">
+          <div class="bubble in">Hey! Approved the invoice — send me your Wisemen wallet and I'll wire it over tonight.</div>
+        </div>
+        <div class="compose">
+          <input type="text" class="field real" id="field2" placeholder="Message Sarah" autocomplete="off" />
+          <button class="send" id="send2">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 12l16-9-6 17-3-7-7-1z"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="instruction">
+        <h3>Mouse or keyboard</h3>
+        <div class="small-kb">
+          <kbd class="clickable" data-tutorial-key="summon-2">⌘</kbd>
+          <kbd class="clickable" data-tutorial-key="summon-2">⇧</kbd>
+          <kbd class="clickable" data-tutorial-key="summon-2">V</kbd>
+          <span style="margin:0 4px;color:var(--fg-muted)">then</span>
+          <kbd class="clickable pulse-key" data-tutorial-key="paste-2">2</kbd>
+        </div>
+
+        <div class="popover-slot" id="slot2">
+          <div class="placeholder-text">Try it ↑</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ============================== SCENE 5: QR ============================== -->
+  <section class="scene" data-scene="qr">
+    <span class="step-tag">Step 4</span>
+    <h2>Or scan it</h2>
+    <p class="lead">Every item becomes a QR. Click the pulsing button.</p>
+
+    <div class="qr-scenario">
+      <div class="qr-modal-wrap">
+        <div class="qr-popover">
+          <div class="pop-topbar">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 4a7 7 0 1 1-4.9 12 1 1 0 0 1 1.4-1.4 5 5 0 1 0 0-7.2 1 1 0 0 1-1.4-1.4A7 7 0 0 1 11 4zm6.7 13.3 3.5 3.5a1 1 0 0 1-1.4 1.4l-3.5-3.5a1 1 0 0 1 1.4-1.4z"/></svg>
+            <input value="" placeholder="Search and paste…" disabled>
+          </div>
+          <div class="row-mock hovered">
+            <span class="icn"><img src="assets/chains/sol.svg" alt=""></span>
+            <span class="lbl">Wisemen Wallet</span>
+            <div class="actions">
+              <button class="act-btn pulse-now" id="qrTriggerBtn" title="Show QR">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="7" height="7" rx="1"/>
+                  <rect x="14" y="3" width="7" height="7" rx="1"/>
+                  <rect x="3" y="14" width="7" height="7" rx="1"/>
+                  <path d="M14 14h3v3M21 14v3M14 21h3M21 17v4h-4"/>
+                </svg>
+              </button>
+              <button class="act-btn" title="Share">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 3v12"/>
+                  <path d="M8 7l4-4 4 4"/>
+                  <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="row-mock">
+            <span class="icn"><img src="assets/chains/sol.svg" alt=""></span>
+            <span class="lbl">Wisemen Marketing</span>
+          </div>
+          <div class="row-mock">
+            <span class="icn" style="background:rgba(0,0,0,0.06);"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.5 7 13 7 13s7-7.5 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg></span>
+            <span class="lbl">Home address</span>
+          </div>
+        </div>
+
+        <div class="qr-modal" id="qrModal">
+          <div class="qr-label">Wisemen Wallet</div>
+          <div class="qr-img"><img id="qrImg" alt=""></div>
+          <div class="qr-val">CJbUGxnVG2oXdsYD2dVVkhkoR8WQJEjch35VRa7xifsi</div>
+        </div>
+      </div>
+
+      <div class="instruction">
+        <h3>Show it to a phone</h3>
+        <p style="color:var(--fg-muted); font-size: 12px;">Generated on your Mac. No internet.</p>
+        <div class="row" style="margin-top: 8px;">
+          <button class="btn" data-go="share" id="qrNextBtn" disabled style="opacity:0.5">Next →</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ============================== SCENE 6: Share ============================== -->
+  <section class="scene" data-scene="share">
+    <span class="step-tag">Step 5</span>
+    <h2>Or share it</h2>
+    <p class="lead">Native macOS share sheet — AirDrop, Messages, Mail, all of it.</p>
+
+    <div class="qr-scenario">
+      <div class="qr-modal-wrap">
+        <div class="qr-popover">
+          <div class="pop-topbar">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 4a7 7 0 1 1-4.9 12 1 1 0 0 1 1.4-1.4 5 5 0 1 0 0-7.2 1 1 0 0 1-1.4-1.4A7 7 0 0 1 11 4zm6.7 13.3 3.5 3.5a1 1 0 0 1-1.4 1.4l-3.5-3.5a1 1 0 0 1 1.4-1.4z"/></svg>
+            <input value="" placeholder="Search and paste…" disabled>
+          </div>
+          <div class="row-mock hovered">
+            <span class="icn"><img src="assets/chains/sol.svg" alt=""></span>
+            <span class="lbl">Wisemen Wallet</span>
+            <div class="actions">
+              <button class="act-btn" title="Show QR">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="7" height="7" rx="1"/>
+                  <rect x="14" y="3" width="7" height="7" rx="1"/>
+                  <rect x="3" y="14" width="7" height="7" rx="1"/>
+                  <path d="M14 14h3v3M21 14v3M14 21h3M21 17v4h-4"/>
+                </svg>
+              </button>
+              <button class="act-btn pulse-now" id="shareTriggerBtn" title="Share">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 3v12"/>
+                  <path d="M8 7l4-4 4 4"/>
+                  <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="row-mock">
+            <span class="icn"><img src="assets/chains/sol.svg" alt=""></span>
+            <span class="lbl">Wisemen Marketing</span>
+          </div>
+          <div class="row-mock">
+            <span class="icn" style="background:rgba(0,0,0,0.06);"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.5 7 13 7 13s7-7.5 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg></span>
+            <span class="lbl">Home address</span>
+          </div>
+        </div>
+
+        <div class="share-sheet" id="shareSheet">
+          <div class="share-section">
+            <div class="share-header">AirDrop</div>
+          </div>
+          <div class="share-airdrops">
+            <div class="share-contact"><div class="ph" style="--c1:#fbbf24;--c2:#d97706">Y</div><div class="nm">Yand 👋</div></div>
+            <div class="share-contact"><div class="ph" style="--c1:#06b6d4;--c2:#0e7490">JR</div><div class="nm">Julio</div></div>
+            <div class="share-contact"><div class="ph" style="--c1:#f472b6;--c2:#be185d">S</div><div class="nm">Sarita</div></div>
+          </div>
+          <div class="share-divider"></div>
+          <div class="share-row"><div class="icon" style="--app-bg:#3b82f6">✉</div><div>Mail</div></div>
+          <div class="share-row"><div class="icon" style="--app-bg:#22c55e">💬</div><div>Messages</div></div>
+          <div class="share-row"><div class="icon" style="--app-bg:#fbbf24">📝</div><div>Notes</div></div>
+          <div class="share-row"><div class="icon" style="--app-bg:#a78bfa">📋</div><div>Reminders</div></div>
+        </div>
+      </div>
+
+      <div class="instruction">
+        <h3>Click Share</h3>
+        <p style="color:var(--fg-muted); font-size: 12px;">Real macOS sheet — anything installed shows up.</p>
+        <div class="row" style="margin-top: 8px;">
+          <button class="btn" data-go="done" id="shareNextBtn" disabled style="opacity:0.5">Finish →</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ============================== SCENE 7: Done ============================== -->
+  <section class="scene center" data-scene="done">
+    <div class="check-big">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12l4.5 4.5L19 7"/>
+      </svg>
+    </div>
+    <h2>You're set</h2>
+    <p class="lead">Press <kbd style="font-family:ui-monospace;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:2px 6px;font-size:0.8em;color:var(--fg)">⌘⇧V</kbd> anywhere.</p>
+    <div class="row center">
+      <button class="btn" id="tutorialFinish">Get started</button>
+      <button class="btn ghost" data-go="welcome">Start over</button>
+    </div>
+  </section>
+
+</div>
+
+
+<div class="progress" id="progress">
+  <span class="dot" data-for="welcome"></span>
+  <span class="dot" data-for="hotkey"></span>
+  <span class="dot" data-for="scenario-1"></span>
+  <span class="dot" data-for="scenario-2"></span>
+  <span class="dot" data-for="qr"></span>
+  <span class="dot" data-for="share"></span>
+  <span class="dot" data-for="done"></span>
+</div>
+
+<div class="top-corner">
+  Prototype · press your hotkey during scenarios (or click the keycaps) · <kbd>→</kbd> to advance
+</div>
+
+<div class="nav">
+  <button id="back">← Back</button>
+  <button id="skip" data-go="done">Skip to end</button>
+</div>
+
+
+<script>
+  const SCENES = ['welcome', 'hotkey', 'scenario-1', 'scenario-2', 'qr', 'share', 'done'];
+
+  // Tutorial presets — mirror the user's real saved items so the walkthrough
+  // demos with their actual content. Order is chosen so scenario 1 (address)
+  // and scenario 2 (wallet) highlight the right items at slots 1 and 2.
+  const PINNED = [
+    { kind: 'address', label: 'Home',              value: '17936 NW 59th Ave, Unit 102\nHialeah, FL 33015' },
+    { kind: 'crypto',  tag: 'SOL', label: 'Wisemen Wallet',  value: 'CJbUGxnVG2oXdsYD2dVVkhkoR8WQJEjch35VRa7xifsi' },
+    { kind: 'url',     label: 'CFA Crypto Pro',    value: 'https://cfacryptopro.com' },
+    { kind: 'crypto',  tag: 'SOL', label: 'Wisemen Marketing', value: '4d2GCkVTphEvEQBvv3av4dsusZnoQsHWMbHo3otq51CJ' },
+    { kind: 'url',     label: 'Link Tree',         value: 'https://wisemenalpha.com/linktree' },
+    { kind: 'text',    label: 'Morning Tea',       value: 'Wisemen Morning Tea is now live!' },
+  ];
+
+  const SCENARIOS = {
+    'scenario-1': {
+      slot: 'slot1', field: 'field1', chat: 'chat1', send: 'send1',
+      highlightIndex: 0,
+      pasteValue: PINNED[0].value,
+      composePlaceholder: 'iMessage',
+      next: 'scenario-2',
+      monospace: false,
+    },
+    'scenario-2': {
+      slot: 'slot2', field: 'field2', chat: 'chat2', send: 'send2',
+      highlightIndex: 1,
+      pasteValue: PINNED[1].value,
+      composePlaceholder: 'Message Sarah',
+      next: 'qr',
+      monospace: true,
+    },
+  };
+
+  let currentIdx = 0;
+  function currentScene() { return SCENES[currentIdx]; }
+
+  function show(idx) {
+    currentIdx = Math.max(0, Math.min(SCENES.length - 1, idx));
+    const name = SCENES[currentIdx];
+    document.querySelectorAll('.scene').forEach((el) => {
+      el.classList.toggle('active', el.dataset.scene === name);
+    });
+    document.querySelectorAll('.progress .dot').forEach((d, i) => {
+      d.classList.toggle('active', i === currentIdx);
+      d.classList.toggle('done', i < currentIdx);
+    });
+    Object.values(SCENARIOS).forEach((s) => {
+      const slot = document.getElementById(s.slot);
+      if (slot && s.slot !== SCENARIOS[name]?.slot) {
+        slot.innerHTML = '<div class="placeholder-text">↑ Press your hotkey to summon Restash at your cursor</div>';
+      }
+    });
+    if (name !== 'qr') {
+      const qm = document.getElementById('qrModal');
+      if (qm) qm.classList.remove('visible');
+    }
+    if (name !== 'share') {
+      const ss = document.getElementById('shareSheet');
+      if (ss) ss.classList.remove('visible');
+    }
+    // Auto-focus the message input on scenario open so the hotkey actually
+    // fires keydown into JS (Chrome only sends the combo to focused inputs).
+    if (name && name.startsWith('scenario-')) {
+      const cfg = SCENARIOS[name];
+      const field = document.getElementById(cfg.field);
+      if (field) setTimeout(() => field.focus(), 60);
+    }
+  }
+
+  function go(name) {
+    const i = SCENES.indexOf(name);
+    if (i >= 0) show(i);
+  }
+
+  document.querySelectorAll('[data-go]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (btn.disabled) return;
+      go(btn.dataset.go);
+    });
+  });
+  document.getElementById('back').addEventListener('click', () => show(currentIdx - 1));
+
+  // Grid popover renderer
+  function tileIcon(item) {
+    if (item.kind === 'crypto') {
+      return `<span class="ic"><img src="assets/chains/${item.tag.toLowerCase()}.svg" alt=""></span>`;
+    }
+    if (item.kind === 'url') {
+      return `<span class="ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M10.6 14.6a4 4 0 0 0 5.66 0l3.18-3.18a4 4 0 0 0-5.66-5.66l-1.59 1.59 1.41 1.41 1.59-1.59a2 2 0 0 1 2.83 2.83l-3.18 3.18a2 2 0 0 1-2.83 0 1 1 0 0 0-1.41 1.41z"/><path d="M13.4 9.4a4 4 0 0 0-5.66 0L4.56 12.58a4 4 0 0 0 5.66 5.66l1.59-1.59-1.41-1.41-1.59 1.59a2 2 0 0 1-2.83-2.83l3.18-3.18a2 2 0 0 1 2.83 0 1 1 0 0 0 1.41-1.41z"/></svg></span>`;
+    }
+    return `<span class="ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.5 7 13 7 13s7-7.5 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg></span>`;
+  }
+
+  function renderGrid(scenarioName) {
+    const cfg = SCENARIOS[scenarioName];
+    const slot = document.getElementById(cfg.slot);
+    const tiles = [];
+    for (let i = 0; i < 9; i++) {
+      const item = PINNED[i];
+      if (!item) {
+        tiles.push(`<div class="tile-mock empty"><span class="num">${i + 1}</span></div>`);
+      } else {
+        const cls = i === cfg.highlightIndex ? 'highlighted' : '';
+        tiles.push(`
+          <div class="tile-mock ${cls}" data-idx="${i}">
+            <span class="num">${i + 1}</span>
+            ${tileIcon(item)}
+            <span class="lbl">${item.label}</span>
+          </div>
+        `);
+      }
+    }
+    slot.innerHTML = `
+      <div class="demo-grid-wrap">
+        <div class="cursor-tag">
+          <svg class="pointer" viewBox="0 0 24 24"><path d="M2 2l9 22 3-10 10-3z" fill="white" stroke="#1c1c1e" stroke-width="1.4"/></svg>
+          <span class="label">your cursor</span>
+        </div>
+        <div class="demo-grid appearing">
+          <div class="grid-body">${tiles.join('')}</div>
+          <div class="grid-brandbar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="11" width="16" height="7" rx="1.5"/><path d="M6 8h12"/><path d="M8 5h8"/>
+            </svg>
+            Restash
+          </div>
+        </div>
+      </div>
+    `;
+    // Click-to-paste on the highlighted tile
+    const highlightedTile = slot.querySelector(`.tile-mock[data-idx="${cfg.highlightIndex}"]`);
+    if (highlightedTile) {
+      highlightedTile.addEventListener('click', () => triggerPaste(scenarioName));
+    }
+    // Clicks on other tiles also work (but for the tutorial we want the right slot to land)
+    slot.querySelectorAll('.tile-mock:not(.empty)').forEach((el) => {
+      el.addEventListener('click', () => triggerPaste(scenarioName));
+    });
+  }
+
+  function triggerPaste(scenarioName) {
+    const cfg = SCENARIOS[scenarioName];
+    const slot = document.getElementById(cfg.slot);
+    slot.innerHTML = '<div class="placeholder-text" style="color:#30d158">✓ Pasted from slot ' + (cfg.highlightIndex + 1) + '</div>';
+    simulatePaste(scenarioName);
+  }
+
+  function simulatePaste(scenarioName) {
+    const cfg = SCENARIOS[scenarioName];
+    const field = document.getElementById(cfg.field);
+    const sendBtn = document.getElementById(cfg.send);
+
+    // Real <input>: drop the value in, focus the input so the user can edit
+    // it before sending if they want, and arm the send button.
+    field.value = cfg.pasteValue;
+    field.focus();
+    field.setSelectionRange(field.value.length, field.value.length);
+    sendBtn.classList.add('ready');
+  }
+
+  function sendMessage(scenarioName) {
+    const cfg = SCENARIOS[scenarioName];
+    const field = document.getElementById(cfg.field);
+    const sendBtn = document.getElementById(cfg.send);
+    const chat = document.getElementById(cfg.chat);
+
+    const text = field.value.trim();
+    if (!text) return; // nothing to send
+
+    const bubble = document.createElement('div');
+    // monospace styling only for the crypto/url scenarios where the pasted
+    // value is the actual content. If the user edited it, fall back to regular.
+    const isPaste = text === cfg.pasteValue;
+    bubble.className = 'bubble out' + (cfg.monospace && isPaste ? ' monospace' : '');
+    bubble.textContent = text;
+    chat.appendChild(bubble);
+
+    field.value = '';
+    sendBtn.classList.remove('ready');
+
+    setTimeout(() => go(cfg.next), 900);
+  }
+
+  // Wire send buttons + Enter-to-send for both scenarios.
+  ['scenario-1', 'scenario-2'].forEach((scenarioName) => {
+    const cfg = SCENARIOS[scenarioName];
+    const sendBtn = document.getElementById(cfg.send);
+    const field = document.getElementById(cfg.field);
+    if (sendBtn) sendBtn.addEventListener('click', () => sendMessage(scenarioName));
+    if (field) {
+      field.addEventListener('input', () => {
+        const sendBtnEl = document.getElementById(cfg.send);
+        if (sendBtnEl) sendBtnEl.classList.toggle('ready', !!field.value.trim());
+      });
+      field.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && field.value.trim()) {
+          e.preventDefault();
+          sendMessage(scenarioName);
+        }
+      });
+    }
+  });
+
+  // ---------- QR scene ----------
+  let qrRendered = false;
+  function renderQR() {
+    if (qrRendered) return;
+    const value = 'CJbUGxnVG2oXdsYD2dVVkhkoR8WQJEjch35VRa7xifsi';
+    if (typeof qrcode === 'undefined') {
+      console.warn('[qr] qrcode-generator library not loaded');
+      document.getElementById('qrImg').alt = 'QR library failed to load';
+      return;
+    }
+    try {
+      const qr = qrcode(0, 'H'); // typeNumber=0 (auto-detect), errorCorrection='H'
+      qr.addData(value);
+      qr.make();
+      // cellSize=8, margin=4 → ~25×25 modules render at ~232px square
+      const dataUrl = qr.createDataURL(8, 4);
+      const imgEl = document.getElementById('qrImg');
+      imgEl.src = dataUrl;
+      imgEl.style.imageRendering = 'pixelated';
+      qrRendered = true;
+    } catch (err) {
+      console.error('[qr] render failed', err);
+    }
+  }
+
+  document.getElementById('qrTriggerBtn').addEventListener('click', () => {
+    renderQR();
+    document.getElementById('qrModal').classList.add('visible');
+    // Enable the "Next" button now that user has seen the QR.
+    const nextBtn = document.getElementById('qrNextBtn');
+    nextBtn.disabled = false;
+    nextBtn.style.opacity = '1';
+  });
+
+  // ---------- Share scene ----------
+  document.getElementById('shareTriggerBtn').addEventListener('click', () => {
+    document.getElementById('shareSheet').classList.add('visible');
+    const nextBtn = document.getElementById('shareNextBtn');
+    nextBtn.disabled = false;
+    nextBtn.style.opacity = '1';
+  });
+
+  // Click outside to dismiss modals
+  document.addEventListener('click', (e) => {
+    const qm = document.getElementById('qrModal');
+    if (qm && qm.classList.contains('visible')) {
+      if (!e.target.closest('#qrModal') && !e.target.closest('#qrTriggerBtn')) {
+        qm.classList.remove('visible');
+      }
+    }
+    const ss = document.getElementById('shareSheet');
+    if (ss && ss.classList.contains('visible')) {
+      if (!e.target.closest('#shareSheet') && !e.target.closest('#shareTriggerBtn')) {
+        ss.classList.remove('visible');
+      }
+    }
+  });
+
+
+  // --- Hotkey: default ⌘⇧V, but the user can record a custom combo ---
+  // chosenHotkey describes what summons Restash. hotkeyArmed flips to true
+  // only after the user explicitly clicks "Set hotkey" (or "Use this" in the
+  // recorder). Scenarios refuse to summon until the hotkey is armed.
+  let chosenHotkey = { meta: true, shift: true, alt: false, ctrl: false, key: 'v' };
+  let hotkeyArmed = false;
+  let isRecording = false;
+  let recordedHotkey = null;
+
+  function prettyHotkey(h) {
+    if (!h) return '';
+    return [h.ctrl && '⌃', h.alt && '⌥', h.shift && '⇧', h.meta && '⌘'].filter(Boolean).join('') +
+           (h.key ? h.key.toUpperCase() : '');
+  }
+
+  function matchesChosen(e) {
+    if (e.metaKey  !== chosenHotkey.meta)  return false;
+    if (e.shiftKey !== chosenHotkey.shift) return false;
+    if (e.altKey   !== chosenHotkey.alt)   return false;
+    if (e.ctrlKey  !== chosenHotkey.ctrl)  return false;
+    // Match either e.key (layout-sensitive) or e.code (physical key) so that
+    // ⌘⇧V works the same on US, German, Dvorak, etc. keyboards.
+    const k = (e.key || '').toLowerCase();
+    const codeKey = (e.code || '').replace(/^Key/i, '').toLowerCase();
+    return k === chosenHotkey.key || codeKey === chosenHotkey.key;
+  }
+
+  function onHotkeyHit() {
+    const scene = currentScene();
+    if (scene === 'hotkey') {
+      // The press registered — give the keycaps a sticky glow so the user
+      // can see it was detected, then enable the "Set" button so they can
+      // commit and move on.
+      document.querySelectorAll('#kbStage .key-cap').forEach((el) => {
+        el.classList.remove('pulse');
+        el.classList.add('confirmed');
+      });
+      const btn = document.getElementById('setHotkeyBtn');
+      if (btn && btn.disabled) {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.style.cursor = 'pointer';
+        btn.classList.add('armed');
+        // Switch the label to a clear forward-motion CTA.
+        btn.innerHTML = 'Continue with <span id="setHotkeyLabel">' + prettyHotkey(chosenHotkey) + '</span> →';
+      }
+      // Make the next-action requirement unmissable.
+      hotkeyLead.innerHTML = '✓ Detected. Click the button below to continue.';
+      // Drop a bouncing arrow above the button so the eye lands there.
+      const confirmStage = document.getElementById('confirmStage');
+      if (confirmStage && !document.getElementById('nextArrow')) {
+        const arrow = document.createElement('div');
+        arrow.id = 'nextArrow';
+        arrow.textContent = '↓';
+        arrow.style.cssText = 'font-size:22px;color:rgba(255,255,255,0.55);text-align:center;margin-bottom:6px;animation:bounceDown 1.3s ease-in-out infinite;';
+        confirmStage.parentElement.insertBefore(arrow, confirmStage);
+      }
+      return;
+    }
+    if (scene.startsWith('scenario-')) {
+      // Refuse to summon if the user hasn't armed a hotkey yet.
+      if (!hotkeyArmed) return;
+      const cfg = SCENARIOS[scene];
+      const slot = document.getElementById(cfg.slot);
+      if (slot && !slot.querySelector('.demo-grid')) renderGrid(scene);
+    }
+  }
+
+  function commitHotkey() {
+    hotkeyArmed = true;
+    go('scenario-1');
+  }
+
+  // ---------- "Pick your own combo" inline recorder ----------
+  const kbStage = document.getElementById('kbStage');
+  const recordStage = document.getElementById('recordStage');
+  const recordCapture = document.getElementById('recordCapture');
+  const pickCustomLink = document.getElementById('pickCustomLink');
+  const recordCancel = document.getElementById('recordCancel');
+  const recordConfirm = document.getElementById('recordConfirm');
+  const hotkeyLead = document.getElementById('hotkeyLead');
+  const hotkeyTip = document.getElementById('hotkeyTip');
+
+  function enterRecord() {
+    isRecording = true;
+    recordedHotkey = null;
+    kbStage.classList.add('hidden');
+    document.getElementById('confirmStage').style.display = 'none';
+    recordStage.classList.remove('hidden');
+    pickCustomLink.parentElement.classList.add('hidden');
+    hotkeyLead.innerHTML = 'Press any combo with at least one modifier.';
+    recordCapture.textContent = 'Press any combo…';
+    recordCapture.style.color = 'var(--fg-dim)';
+    recordConfirm.disabled = true;
+    recordConfirm.style.opacity = '0.4';
+  }
+  function exitRecord(commit) {
+    isRecording = false;
+    if (commit && recordedHotkey) chosenHotkey = recordedHotkey;
+    recordStage.classList.add('hidden');
+    kbStage.classList.remove('hidden');
+    pickCustomLink.parentElement.classList.remove('hidden');
+    document.getElementById('confirmStage').style.display = 'flex';
+    hotkeyLead.innerHTML = `Press <strong style="color: var(--fg)">${prettyHotkey(chosenHotkey).split('').join(' ')}</strong>.`;
+    // Update the "Set X as my hotkey" button label
+    document.getElementById('setHotkeyLabel').textContent = prettyHotkey(chosenHotkey);
+    // Replace the three default keycaps with whatever the user chose
+    rebuildHotkeyKeycaps();
+    // If they committed a custom combo, treat it as "pressed" — glow the keys
+    // and enable the Set button immediately, since recording a combo already
+    // demonstrates intent.
+    if (commit && recordedHotkey) {
+      document.querySelectorAll('#kbStage .key-cap').forEach((el) => {
+        el.classList.remove('pulse');
+        el.classList.add('confirmed');
+      });
+      const btn = document.getElementById('setHotkeyBtn');
+      if (btn) {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.style.cursor = 'pointer';
+        btn.classList.add('armed');
+      }
+      hotkeyLead.innerHTML = 'Detected — set it as your hotkey?';
+    }
+  }
+  function enterRecord_hideConfirm() {
+    document.getElementById('confirmStage').style.display = 'none';
+  }
+  function rebuildHotkeyKeycaps() {
+    const parts = [];
+    if (chosenHotkey.ctrl)  parts.push({ glyph: '⌃', sub: 'control' });
+    if (chosenHotkey.alt)   parts.push({ glyph: '⌥', sub: 'option' });
+    if (chosenHotkey.shift) parts.push({ glyph: '⇧', sub: 'shift' });
+    if (chosenHotkey.meta)  parts.push({ glyph: '⌘', sub: 'command' });
+    if (chosenHotkey.key)   parts.push({ glyph: chosenHotkey.key.toUpperCase(), sub: 'key' });
+    kbStage.innerHTML = parts.map((p, i) => `
+      <div class="key-cap pulse" style="animation-delay:${i * 0.12}s">${p.glyph}<span class="sub">${p.sub}</span></div>
+      ${i < parts.length - 1 ? '<span class="kb-plus">+</span>' : ''}
+    `).join('');
+  }
+
+  pickCustomLink.addEventListener('click', (e) => { e.preventDefault(); enterRecord(); });
+  recordCancel.addEventListener('click', () => exitRecord(false));
+  // "Use this" in the recorder commits the custom combo and shows the
+  // confirmed glow on the new keycaps. The user still has to click the
+  // "Set as my hotkey" button to advance — same gate as the default path.
+  recordConfirm.addEventListener('click', () => {
+    exitRecord(true);
+  });
+
+  // The default-mode "Set ⌘⇧V as my hotkey" button.
+  document.getElementById('setHotkeyBtn').addEventListener('click', commitHotkey);
+
+  // Click on any keycap just simulates pressing the combo (highlight only).
+  kbStage.addEventListener('click', onHotkeyHit);
+
+  // Window-level capture-phase listener — fires BEFORE Chrome's own shortcut
+  // handling, which is the only chance to intercept combos like ⌘⇧V that
+  // Chrome reserves for itself ("Paste and Match Style"). If this catches the
+  // hotkey we route it through and stopPropagation so the document handler
+  // below doesn't double-fire.
+  window.addEventListener('keydown', (e) => {
+    if (isRecording) return; // let the document handler manage recording
+    if (matchesChosen(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log('[hotkey-capture] caught', e.key, e.code);
+      onHotkeyHit();
+    }
+  }, true);
+
+  // Global keydown: drives both the hotkey scene (default + recorded combos)
+  // and the scenario scenes (summon + numeric paste).
+  document.addEventListener('keydown', (e) => {
+    // Diagnostic — open DevTools (⌘⌥I) and watch the console while pressing
+    // the combo. Tells us exactly what the browser is firing.
+    if (e.metaKey || e.ctrlKey || e.altKey) {
+      console.log('[hotkey]', {
+        key: e.key, code: e.code,
+        meta: e.metaKey, shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey,
+        matches: matchesChosen(e), scene: currentScene(),
+      });
+    }
+
+    // While recording a custom combo, capture any modifier + non-mod key.
+    if (isRecording) {
+      // Pure-modifier presses just show the partial combo as the user holds keys.
+      const isPureMod = ['Meta', 'Shift', 'Alt', 'Control'].includes(e.key);
+      if (isPureMod) {
+        const partial = [
+          e.ctrlKey && '⌃', e.altKey && '⌥', e.shiftKey && '⇧', e.metaKey && '⌘'
+        ].filter(Boolean).join(' ');
+        recordCapture.textContent = partial || 'Press any combo…';
+        recordCapture.style.color = 'var(--fg-dim)';
+        e.preventDefault();
+        return;
+      }
+      // Modifier + key: capture as the candidate combo. Require at least one mod.
+      if (!(e.metaKey || e.ctrlKey || e.altKey)) {
+        // shift alone isn't a valid modifier here
+        e.preventDefault();
+        return;
+      }
+      recordedHotkey = {
+        meta: e.metaKey, shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey,
+        key: e.key.toLowerCase(),
+      };
+      recordCapture.textContent = prettyHotkey(recordedHotkey).split('').join(' ');
+      recordCapture.style.color = 'var(--fg)';
+      recordConfirm.disabled = false;
+      recordConfirm.style.opacity = '1';
+      e.preventDefault();
+      return;
+    }
+
+    // Normal mode: check the chosen combo.
+    if (matchesChosen(e)) {
+      e.preventDefault();
+      onHotkeyHit();
+      return;
+    }
+
+    // Scenarios: number keys 1 / 2 trigger paste from the grid.
+    const scene = currentScene();
+    if (scene.startsWith('scenario-')) {
+      const cfg = SCENARIOS[scene];
+      const slot = document.getElementById(cfg.slot);
+      if (slot && slot.querySelector('.demo-grid')) {
+        const want = String(cfg.highlightIndex + 1);
+        if (e.key === want || e.key === 'Enter') {
+          e.preventDefault();
+          triggerPaste(scene);
+        }
+      }
+    }
+  });
+
+  // Click-to-trigger: tapping the kbd buttons (the small inline keycaps) acts
+  // like pressing the keys for users who'd rather mouse through the tour.
+  document.querySelectorAll('kbd.clickable').forEach((el) => {
+    el.addEventListener('click', () => {
+      const action = el.dataset.tutorialKey;
+      if (!action) return;
+      handleTutorialAction(action);
+    });
+  });
+
+  function handleTutorialAction(action) {
+    const scene = currentScene();
+
+    if (action === 'summon-1' || action === 'summon-2') {
+      if (!scene.startsWith('scenario-')) return;
+      const cfg = SCENARIOS[scene];
+      const slot = document.getElementById(cfg.slot);
+      if (slot && !slot.querySelector('.demo-grid')) {
+        renderGrid(scene);
+      }
+      return;
+    }
+    if (action === 'paste-1' || action === 'paste-2') {
+      if (!scene.startsWith('scenario-')) return;
+      const cfg = SCENARIOS[scene];
+      const slot = document.getElementById(cfg.slot);
+      if (!slot.querySelector('.demo-grid')) {
+        // Auto-summon for them if they hit paste before summon
+        renderGrid(scene);
+        setTimeout(() => triggerPaste(scene), 250);
+        return;
+      }
+      triggerPaste(scene);
+    }
+  }
+
+  document.addEventListener('keydown', (e) => {
+    const scene = currentScene();
+
+    if (e.key === 'ArrowRight' && scene !== 'hotkey' && !scene.startsWith('scenario-')) {
+      e.preventDefault();
+      show(currentIdx + 1);
+      return;
+    }
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      show(currentIdx - 1);
+      return;
+    }
+
+    // Number keys paste from the grid when it's open.
+    if (scene.startsWith('scenario-')) {
+      const cfg = SCENARIOS[scene];
+      const slot = document.getElementById(cfg.slot);
+      if (slot && slot.querySelector('.demo-grid')) {
+        const expectedKey = String(cfg.highlightIndex + 1);
+        if (e.key === expectedKey || e.key === 'Enter') {
+          e.preventDefault();
+          triggerPaste(scene);
+        }
+      }
+    }
+
+    if (scene === 'qr' && (e.key === 'Enter' || e.key.toLowerCase() === 'q')) {
+      e.preventDefault();
+      renderQR();
+      document.getElementById('qrModal').classList.add('visible');
+      const nextBtn = document.getElementById('qrNextBtn');
+      nextBtn.disabled = false;
+      nextBtn.style.opacity = '1';
+    }
+
+    if (scene === 'share' && e.key === 'Enter') {
+      e.preventDefault();
+      document.getElementById('shareSheet').classList.add('visible');
+      const nextBtn = document.getElementById('shareNextBtn');
+      nextBtn.disabled = false;
+      nextBtn.style.opacity = '1';
+    }
+  });
+
+  function light(key) {
+    if (kbHit[key]) return;
+    kbHit[key] = true;
+    const el = document.querySelector(`.key-cap[data-key="${key}"]`);
+    if (el) {
+      el.classList.remove('pulse');
+      el.classList.add('hit');
+    }
+  }
+
+  // Tutorial completion — call back to the Electron main process to close
+  // this window and persist onboarded=true. window.tutorial is exposed by
+  // tutorial-preload.js; if missing (e.g., file opened directly in browser),
+  // fall back to window.close().
+  function finishTutorial() {
+    if (window.tutorial && typeof window.tutorial.complete === 'function') {
+      window.tutorial.complete();
+    } else {
+      try { window.close(); } catch {}
+    }
+  }
+  const finishBtn = document.getElementById('tutorialFinish');
+  if (finishBtn) finishBtn.addEventListener('click', finishTutorial);
+  const skipBtn = document.getElementById('skip');
+  if (skipBtn) {
+    skipBtn.addEventListener('click', (e) => {
+      // Don't double-fire with data-go="done" — skip should close, not jump.
+      e.preventDefault();
+      e.stopPropagation();
+      finishTutorial();
+    });
+  }
+
+  show(0);
+</script>
+
+</body>
+</html>

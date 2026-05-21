@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; script-src 'self' 'unsafe-inline';" />
+<title>Restash · Scan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --lens-radius: 80px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100vw; height: 100vh;
+    overflow: hidden;
+    cursor: none;       /* we draw our own cursor inside the lens */
+    user-select: none;
+    background: transparent;
+    font: 13px -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+    color: white;
+  }
+  /* Square Viewfinder — the QR shape is square, so the scanner is too.
+     Box-shadow at 9999 px dims everything outside the lens without needing
+     a separate overlay element or CSS mask. */
+  .lens {
+    position: fixed;
+    width:  calc(var(--lens-radius) * 2);
+    height: calc(var(--lens-radius) * 2);
+    left: 0; top: 0;
+    transform: translate(calc(var(--cx, 50%) - var(--lens-radius)),
+                         calc(var(--cy, 50%) - var(--lens-radius)));
+    border-radius: 16px;
+    box-shadow:
+      0 0 0 9999px rgba(0, 0, 0, 0.62),
+      0 18px 36px rgba(0, 0, 0, 0.55);
+    pointer-events: none;
+  }
+  /* Thick corner brackets — the universal "QR scanner" pattern.
+     A black drop-shadow halo gives the white strokes edge definition over
+     light surfaces (white QR codes on white paper would otherwise erase them).
+     mix-blend-mode doesn't work here because Electron's transparent overlay
+     blends against the transparent layer, not the actual screen behind it. */
+  .corner {
+    position: absolute;
+    width: 24px; height: 24px;
+    border: 3px solid white;
+    filter:
+      drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.85))
+      drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.85));
+  }
+  .corner.tl { top: 0; left: 0;        border-right: 0; border-bottom: 0; border-top-left-radius:     16px; }
+  .corner.tr { top: 0; right: 0;       border-left: 0;  border-bottom: 0; border-top-right-radius:    16px; }
+  .corner.bl { bottom: 0; left: 0;     border-right: 0; border-top: 0;    border-bottom-left-radius:  16px; }
+  .corner.br { bottom: 0; right: 0;    border-left: 0;  border-top: 0;    border-bottom-right-radius: 16px; }
+
+  /* "SCROLL TO RESIZE" label centered inside the viewfinder. Fades out
+     1.5 s after the user's first scroll-resize, so it stops competing with
+     whatever QR they're aiming at. */
+  .inner-hint {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    /* Match the app's common UI font (Inter) — not monospace. */
+    font: 600 11px "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    color: white;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    white-space: nowrap;
+    pointer-events: none;
+    /* Pill backdrop so the hint stays legible regardless of what's under it
+       (light QRs on white paper make naked text invisible). */
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    padding: 4px 10px;
+    transition: opacity 420ms ease;
+  }
+  .inner-hint.fade { opacity: 0; }
+
+  /* "Click to scan" pill sits below the viewfinder so it tracks the lens. */
+  .below-hint {
+    position: absolute;
+    left: 50%; bottom: -38px;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, 0.10);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 999px;
+    padding: 5px 12px;
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 11.5px;
+    font-weight: 500;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
+  /* Hint pill (top center) + Restash brand pill (bottom right) */
+  .pill {
+    background: rgba(255,255,255,0.10);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,0.16);
+    border-radius: 999px;
+    color: rgba(255,255,255,0.92);
+    display: inline-flex; align-items: center; gap: 6px;
+    pointer-events: none;
+  }
+  /* Persistent Esc indicator in the top-right corner. */
+  .esc-corner {
+    position: fixed; top: 24px; right: 24px;
+    pointer-events: none;
+  }
+  .esc {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 6px;
+    padding: 3px 8px;
+    color: rgba(255,255,255,0.85);
+    font-size: 11px;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .esc kbd {
+    font-family: ui-monospace, monospace;
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.20);
+    border-radius: 3px;
+    padding: 0 4px;
+    font-size: 10px;
+    color: white;
+  }
+
+  .brand {
+    position: fixed; bottom: 32px; right: 32px;
+  }
+  .brand .pill { padding: 7px 14px 7px 10px; font-size: 12px; font-weight: 600; }
+  .brand svg { width: 14px; height: 14px; }
+</style>
+</head>
+<body>
+  <div class="lens" id="lens">
+    <div class="corner tl"></div>
+    <div class="corner tr"></div>
+    <div class="corner bl"></div>
+    <div class="corner br"></div>
+    <div class="inner-hint" id="innerHint">Scroll to resize</div>
+    <div class="below-hint">Click to scan</div>
+  </div>
+
+  <div class="esc-corner">
+    <div class="esc"><kbd>esc</kbd> cancel</div>
+  </div>
+
+  <div class="brand">
+    <div class="pill">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4" y="11" width="16" height="7" rx="1.5"/><path d="M6 8h12"/><path d="M8 5h8"/>
+      </svg>
+      Restash · Scan
+    </div>
+  </div>
+
+  <script>
+    // Track cursor position in CSS variables; pure transforms, no layout churn.
+    const root = document.documentElement;
+    let lastX = window.innerWidth / 2;
+    let lastY = window.innerHeight / 2;
+    // Lens radius (logical px). User can scroll-wheel to resize — bigger
+    // lens = bigger capture region, so big QRs fit. `radius` is the live
+    // displayed size; `targetRadius` is where the user is steering it. A
+    // requestAnimationFrame loop eases radius toward targetRadius so the
+    // grow/shrink feels gentle instead of snapping per-scroll-event.
+    let radius = 80;
+    let targetRadius = 80;
+    const MIN_RADIUS = 40;
+    const MAX_RADIUS = 360;
+    const EASE = 0.22; // 0..1 per frame; higher = snappier
+    root.style.setProperty('--cx', lastX + 'px');
+    root.style.setProperty('--cy', lastY + 'px');
+    root.style.setProperty('--lens-radius', radius + 'px');
+
+    let rafId = null;
+    function animateRadius() {
+      const delta = targetRadius - radius;
+      if (Math.abs(delta) < 0.4) {
+        radius = targetRadius;
+        root.style.setProperty('--lens-radius', radius + 'px');
+        rafId = null;
+        return;
+      }
+      radius += delta * EASE;
+      root.style.setProperty('--lens-radius', radius + 'px');
+      rafId = requestAnimationFrame(animateRadius);
+    }
+
+    document.addEventListener('mousemove', (e) => {
+      lastX = e.clientX;
+      lastY = e.clientY;
+      root.style.setProperty('--cx', lastX + 'px');
+      root.style.setProperty('--cy', lastY + 'px');
+    }, { passive: true });
+
+    // Scroll wheel / trackpad pinch resizes the lens. Up = grow, down = shrink.
+    // Step is proportional to deltaY so a flick is a bigger jump than a nudge.
+    let firstScroll = true;
+    document.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const step = -Math.sign(e.deltaY) * Math.min(20, Math.max(4, Math.abs(e.deltaY) * 0.15));
+      targetRadius = Math.max(MIN_RADIUS, Math.min(MAX_RADIUS, targetRadius + step));
+      if (!rafId) rafId = requestAnimationFrame(animateRadius);
+      // First time they scroll-resize, schedule the inner hint to fade out so
+      // it stops covering whatever QR they're aiming at. One-shot — once gone,
+      // it stays gone for this overlay session.
+      if (firstScroll) {
+        firstScroll = false;
+        setTimeout(() => {
+          document.getElementById('innerHint')?.classList.add('fade');
+        }, 1500);
+      }
+    }, { passive: false });
+
+    // Click → tell main to capture the lens region. Pass the current radius
+    // so main knows how big to make the screencapture rect.
+    document.addEventListener('click', () => {
+      // Use targetRadius (user's intent) so a quick scroll-then-click captures
+      // the size they were aiming at, even if the ease animation hasn't
+      // settled yet.
+      window.restashScan?.capture?.({ x: lastX, y: lastY, radius: targetRadius });
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        window.restashScan?.cancel?.();
+      }
+    });
+  </script>
+</body>
+</html>

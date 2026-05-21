@@ -1,0 +1,2049 @@
+:root {
+  /* Off-white flat palette (light mode default) */
+  --bg: #f5f5f4;
+  --bg-elev: #ebebe9;
+  --bg-elev-2: #dedcd9;
+  --modal-bg: #ffffff;
+  --fg: #1c1c1e;
+  --fg-dim: #5a5a5c;
+  --fg-muted: #8a8a8c;
+  --tint: #1c1c1e;
+  --tint-soft: rgba(28, 28, 30, 0.06);
+  --tint-strong: #1c1c1e;
+  --tint-fg: #ffffff;
+  --selected-overlay: rgba(255, 255, 255, 0.22);
+  --selected-fg-dim: rgba(255, 255, 255, 0.78);
+  --orange: #c97a00;
+  --red: #c93030;
+  --green: #1f8a3b;
+  --divider: rgba(0, 0, 0, 0.07);
+  --shell-edge: rgba(0, 0, 0, 0.10);
+  --hover: rgba(0, 0, 0, 0.04);
+  --radius: 12px;
+}
+
+/* Dark mode — applied via body.theme-dark when toggle is on */
+body.theme-dark {
+  --bg: #1e1e20;
+  --bg-elev: #2a2a2d;
+  --bg-elev-2: #34343a;
+  --modal-bg: #28282b;
+  --fg: #f2f2f7;
+  --fg-dim: #b8b8be;
+  --fg-muted: #8a8a92;
+  --tint: #f2f2f7;
+  --tint-soft: rgba(255, 255, 255, 0.08);
+  --tint-strong: #f2f2f7;
+  --tint-fg: #1c1c1e;
+  --selected-overlay: rgba(0, 0, 0, 0.10);
+  --selected-fg-dim: rgba(28, 28, 30, 0.72);
+  --divider: rgba(255, 255, 255, 0.08);
+  --shell-edge: rgba(255, 255, 255, 0.12);
+  --hover: rgba(255, 255, 255, 0.05);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  /* Transparent — the visible card is .shell. The window is bigger than the
+     card so the shadow has room to render in this gutter. */
+  background: transparent;
+  color: var(--fg);
+  font: 13px "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  font-feature-settings: "cv11", "ss01", "ss03";
+  user-select: none;
+  -webkit-app-region: no-drag;
+}
+
+/* Transparent shadow gutter around the card — must match SHADOW_PAD in main.js */
+body { padding: 24px; }
+
+/* The visible popover card. */
+.shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+  border-radius: 14px;
+  /* Hairline edge so the card reads crisply against any wallpaper. */
+  border: 1px solid var(--shell-edge);
+  /* Soft, light shadow — just enough lift to read as "floating" without the
+     heavy dark halo. */
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.05),
+    0 6px 18px rgba(0, 0, 0, 0.09);
+}
+
+.hidden { display: none !important; }
+
+kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--divider);
+  padding: 0 4px;
+  border-radius: 3px;
+  color: var(--fg-dim);
+}
+
+/* ---------- search-as-header ---------- */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--divider);
+  -webkit-app-region: drag;
+}
+.search-icon {
+  color: var(--fg-muted);
+  font-size: 14px;
+  padding-left: 4px;
+  -webkit-app-region: no-drag;
+}
+.search {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  color: var(--fg);
+  padding: 6px 4px;
+  font-size: 14px;
+  outline: none;
+  -webkit-app-region: no-drag;
+}
+.search::placeholder { color: var(--fg-muted); }
+.header-add {
+  -webkit-app-region: no-drag;
+  font-size: 16px;
+  color: var(--fg-dim);
+  padding: 2px 8px;
+}
+
+/* ---------- list ---------- */
+.list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.list::-webkit-scrollbar { width: 6px; }
+.list::-webkit-scrollbar-thumb { background: var(--bg-elev-2); border-radius: 3px; }
+
+.row {
+  display: flex;
+  flex-direction: column;
+  margin: 0 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  position: relative;
+}
+/* The main line: icon + label + key/actions. */
+.row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  position: relative;
+}
+/* Collapsible value preview under the row. Hidden (height 0) until the row
+   is hovered/selected, then it expands smoothly — rows below glide rather
+   than jump. */
+.row-peek {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  padding: 0 10px 0 40px;
+  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--fg-muted);
+  transition:
+    max-height 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 140ms ease,
+    padding-bottom 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.row.selected .row-peek {
+  /* Generous ceiling so multi-file / multi-detail peeks fully expand. */
+  max-height: 240px;
+  opacity: 1;
+  padding-bottom: 7px;
+  color: var(--selected-fg-dim);
+}
+/* Single-line value (url / text / command). */
+.peek-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Crypto — first5…last5, left-aligned. */
+.peek-wallet {
+  text-align: left;
+  word-break: break-all;
+  line-height: 1.5;
+  padding: 1px 0;
+}
+/* File items — one row per file: name on the left, size on the right. */
+.peek-file {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 1.5px 0;
+}
+.peek-file .pf-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.peek-file .pf-size { flex-shrink: 0; opacity: 0.65; }
+/* Contact items — one labeled row per detail. */
+.peek-kv {
+  display: flex;
+  gap: 8px;
+  padding: 1.5px 0;
+  align-items: baseline;
+}
+.peek-kv .pk {
+  flex: 0 0 54px;
+  text-transform: uppercase;
+  font-size: 8.5px;
+  letter-spacing: 0.4px;
+  opacity: 0.6;
+}
+.peek-kv .pv {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Agent personas — first few lines, markdown stripped. */
+.peek-agent-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 1px 0;
+}
+.peek-agent-line.head { font-weight: 600; opacity: 0.95; }
+
+.row:hover { background: var(--hover); }
+.row.selected {
+  background: var(--tint-strong);
+  color: var(--tint-fg);
+}
+.row.selected .preview { color: var(--selected-fg-dim); }
+.row.selected .preview::before { color: var(--selected-fg-dim); }
+.row.selected .icon { background: var(--selected-overlay); color: var(--tint-fg); }
+.row.selected .tag-chip { background: var(--selected-overlay); color: var(--tint-fg); }
+
+.row .icon {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  background: var(--tint-soft);
+  color: var(--tint);
+  border-radius: 6px;
+  flex: 0 0 22px;
+  /* `overflow: visible` so the +N badge that sits at bottom-right (-3px, -3px)
+     isn't clipped. Image thumbnails handle their own corner radius below. */
+  overflow: visible;
+}
+.row .icon .file-thumb {
+  border-radius: 6px;
+  overflow: hidden; /* image still respects the rounded tile */
+}
+.row .icon svg { width: 14px; height: 14px; display: block; }
+/* When the icon IS a chain badge, drop the tint background — the badge has
+   its own brand color and fills the slot. */
+.row .icon.is-chain { background: transparent; padding: 0; }
+.row .icon.is-chain svg,
+.row .icon.is-chain img.chain-logo { width: 22px; height: 22px; display: block; }
+.row.selected .icon.is-chain { background: transparent; }
+.row .text {
+  flex: 1; min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.row .label {
+  font-weight: 500;
+  font-size: 12.5px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row .preview {
+  flex: 1;
+  color: var(--fg-muted);
+  font-size: 11.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  /* Inline preview: hidden until the row is hovered/selected, then a gentle
+     opacity fade — no layout shift, no jumping rows. */
+  opacity: 0;
+  transition: opacity 130ms ease;
+}
+.row.selected .preview { opacity: 1; }
+.row .preview::before {
+  content: "— ";
+  color: var(--fg-muted);
+}
+.row .key {
+  font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+.row.selected .key { color: var(--selected-fg-dim); }
+.row.selected .preview, .row.selected .preview::before { color: var(--selected-fg-dim); }
+.tag-chip {
+  font-size: 9.5px;
+  font-weight: 500;
+  padding: 0px 5px;
+  border-radius: 999px;
+  background: var(--bg-elev-2);
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+/* Left marker on pinned rows: a pin glyph by default, swapping to the drag
+   grip (⋮⋮) on hover so it's clear the row can be reordered. */
+.drag-handle {
+  display: inline-grid;
+  place-items: center;
+  width: 13px;
+  margin-right: 1px;
+  color: var(--tint);
+  font-size: 11px;
+  letter-spacing: -2px;
+  cursor: grab;
+  user-select: none;
+}
+.drag-handle .pg-pin { display: inline-grid; place-items: center; }
+.drag-handle .pg-pin svg { width: 11px; height: 11px; display: block; }
+.drag-handle .pg-grip { display: none; color: var(--fg-muted); }
+.row.is-pinned:hover .drag-handle .pg-pin  { display: none; }
+.row.is-pinned:hover .drag-handle .pg-grip { display: inline; }
+.row.selected .drag-handle { color: var(--tint-fg); }
+.row.is-pinned.dragging {
+  opacity: 1;
+  /* Same treatment as the stash chip — solid card, ring + lift so it's
+     unmistakably the row being dragged. */
+  background: var(--bg-elev);
+  box-shadow: 0 0 0 2px var(--tint), 0 8px 18px rgba(0, 0, 0, 0.40);
+  z-index: 5;
+}
+.row.is-pinned.dragging .drag-handle { cursor: grabbing; }
+
+/* Drop indicators — a 2px tint line above or below the row being hovered */
+.row.drop-before { box-shadow: inset 0 2px 0 0 var(--tint); }
+.row.drop-after  { box-shadow: inset 0 -2px 0 0 var(--tint); }
+
+/* "unpinned" hint inside empty numpad slots */
+.tile.empty .empty-hint {
+  font-size: 9px;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  opacity: 0.6;
+  margin-top: 2px;
+}
+
+/* Row hover actions — QR + native share. Stack on the right edge over the
+   key indicator; the two fade-swap on hover. */
+.row { position: relative; }
+.row-actions {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translate(4px, -50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 110ms ease-out, transform 110ms ease-out;
+  pointer-events: none;
+}
+.row:hover .row-actions { opacity: 1; transform: translate(0, -50%); pointer-events: auto; }
+.row:hover .key { opacity: 0; }
+.row .key { transition: opacity 110ms ease-out; }
+.row-act {
+  width: 22px; height: 22px;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  transition: background 80ms ease-out, color 80ms ease-out;
+}
+.row-act:hover { background: var(--bg-elev-2); color: var(--fg); }
+.row-act svg { width: 13px; height: 13px; display: block; }
+.row.selected .row-act { color: var(--tint-fg); }
+.row.selected .row-act:hover { background: var(--selected-overlay); }
+
+/* Value preview shown directly below the selected row (Option 2 — Compact + peek) */
+.selected-peek {
+  padding: 5px 12px;
+  font-size: 10.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--fg-muted);
+  background: var(--bg-elev);
+  border-top: 1px solid var(--divider);
+  border-bottom: 1px solid var(--divider);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+  animation: peekIn 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: top;
+}
+@keyframes peekIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scaleY(0.85);
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+    max-height: 40px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+}
+
+/* Section label dividing pinned items from the rest of the list. */
+.list-section {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  padding: 8px 14px 3px;
+  user-select: none;
+}
+.list-section:first-child { padding-top: 4px; }
+
+/* Faint tint behind pinned rows so the pinned block reads as a group. */
+.row.is-pinned { background: var(--tint-soft); }
+.row.is-pinned:hover { background: var(--hover); }
+.row.is-pinned.selected { background: var(--tint-strong); }
+
+/* shared icon-btn (header gear/+ and modal buttons inside the topbar) */
+.icon-btn {
+  background: transparent;
+  border: 0;
+  color: var(--fg-dim);
+  cursor: pointer;
+  padding: 3px 5px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.icon-btn:hover { background: var(--bg-elev-2); color: var(--fg); }
+
+/* ---------- empty state ---------- */
+.empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center;
+  padding: 30px 12px;
+  color: var(--fg-dim);
+  flex: 1;
+}
+.empty-glyph { font-size: 32px; color: var(--fg-muted); margin-bottom: 6px; }
+.empty-title { font-weight: 500; }
+.empty-sub { font-size: 11.5px; color: var(--fg-muted); margin-top: 4px; }
+
+/* ---------- hint bar ---------- */
+.hintbar {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  padding: 5px 10px;
+  font-size: 10px;
+  color: var(--fg-muted);
+  border-top: 1px solid var(--divider);
+  background: rgba(0,0,0,0.10);
+}
+.hintbar span { display: inline-flex; align-items: center; gap: 3px; }
+
+/* Brand bar — small Restash mark + wordmark at very bottom of popover */
+.brandbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-top: 1px solid var(--divider);
+  color: var(--fg-muted);
+  font-size: 10.5px;
+  letter-spacing: 0.3px;
+}
+.brandbar .brandmark {
+  width: 11px;
+  height: 11px;
+  display: block;
+  opacity: 0.7;
+}
+.brandbar .brandname {
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  opacity: 0.85;
+}
+
+/* ---------- buttons (used in modals) ---------- */
+.btn {
+  background: var(--bg-elev);
+  border: 1px solid var(--divider);
+  color: var(--fg);
+  padding: 6px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  font: inherit;
+}
+.btn:hover { background: var(--bg-elev-2); }
+.btn.primary { background: var(--tint); border-color: transparent; color: var(--tint-fg); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--fg-dim); }
+.btn.ghost:hover { color: var(--fg); background: var(--hover); }
+.btn.danger { background: transparent; border-color: transparent; color: var(--red); }
+.btn.danger:hover { background: rgba(255, 69, 58, 0.12); }
+.spacer { flex: 1; }
+
+/* ---------- modal ---------- */
+.backdrop {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.30);
+  display: grid; place-items: center;
+  z-index: 50;
+  border-radius: 12px;
+}
+.modal {
+  width: 280px;
+  background: var(--modal-bg);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.18);
+}
+body.theme-dark .modal { box-shadow: 0 16px 40px rgba(0,0,0,0.55); }
+.modal-header { padding: 10px 12px; font-weight: 600; border-bottom: 1px solid var(--divider); font-size: 12.5px; }
+.modal-body { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto; }
+
+/* ===================== Billing ===================== */
+#billingBody { gap: 12px; }
+.tier-hero {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 4px; padding: 6px 0 2px;
+}
+.tier-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 19px; font-weight: 700; letter-spacing: -0.3px;
+}
+.tier-badge .spark { color: var(--orange); }
+.tier-sub { font-size: 12px; color: var(--fg-muted); }
+.renewal { width: 100%; }
+.renewal-line {
+  display: flex; justify-content: space-between;
+  font-size: 11.5px; color: var(--fg-dim); margin-bottom: 6px;
+}
+.renewal-line .left { color: var(--fg); font-weight: 600; }
+.bar { height: 6px; border-radius: 3px; background: var(--bg-elev-2); overflow: hidden; }
+.bar-fill { height: 100%; background: var(--tint); border-radius: 3px; }
+.b-btn {
+  width: 100%;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px 12px; border-radius: 9px;
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--divider); background: var(--bg-elev); color: var(--fg);
+}
+.b-btn:hover { background: var(--bg-elev-2); }
+.locked {
+  background: var(--bg-elev); border: 1px solid var(--divider);
+  border-radius: 10px; padding: 10px 12px;
+}
+.locked-title {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--fg-muted); margin-bottom: 6px; font-weight: 600;
+}
+.locked-item {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; color: var(--fg-dim); padding: 2px 0;
+}
+.locked-item svg { width: 13px; height: 13px; color: var(--tint); flex: 0 0 13px; }
+.locked-item .dim { color: var(--fg-muted); }
+/* Free → Pro comparison rows inside the billing locked box. */
+.cmp-row {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11.5px;
+  padding: 3px 0;
+}
+.cmp-row + .cmp-row { border-top: 1px solid var(--divider); }
+.cmp-row .cmp-label { color: var(--fg-dim); }
+.cmp-row .cmp-vals { display: flex; align-items: center; gap: 6px; }
+.cmp-row .cmp-free { color: var(--fg-muted); }
+.cmp-row .cmp-arrow { color: var(--fg-muted); font-size: 10px; }
+.cmp-row .cmp-pro { color: var(--fg); font-weight: 700; }
+/* Billing modal never scrolls — the window grows to fit instead. */
+#billingBody { max-height: none; overflow: visible; }
+
+/* Compact trial banner (Free state). */
+.trial {
+  display: flex; align-items: center; gap: 9px;
+  background: var(--bg-elev); border: 1px solid var(--divider);
+  border-radius: 9px; padding: 8px 10px;
+}
+.trial .ico {
+  width: 26px; height: 26px; border-radius: 7px;
+  background: var(--tint); color: var(--tint-fg);
+  display: grid; place-items: center; flex: 0 0 26px;
+}
+.trial .ico svg { width: 15px; height: 15px; }
+.trial .t-main { flex: 1; min-width: 0; }
+.trial .t-title { font-size: 12.5px; font-weight: 600; }
+.trial .t-sub { font-size: 10.5px; color: var(--fg-muted); margin-top: 1px; }
+.trial .t-days { font-size: 17px; font-weight: 700; text-align: right; line-height: 1.05; }
+.trial .t-days small { font-size: 9px; font-weight: 500; color: var(--fg-muted); display: block; }
+
+/* Comparison header label (bare, no box). */
+.cmp-h {
+  font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--fg-muted); font-weight: 600; margin-bottom: 3px;
+}
+
+/* Segmented plan picker. */
+.seg {
+  display: flex; gap: 3px;
+  background: var(--bg-elev); border: 1px solid var(--divider);
+  border-radius: 9px; padding: 3px;
+}
+.seg button {
+  flex: 1; font: inherit; font-size: 11.5px; font-weight: 600;
+  padding: 7px 4px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--fg-dim); cursor: pointer;
+}
+.seg button.on { background: var(--tint); color: var(--tint-fg); }
+.seg-detail { text-align: center; padding: 6px 0 2px; }
+.seg-price { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+.seg-price small { font-size: 12px; font-weight: 500; color: var(--fg-muted); }
+.seg-sub { font-size: 11px; color: var(--fg-muted); margin-top: 1px; }
+.big-cta {
+  width: 100%; font: inherit; font-size: 13.5px; font-weight: 700;
+  padding: 11px; border: 0; border-radius: 9px;
+  background: var(--tint); color: var(--tint-fg); cursor: pointer;
+}
+.big-cta:hover { opacity: 0.92; }
+.section-label {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--fg-muted); font-weight: 600; text-align: center;
+}
+.plan {
+  width: 100%;
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 12px; border-radius: 10px;
+  border: 1px solid var(--divider); background: var(--bg-elev);
+  cursor: pointer; text-align: left; font: inherit; color: var(--fg);
+}
+.plan:hover { border-color: var(--fg-muted); }
+.plan.featured { border-color: var(--tint); box-shadow: 0 0 0 1px var(--tint); }
+.plan .p-main { flex: 1; min-width: 0; }
+.plan .p-name { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.plan .p-save {
+  font-size: 9px; font-weight: 700;
+  background: var(--green); color: #fff;
+  padding: 1px 5px; border-radius: 999px; letter-spacing: 0.3px;
+}
+.plan .p-sub { font-size: 11px; color: var(--fg-muted); margin-top: 1px; }
+.plan .p-price { font-size: 15px; font-weight: 700; white-space: nowrap; }
+.plan .p-price small { font-size: 10px; font-weight: 500; color: var(--fg-muted); }
+.billing-lifetime {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 10px; padding: 14px 0 8px;
+}
+.billing-lifetime .lt-mark {
+  width: 56px; height: 56px; border-radius: 16px;
+  background: var(--tint); color: var(--tint-fg);
+  display: grid; place-items: center;
+}
+.billing-lifetime .lt-mark svg { width: 30px; height: 30px; }
+.billing-note {
+  color: var(--fg-dim); font-size: 12px; line-height: 1.55;
+  max-width: 240px; text-align: center;
+}
+.modal-footer { padding: 8px 12px; border-top: 1px solid var(--divider); display: flex; gap: 6px; align-items: center; }
+
+/* ---------- one-time offer card ---------- */
+.oto-card {
+  width: 258px;
+  background: var(--modal-bg);
+  border: 1px solid var(--divider);
+  border-radius: 14px;
+  padding: 18px 16px 14px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+}
+.oto-eyebrow {
+  font-size: 10px; font-weight: 800; letter-spacing: 1.4px;
+  text-transform: uppercase; color: #d99e2b;
+}
+.oto-title {
+  font-size: 16px; font-weight: 700; text-align: center; line-height: 1.3;
+}
+.oto-deal {
+  width: 100%;
+  display: flex; align-items: center; gap: 11px;
+  border: 1px solid var(--divider); background: var(--bg-elev);
+  border-radius: 11px; padding: 11px 12px;
+  cursor: pointer; font: inherit; color: var(--fg); text-align: left;
+}
+.oto-deal.best { border-color: #d99e2b; box-shadow: 0 0 0 1px #d99e2b; }
+.oto-deal-main { flex: 1; min-width: 0; }
+.oto-deal-name { font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+.oto-badge {
+  font-size: 8px; font-weight: 800; background: #d99e2b; color: #1c1c1e;
+  padding: 1px 5px; border-radius: 999px;
+}
+.oto-deal-sub { font-size: 10px; color: var(--fg-muted); margin-top: 2px; }
+.oto-deal-price { text-align: right; }
+.oto-deal-now { font-size: 19px; font-weight: 800; letter-spacing: -0.5px; }
+.oto-deal-was { font-size: 10.5px; text-decoration: line-through; color: var(--fg-muted); font-weight: 600; }
+.oto-cta {
+  width: 100%; font: inherit; font-weight: 800; font-size: 14px;
+  border: 0; border-radius: 10px; padding: 12px; cursor: pointer;
+  background: var(--tint); color: var(--tint-fg);
+}
+.oto-ghost {
+  background: transparent; border: 0; cursor: pointer;
+  color: var(--fg-muted); font: inherit; font-size: 11px; font-weight: 500;
+  padding: 4px;
+}
+.oto-footnote { font-size: 9.5px; color: var(--fg-muted); text-align: center; }
+
+.kind-picker { display: flex; flex-wrap: wrap; gap: 5px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--bg-elev);
+  border: 1px solid var(--divider);
+  color: var(--fg);
+  padding: 4px 10px 4px 7px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.chip:hover { background: var(--bg-elev-2); }
+.chip.active { background: var(--tint); border-color: transparent; color: var(--tint-fg); }
+.chip .chip-ic { display: inline-grid; place-items: center; width: 14px; height: 14px; color: var(--tint); }
+.chip .chip-ic svg { width: 14px; height: 14px; display: block; }
+.chip.active .chip-ic { color: var(--tint-fg); }
+
+/* Agent starter-template chips — same pill language as .chip, but they're
+   one-shot fillers (click drops the persona into the Value field). */
+.agent-picker { display: flex; flex-wrap: wrap; gap: 5px; }
+.agent-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--bg-elev);
+  border: 1px solid var(--divider);
+  color: var(--fg);
+  padding: 4px 10px 4px 7px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.agent-chip:hover { background: var(--bg-elev-2); }
+.agent-chip.active { background: var(--tint); border-color: transparent; color: var(--tint-fg); }
+.agent-chip .chip-ic { display: inline-grid; place-items: center; width: 14px; height: 14px; color: var(--tint); }
+.agent-chip .chip-ic svg { width: 14px; height: 14px; display: block; }
+.agent-chip.active .chip-ic { color: var(--tint-fg); }
+
+/* ============================================================
+   File item — editor picker + row/tile thumbs
+   ============================================================ */
+.file-zone-empty {
+  width: 100%;
+  background: var(--bg);
+  border: 1.5px dashed var(--divider);
+  border-radius: 10px;
+  padding: 20px 14px;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--fg);
+  transition: border-color 120ms, background 120ms;
+}
+.file-zone-empty:hover {
+  border-color: var(--fg-dim);
+  background: var(--bg-elev);
+}
+.file-zone-empty .ic { font-size: 24px; opacity: 0.75; line-height: 1; }
+.file-zone-empty .heading { font-size: 12.5px; font-weight: 500; }
+.file-zone-empty .sub { font-size: 10.5px; color: var(--fg-muted); }
+
+/* Multi-file editor list — replaces the old single-row layout. Holds N
+   .file-row blocks plus an "Add more" button. */
+.file-zone-picked {
+  background: var(--bg);
+  border: 1px solid var(--divider);
+  border-radius: 10px;
+  padding: 6px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.file-zone-picked .file-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: var(--bg-elev);
+}
+.file-zone-picked .file-row .thumb {
+  width: 34px; height: 34px;
+  border-radius: 6px;
+  background: var(--bg-elev-2);
+  display: grid; place-items: center;
+  flex: 0 0 34px;
+  overflow: hidden;
+  position: relative;
+}
+.file-zone-picked .file-row .thumb .file-glyph {
+  width: 20px; height: 20px;
+  color: var(--fg-dim);
+  display: grid; place-items: center;
+}
+.file-zone-picked .file-row .thumb .file-glyph svg { width: 100%; height: 100%; display: block; }
+.file-zone-picked .file-row .thumb img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+}
+.file-zone-picked .file-row .thumb.video::after {
+  content: '▶';
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  color: white; font-size: 11px;
+  background: rgba(0,0,0,0.40);
+  border-radius: 6px;
+}
+.file-zone-picked .file-row .meta { flex: 1; min-width: 0; }
+.file-zone-picked .file-row .name {
+  font-size: 12px; font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.file-zone-picked .file-row .sub {
+  font-size: 10.5px; color: var(--fg-muted); margin-top: 1px;
+}
+.file-zone-picked .file-row .x-btn {
+  background: transparent; border: 0;
+  color: var(--fg-muted); cursor: pointer;
+  width: 22px; height: 22px;
+  border-radius: 5px;
+  display: grid; place-items: center;
+  font-size: 14px; font: inherit;
+}
+.file-zone-picked .file-row .x-btn:hover {
+  background: var(--bg-elev-2); color: var(--fg);
+}
+
+/* Warning row for rejected files (too-large, etc.). Tinted background +
+   orange icon carry the "something is wrong" signal; the text itself uses
+   the normal foreground colors for proper contrast. */
+.file-zone-picked .file-row.error {
+  background: rgba(201, 122, 0, 0.14);
+  border: 1px solid rgba(201, 122, 0, 0.32);
+}
+.file-zone-picked .file-row.error .thumb {
+  background: rgba(201, 122, 0, 0.30);
+  color: var(--orange, #c97a00);
+}
+.file-zone-picked .file-row.error .thumb svg {
+  width: 18px; height: 18px;
+}
+.file-zone-picked .file-row.error .name,
+.file-zone-picked .file-row.error .sub {
+  /* Allow up to 2 lines — error subtext is longer than normal, and we don't
+     want the filename to ellipsize mid-word ("ORE Documentary Mov…"). */
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+.file-zone-picked .file-row.error .name {
+  color: var(--fg);
+  font-weight: 600;
+}
+.file-zone-picked .file-row.error .sub {
+  color: var(--fg-dim);  /* normal secondary text — high enough contrast */
+}
+body.theme-dark .file-zone-picked .file-row.error {
+  background: rgba(255, 159, 10, 0.14);
+  border-color: rgba(255, 159, 10, 0.32);
+}
+body.theme-dark .file-zone-picked .file-row.error .thumb {
+  background: rgba(255, 159, 10, 0.28);
+  color: #ffb340;
+}
+.file-zone-picked .add-more-btn {
+  background: transparent;
+  border: 1px dashed var(--divider);
+  border-radius: 7px;
+  padding: 8px 10px;
+  font: inherit; font-size: 11.5px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  margin-top: 2px;
+}
+.file-zone-picked .add-more-btn:hover {
+  color: var(--fg);
+  border-color: var(--fg-dim);
+}
+
+/* "+N" count badge — sits on the icon tile for multi-file items in the list,
+   and on the grid tile for multi-file in grid mode. */
+.row .icon { position: relative; }
+.file-count-badge {
+  position: absolute;
+  bottom: -4px; right: -4px;
+  min-width: 15px; height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--tint);
+  color: var(--tint-fg);
+  font-size: 9px;
+  font-weight: 700;
+  display: grid; place-items: center;
+  line-height: 1;
+  box-shadow: 0 0 0 2px var(--bg);
+  z-index: 2;
+}
+
+/* Stacked-card treatment for multi-file row icons. Two faint rectangles peek
+   out behind the primary tile to signal "this is a set." */
+.row .icon.is-stack::before,
+.row .icon.is-stack::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--bg-elev);
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  z-index: -1;
+  pointer-events: none;
+}
+.row .icon.is-stack::before {
+  transform: translate(2px, -2px);
+  opacity: 0.85;
+}
+.row .icon.is-stack::after {
+  transform: translate(4px, -4px);
+  opacity: 0.55;
+}
+.row .icon.is-stack > .file-thumb,
+.row .icon.is-stack > svg {
+  position: relative;
+  z-index: 1;
+}
+.tile-count-badge {
+  position: absolute;
+  top: 2px; left: 4px;
+  min-width: 16px; height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--tint);
+  color: var(--tint-fg);
+  font-size: 9.5px; font-weight: 700;
+  display: grid; place-items: center;
+  line-height: 1;
+  z-index: 3;
+}
+.tile.image-bg .tile-count-badge {
+  background: rgba(0, 0, 0, 0.55);
+  color: white;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.30);
+}
+
+/* (LEGACY single-file zone — kept for any old code paths still pointing here) */
+.file-zone-picked.single-legacy {
+  flex-direction: row; align-items: center; padding: 9px 12px;
+}
+.file-zone-picked .thumb {
+  width: 42px; height: 42px;
+  border-radius: 7px;
+  background: var(--bg-elev-2);
+  display: grid; place-items: center;
+  flex: 0 0 42px;
+  overflow: hidden;
+  position: relative;
+}
+.file-zone-picked .thumb .ic { font-size: 22px; line-height: 1; }
+.file-zone-picked .thumb .file-glyph {
+  width: 24px; height: 24px;
+  color: var(--fg-dim);
+  display: grid; place-items: center;
+}
+.file-zone-picked .thumb .file-glyph svg { width: 100%; height: 100%; display: block; }
+.file-zone-picked .thumb img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+}
+.file-zone-picked .thumb.video::after {
+  content: '▶';
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  color: white; font-size: 13px;
+  background: rgba(0,0,0,0.35);
+  border-radius: 7px;
+}
+.file-zone-picked .meta { flex: 1; min-width: 0; }
+.file-zone-picked .name {
+  font-size: 12.5px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.file-zone-picked .sub {
+  font-size: 10.5px; color: var(--fg-muted); margin-top: 1px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.file-zone-picked .x-btn {
+  background: transparent; border: 0;
+  color: var(--fg-muted); cursor: pointer;
+  width: 22px; height: 22px;
+  border-radius: 5px;
+  display: grid; place-items: center;
+  font-size: 14px;
+  font: inherit;
+}
+.file-zone-picked .x-btn:hover {
+  background: var(--bg-elev-2); color: var(--fg);
+}
+
+/* File items rendered inside row icons (list mode) and grid tiles. Monochrome
+   SVGs inherit color from the icon tile via currentColor. */
+.row .icon .file-thumb,
+.tile .ic .file-thumb {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: inherit;
+}
+.row .icon:has(> .file-thumb) {
+  background: transparent;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Grid tile with image as whole-tile background */
+.tile.image-bg { padding: 0; overflow: hidden; position: relative; }
+.tile.image-bg .tile-bg {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  z-index: 0;
+}
+.tile.image-bg::after {
+  content: '';
+  position: absolute; left: 0; right: 0; bottom: 0; height: 50%;
+  background: linear-gradient(to top, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0) 100%);
+  z-index: 1; pointer-events: none;
+}
+.tile.image-bg .num,
+.tile.image-bg .lbl {
+  position: relative; z-index: 2; color: #fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.55);
+}
+.tile.image-bg .lbl {
+  position: absolute; left: 4px; right: 4px; bottom: 4px;
+  font-weight: 600;
+}
+.tile.image-bg .num {
+  position: absolute; top: 3px; right: 5px;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+/* ---------- chain picker (in editor) ---------- */
+.chain-picker {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
+  width: 100%;
+}
+.chain-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  background: var(--bg-elev);
+  border: 1.5px solid transparent;
+  border-radius: 8px;
+  padding: 6px 4px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--fg-dim);
+  transition: border-color 80ms ease, background 80ms ease;
+}
+.chain-btn:hover { background: var(--bg-elev-2); }
+.chain-btn.selected {
+  border-color: var(--tint);
+  background: var(--tint-soft);
+  color: var(--fg);
+}
+.chain-badge { width: 22px; height: 22px; display: block; }
+.chain-badge svg,
+.chain-badge img.chain-logo { width: 22px; height: 22px; display: block; }
+.chain-name {
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+}
+
+/* ---------- Edit-stash modal ---------- */
+.stash-edit-modal {
+  width: 360px;
+  max-height: 520px;
+}
+.stash-edit-modal .modal-body { padding: 0; }
+.stash-edit-section-title {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--fg-muted);
+  padding: 12px 14px 6px;
+  font-weight: 600;
+}
+.stash-edit-slots {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  padding: 0 14px 8px;
+}
+.stash-edit-slot {
+  position: relative;
+  height: 50px;
+  background: var(--bg-elev);
+  border: 1px dashed var(--divider);
+  border-radius: 8px;
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 6px 0 22px;
+  font-size: 11px;
+  color: var(--fg);
+  overflow: hidden;
+  cursor: pointer;
+  transition: background 80ms ease, border-color 80ms ease;
+}
+.stash-edit-slot:hover { border-color: var(--tint); }
+.stash-edit-slot .slot-num {
+  position: absolute; top: 3px; left: 6px;
+  font: 9px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--fg-muted);
+}
+.stash-edit-slot.filled {
+  background: var(--tint-soft);
+  border-style: solid;
+  border-color: transparent;
+}
+.stash-edit-slot .slot-lbl {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 500;
+}
+.stash-edit-slot .slot-remove {
+  width: 18px; height: 18px;
+  border: 0; background: transparent;
+  color: var(--fg-muted); cursor: pointer;
+  border-radius: 4px; padding: 0;
+  display: grid; place-items: center;
+  font-size: 13px;
+  flex: 0 0 18px;
+}
+.stash-edit-slot .slot-remove:hover { background: rgba(0,0,0,0.08); color: var(--fg); }
+.stash-edit-slot.drop-target { border-color: var(--tint); background: var(--tint-soft); }
+
+.stash-edit-items {
+  max-height: 280px;
+  overflow-y: auto;
+  border-top: 1px solid var(--divider);
+}
+.stash-edit-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--divider);
+  cursor: pointer;
+}
+.stash-edit-row:hover { background: var(--hover); }
+.stash-edit-row .check {
+  width: 16px; height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid var(--divider);
+  flex: 0 0 16px;
+  display: grid; place-items: center;
+  transition: background 80ms, border-color 80ms;
+}
+.stash-edit-row.in .check {
+  background: var(--tint);
+  border-color: var(--tint);
+}
+.stash-edit-row.in .check::after {
+  content: '✓';
+  color: var(--tint-fg);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+.stash-edit-row .row-text {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column;
+  gap: 1px;
+}
+.stash-edit-row .row-lbl {
+  font-size: 12.5px;
+  font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.stash-edit-row .row-val {
+  font-size: 10.5px;
+  color: var(--fg-muted);
+  font-family: ui-monospace, monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.stash-edit-row .pin-btn {
+  background: transparent;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  color: var(--fg-dim);
+  font: inherit; font-size: 10.5px;
+  padding: 3px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.stash-edit-row .pin-btn:hover { background: var(--bg-elev); color: var(--fg); }
+.stash-edit-row .pin-btn.pinned {
+  background: var(--tint-soft);
+  border-color: transparent;
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* ---------- Edit pencil chip in the stash bar ---------- */
+.stash-bar .stash-edit-icon {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 0;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  transition: background 80ms, color 80ms;
+}
+.stash-bar .stash-edit-icon:hover { background: var(--bg-elev); color: var(--fg); }
+
+/* Stash filter bar — sits above the list. Click a chip to filter; cycle with
+   the hotkey too (same as the grid pager). Hidden in grid mode. */
+.stash-bar {
+  display: flex;
+  gap: 4px;
+  padding: 6px 10px 8px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--divider);
+  scrollbar-width: none;
+}
+.stash-bar::-webkit-scrollbar { display: none; }
+.mode-grid .stash-bar { display: none; }
+.stash-bar .stash-tab {
+  flex: 0 0 auto;
+  background: var(--bg-elev);
+  border: 1px solid var(--divider);
+  border-radius: 999px;
+  padding: 3px 9px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--fg-dim);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+}
+.stash-bar .stash-tab:hover { background: var(--bg-elev-2); color: var(--fg); }
+.stash-bar .stash-tab.active {
+  background: var(--tint);
+  color: var(--tint-fg);
+  border-color: transparent;
+  font-weight: 600;
+}
+.stash-bar .stash-tab.new {
+  border-style: dashed;
+  color: var(--fg-muted);
+}
+.stash-bar .stash-tab.new:hover { color: var(--fg); }
+/* Drag-reorder visual states for user stashes. */
+.stash-bar .stash-tab.user { cursor: grab; }
+.stash-bar .stash-tab.user:active { cursor: grabbing; }
+.stash-bar .stash-tab.dragging {
+  opacity: 1;
+  /* Crisp ring in --tint (dark on light mode, light on dark mode — reads in
+     both) + a lift shadow, so the grabbed chip clearly pops. */
+  box-shadow: 0 0 0 2px var(--tint), 0 8px 18px rgba(0, 0, 0, 0.40);
+  transform: scale(1.06);
+  position: relative;
+  z-index: 5;
+}
+.stash-bar .stash-tab.drop-before {
+  box-shadow: -3px 0 0 0 var(--tint);
+}
+.stash-bar .stash-tab.drop-after {
+  box-shadow: 3px 0 0 0 var(--tint);
+}
+.stash-bar .stash-tab-input {
+  flex: 0 0 auto;
+  background: var(--bg-elev);
+  border: 1px solid var(--tint);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font: inherit; font-size: 11px;
+  color: var(--fg); width: 130px;
+  outline: none;
+}
+.stash-bar .stash-tab-input::placeholder { color: var(--fg-muted); }
+.stash-bar .stash-tab-input.shake {
+  animation: shakeX 380ms cubic-bezier(0.36, 0.07, 0.19, 0.97);
+  border-color: var(--red, #ff453a);
+}
+@keyframes shakeX {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+/* Stash multi-select chip picker. Replaces the freeform Tag input. Items can
+   belong to multiple stashes; clicking a chip toggles membership. */
+.stash-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+.stash-chip {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-elev);
+  border: 1px solid var(--divider);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  transition: background 80ms ease, border-color 80ms ease, color 80ms ease;
+}
+.stash-chip:hover { background: var(--bg-elev-2); color: var(--fg); }
+.stash-chip.active {
+  background: var(--tint);
+  color: var(--tint-fg);
+  border-color: transparent;
+  font-weight: 600;
+}
+.stash-chip.new {
+  border-style: dashed;
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+.stash-chip.new:hover { color: var(--fg); }
+.stash-chip-input {
+  background: var(--bg-elev);
+  border: 1px solid var(--tint);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--fg);
+  width: 120px;
+  outline: none;
+}
+.stash-chip-input::placeholder { color: var(--fg-muted); }
+
+.field { display: flex; flex-direction: column; gap: 3px; }
+.field > span { font-size: 11px; color: var(--fg-dim); }
+.field input, .field textarea {
+  background: var(--bg-elev);
+  border: 1px solid var(--divider);
+  color: var(--fg);
+  padding: 6px 8px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  outline: none;
+  resize: vertical;
+}
+.field input:focus, .field textarea:focus { border-color: var(--tint); }
+
+/* Command kind — give the value field a real terminal look so it reads as
+   code in both light and dark mode. */
+.field textarea.mono {
+  background: #17171c;
+  color: #e6e6ec;
+  border-color: rgba(255, 255, 255, 0.10);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  line-height: 1.5;
+}
+.field textarea.mono::placeholder { color: #5f5f6d; }
+.field textarea.mono:focus { border-color: #4b8dff; }
+
+/* Contact kind — structured field grid (email / phone / company / wallet). */
+.contact-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+/* min-width:0 lets the grid cell shrink below the input's intrinsic width
+   instead of overflowing the modal. */
+.contact-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.contact-field > span {
+  font-size: 10px;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.contact-field input {
+  width: 100%;
+  min-width: 0;
+  background: var(--bg-elev);
+  border: 1px solid var(--divider);
+  color: var(--fg);
+  padding: 6px 8px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.contact-field input:focus { border-color: var(--tint); }
+
+/* ---------- accessibility banner ---------- */
+.access-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(255, 159, 10, 0.12);
+  border-bottom: 1px solid var(--divider);
+}
+.access-text {
+  flex: 1;
+  font-size: 11.5px;
+  color: var(--orange);
+  line-height: 1.3;
+}
+.btn.small { padding: 3px 9px; font-size: 11px; }
+
+.access-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.access-status-row #accessStatusText {
+  flex: 1;
+  font-size: 11.5px;
+}
+.access-status-row #accessStatusText.granted { color: var(--green); }
+.access-status-row #accessStatusText.denied { color: var(--orange); }
+
+/* ---------- settings ---------- */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.toggle-help {
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  line-height: 1.4;
+  flex: 1;
+}
+.toggle-help .muted { color: var(--fg-muted); }
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  flex: 0 0 36px;
+}
+.toggle-switch input { display: none; }
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-elev-2);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 160ms ease-out;
+}
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 16px; height: 16px;
+  top: 2px; left: 2px;
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.18);
+  transition: transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--tint);
+}
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(16px);
+}
+
+.hotkey-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.hotkey-display {
+  flex: 1;
+  background: var(--bg-elev);
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  text-align: center;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.hotkey-display.recording {
+  border-color: var(--tint);
+  background: var(--tint-soft);
+  color: var(--tint);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.hotkey-status {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  margin-top: 2px;
+}
+.hotkey-status.ok    { color: var(--green); background: rgba(48,209,88,0.12); }
+.hotkey-status.warn  { color: var(--orange); background: rgba(255,159,10,0.12); }
+.hotkey-status.error { color: var(--red); background: rgba(255,69,58,0.12); }
+
+.settings-note {
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  background: var(--bg-elev);
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.settings-note ul { margin: 4px 0 0 0; padding-left: 18px; }
+.settings-note li { margin-bottom: 3px; line-height: 1.4; }
+.settings-note kbd { font-size: 10px; }
+
+/* ---------- QR ---------- */
+.qr-body { align-items: center; }
+#qrImg {
+  width: 200px; height: 200px;
+  background: white;
+  border-radius: 8px;
+  padding: 6px;
+  image-rendering: pixelated;
+}
+.qr-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  color: var(--fg-dim);
+  text-align: center;
+  word-break: break-all;
+  max-width: 240px;
+}
+
+/* ---------- toast ---------- */
+.toast {
+  position: absolute;
+  bottom: 36px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.85);
+  color: white;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 11px;
+  z-index: 100;
+  pointer-events: none;
+  animation: pop 1.4s ease-out forwards;
+}
+@keyframes pop {
+  0% { opacity: 0; transform: translate(-50%, 6px); }
+  15% { opacity: 1; transform: translate(-50%, 0); }
+  85% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -6px); }
+}
+
+/* Free-tier upgrade nudge — slides up from the bottom on a blocked action.
+   z-index above the modal backdrops (50) so it shows even over the editor. */
+.limit-nudge {
+  position: absolute;
+  left: 12px; right: 12px; bottom: 12px;
+  display: flex; align-items: center; gap: 9px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--divider);
+  border-radius: 10px;
+  padding: 9px 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  z-index: 90;
+  animation: limitNudgeIn 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes limitNudgeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.limit-nudge .ln-ic { color: var(--orange); flex: 0 0 16px; }
+.limit-nudge .ln-ic svg { width: 16px; height: 16px; display: block; }
+.limit-nudge .ln-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.limit-nudge .ln-title { font-size: 11.5px; font-weight: 600; }
+.limit-nudge .ln-sub { font-size: 10px; color: var(--fg-muted); margin-top: 1px; }
+.limit-nudge .ln-btn {
+  font: inherit; font-size: 11px; font-weight: 700;
+  background: var(--tint); color: var(--tint-fg);
+  border: 0; border-radius: 6px; padding: 5px 11px; cursor: pointer;
+  white-space: nowrap;
+}
+
+/* ============================================================
+   Mode B — Grid (cursor numpad)
+   ============================================================ */
+/* Cursor numpad doesn't need a search field — direct number keys are the input.
+   Hiding the topbar entirely gives the tiles more vertical room. */
+.mode-grid .topbar { display: none; }
+.mode-grid .hintbar { padding: 4px 8px; font-size: 9.5px; }
+.grid-wrap {
+  flex: 1;
+  display: flex; flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+/* Stash pager header — dots + animated name. Mirrors the mockup. */
+.stash-header {
+  flex: 0 0 auto;
+  padding: 7px 12px 5px;
+  text-align: center;
+  border-bottom: 1px solid var(--divider);
+}
+.stash-dots {
+  display: flex; gap: 4px; justify-content: center;
+  margin-bottom: 4px;
+}
+.stash-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  /* Mid-gray so inactive dots are clearly visible against the off-white card
+     (and the dark card in dark mode) — was an invisible white-on-light. */
+  background: var(--fg-muted);
+  opacity: 0.55;
+  transition: all 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.stash-dot.active {
+  background: var(--fg);
+  opacity: 1;
+  width: 18px;
+  border-radius: 3px;
+}
+.stash-name {
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--fg);
+  height: 15px; line-height: 15px;
+  overflow: hidden;
+  position: relative;
+}
+.stash-name .label {
+  position: absolute; inset: 0;
+  transition: opacity 180ms, transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.stash-name .label.entering { opacity: 0; transform: translateY(8px); }
+.stash-name .label.entering.in  { opacity: 1; transform: translateY(0); }
+.stash-name .label.exiting     { opacity: 1; transform: translateY(0); }
+.stash-name .label.exiting.out { opacity: 0; transform: translateY(-8px); }
+
+/* The viewport holds one or two .grid-page layers stacked, sliding in/out. */
+.grid-viewport {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+}
+.grid-page {
+  position: absolute; inset: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: 1fr;
+  gap: 5px;
+  padding: 6px;
+  box-sizing: border-box;
+  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms;
+  will-change: transform, opacity;
+}
+.grid-page.enter-right { transform: translateX(100%);  opacity: 0.6; }
+.grid-page.enter-left  { transform: translateX(-100%); opacity: 0.6; }
+.grid-page.exit-right  { transform: translateX(100%);  opacity: 0.6; }
+.grid-page.exit-left   { transform: translateX(-100%); opacity: 0.6; }
+.grid-page.center      { transform: translateX(0);    opacity: 1; }
+.tile {
+  background: var(--bg-elev);
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 4px 7px;
+  font: inherit;
+  color: var(--fg);
+  cursor: pointer;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  transition: transform 80ms ease, background 80ms ease, border-color 80ms ease;
+}
+.tile:hover {
+  background: var(--bg-elev-2);
+  border-color: var(--tint);
+  transform: translateY(-1px);
+}
+.tile:active { transform: translateY(0); }
+.tile.pinned {
+  background: var(--tint-soft);
+  border-color: transparent;
+}
+.tile .num {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font: 9px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--fg-muted);
+}
+.tile .ic {
+  width: 22px; height: 22px;
+  display: grid; place-items: center;
+  color: var(--tint);
+  line-height: 1;
+}
+.tile .ic svg { width: 18px; height: 18px; display: block; }
+.tile .ic.is-chain svg,
+.tile .ic.is-chain img.chain-logo { width: 22px; height: 22px; display: block; }
+.tile .lbl {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--fg);
+  text-align: center;
+  line-height: 1.22;
+  max-width: 100%;
+  padding: 0 2px;
+  /* Reserve exactly two lines (~26 px at this size+line-height) so labels
+     never get clipped mid-letter when only one line fits. */
+  min-height: calc(10.5px * 1.22 * 2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+.tile.empty {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--divider);
+  cursor: default;
+}
+.tile.empty:hover { transform: none; background: transparent; border-color: var(--divider); }
+.tile.empty .num { opacity: 0.4; }
+
+/* ============================================================
+   Dropdown footer (list mode only)
+   ============================================================ */
+.dropdown-footer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--divider);
+  background: var(--bg-elev);
+}
+.footer-spacer { flex: 1; }
+.footer-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 9px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.footer-btn:hover { background: var(--hover); }
+.footer-btn:active { background: var(--bg-elev-2); }
+.footer-btn.icon-only {
+  padding: 4px 7px;
+  font-size: 13px;
+  color: var(--fg-dim);
+}
+.footer-btn.icon-only:hover { color: var(--fg); }
+.footer-btn.danger:hover {
+  background: rgba(201, 48, 48, 0.10);
+  color: var(--red);
+}
+
+/* ============================================================
+   QR decoder preview (mode: qr)
+   ============================================================ */
+.qr-panel {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+/* In qr mode the qr-panel is a full takeover — hide EVERYTHING else, including
+   the grid (#gridWrap) which is what was leaking through under the QR card. */
+.mode-qr .stash-bar,
+.mode-qr #list,
+.mode-qr #empty,
+.mode-qr #gridWrap,
+.mode-qr #hintbarList,
+.mode-qr #hintbarGrid,
+.mode-qr #dropdownFooter,
+.mode-qr #brandbar,
+.mode-qr .brandbar,
+.mode-qr .topbar { display: none; }
+.mode-qr .qr-panel { display: flex; }
+
+/* Header strip — small QR glyph + "Decoded · TYPE" + secondary. */
+.qr-head {
+  display: flex; align-items: center; gap: 9px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--divider);
+}
+.qr-mini-icon {
+  width: 24px; height: 24px;
+  border-radius: 5px;
+  background: var(--bg-elev);
+  display: grid; place-items: center;
+  color: var(--fg-dim);
+  flex: 0 0 24px;
+}
+.qr-mini-icon svg { width: 14px; height: 14px; display: block; }
+.qr-head-text { min-width: 0; }
+.qr-title { font-size: 12.5px; font-weight: 600; color: var(--fg); }
+.qr-meta  { font-size: 10.5px; color: var(--fg-muted); margin-top: 1px;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Body — hero row + value block. Scroll if value is long. */
+.qr-body {
+  flex: 1; min-height: 0;
+  padding: 14px 12px 10px;
+  display: flex; flex-direction: column; gap: 10px;
+  overflow-y: auto;
+}
+.qr-hero {
+  display: flex; align-items: center; gap: 11px;
+}
+.qr-hero-ic {
+  width: 40px; height: 40px;
+  border-radius: 8px;
+  display: grid; place-items: center;
+  flex: 0 0 40px;
+  background: var(--bg-elev);
+  color: var(--fg-dim);
+  overflow: hidden;
+}
+.qr-hero-ic svg { width: 22px; height: 22px; display: block; }
+.qr-hero-ic img { width: 100%; height: 100%; display: block; }
+.qr-hero-ic-url    { background: rgba(0, 122, 255, 0.10); color: #007aff; }
+.qr-hero-ic-wifi   { background: rgba(48, 209, 88, 0.14); color: var(--green, #1f8a3b); }
+.qr-hero-ic-crypto { background: transparent; padding: 0; }
+.qr-hero-ic-vcard  { background: rgba(255,159,10,0.14); color: var(--orange, #c97a00); }
+.qr-hero-text { min-width: 0; flex: 1; }
+.qr-hero-title { font-size: 14px; font-weight: 600; color: var(--fg);
+                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qr-hero-sub   { font-size: 11px; color: var(--fg-muted); margin-top: 1px;
+                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Decoded value display. */
+.qr-value {
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  line-height: 1.45;
+  word-break: break-word;
+  background: var(--bg-elev);
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.qr-value-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
+}
+.qr-value-tiny { font-size: 10.5px; }
+
+/* Wi-Fi key/value rows. */
+.qr-kv {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg-elev);
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.qr-k { color: var(--fg-muted); font-size: 11px; flex: 0 0 70px; }
+.qr-v { color: var(--fg); font-size: 11.5px; flex: 1; min-width: 0;
+        overflow: hidden; text-overflow: ellipsis; }
+
+/* Error / no-QR-found state. */
+.qr-error-msg {
+  margin: 4px 0 0;
+  color: var(--fg-dim);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Action button row at the bottom. */
+.qr-actions {
+  display: flex; gap: 6px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--divider);
+  background: var(--bg-elev);
+}
+.qr-btn {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--divider);
+  border-radius: 7px;
+  padding: 7px 10px;
+  font: inherit; font-size: 11.5px; font-weight: 600;
+  color: var(--fg);
+  cursor: pointer;
+  transition: background 80ms;
+}
+.qr-btn:hover { background: var(--bg-elev-2); }
+.qr-btn.primary {
+  background: var(--tint);
+  color: var(--tint-fg);
+  border-color: transparent;
+}
+.qr-btn.primary:hover { background: var(--tint); opacity: 0.9; }
+
+/* ============================================================
+   QR URL preview — site card + safety badge
+   ============================================================ */
+.qr-safety {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+.qr-safety svg { width: 11px; height: 11px; display: block; }
+.qr-safety.safe {
+  background: rgba(31, 138, 59, 0.14);
+  color: var(--green, #1f8a3b);
+}
+body.theme-dark .qr-safety.safe { background: rgba(48, 209, 88, 0.16); color: #30d158; }
+.qr-safety.warn {
+  background: rgba(201, 122, 0, 0.16);
+  color: var(--orange, #c97a00);
+}
+body.theme-dark .qr-safety.warn { background: rgba(255, 159, 10, 0.18); color: #ff9f0a; }
+
+/* Site preview card — replaces the hero+value blocks for URL items. */
+.site-preview {
+  background: var(--bg-elev);
+  border: 1px solid var(--divider);
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.site-preview .hero-img {
+  width: 100%;
+  height: 110px;
+  object-fit: cover;
+  display: block;
+  background: var(--bg-elev-2);
+}
+.site-preview-body {
+  padding: 9px 11px 11px;
+  display: flex; gap: 9px;
+  align-items: flex-start;
+}
+.site-preview .site-favicon {
+  width: 22px; height: 22px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--bg-elev-2);
+  display: grid; place-items: center;
+  flex: 0 0 22px;
+  margin-top: 1px;
+}
+.site-preview .site-favicon img { width: 100%; height: 100%; display: block; }
+.site-preview .site-meta { min-width: 0; flex: 1; }
+.site-preview .site-title {
+  font-size: 12.5px; font-weight: 600;
+  color: var(--fg);
+  overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  line-height: 1.3;
+  min-height: 16px;
+}
+.site-preview .site-desc {
+  font-size: 10.5px;
+  color: var(--fg-muted);
+  margin-top: 3px;
+  line-height: 1.4;
+  overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.site-preview .site-host {
+  font-size: 10px; color: var(--fg-muted);
+  margin-top: 6px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Loading state — shimmer skeleton lines while the fetch is in flight. */
+.site-preview.loading .site-title,
+.site-preview.loading .site-desc {
+  position: relative;
+}
+.site-preview.loading .site-title::before,
+.site-preview.loading .site-desc::before {
+  content: '';
+  display: block;
+  height: 10px;
+  background: linear-gradient(90deg, var(--bg-elev) 0%, var(--bg-elev-2) 50%, var(--bg-elev) 100%);
+  background-size: 200% 100%;
+  border-radius: 4px;
+  animation: qrShimmer 1.4s linear infinite;
+}
+.site-preview.loading .site-title::before { width: 78%; margin-bottom: 4px; }
+.site-preview.loading .site-desc::before  { width: 92%; height: 8px; }
+@keyframes qrShimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}

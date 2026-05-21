@@ -1,0 +1,17 @@
+{
+  "name": "restash",
+  "version": "0.1.0",
+  "description": "macOS menu bar app for saving and re-pasting items",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "brand": "node scripts/build-brand-assets.js"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "@resvg/resvg-js": "2.6.2",
+    "electron": "33.2.1",
+    "qrcode": "1.5.4"
+  }
+}

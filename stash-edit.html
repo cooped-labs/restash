@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; script-src 'self'; font-src 'self' https://fonts.gstatic.com;" />
+<title>Edit stash</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css" />
+<style>
+  /* Standalone-window overrides: this page IS the modal, so we don't need a
+     backdrop — the BrowserWindow itself provides the frame + shadow + corners. */
+  html, body {
+    width: 480px; height: 620px;
+    overflow: hidden;
+    background: #1c1c1e;
+    border-radius: 14px;
+  }
+  body.theme-dark { background: #1c1c1e; }
+  .page {
+    display: flex; flex-direction: column;
+    height: 100%;
+    color: var(--fg);
+  }
+  .page-header {
+    -webkit-app-region: drag;     /* drag the whole top strip */
+    padding: 14px 18px 10px;
+    border-bottom: 1px solid var(--divider);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .page-header .brand-mark {
+    width: 22px; height: 22px;
+    color: var(--fg-dim);
+    flex: 0 0 22px;
+  }
+  .page-header .titles { flex: 1; min-width: 0; }
+  .page-header .kicker {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--fg-muted);
+    font-weight: 600;
+  }
+  .page-header .stash-name {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--fg);
+    margin-top: 1px;
+    line-height: 1.1;
+  }
+  .page-header .close-x {
+    -webkit-app-region: no-drag;
+    width: 28px; height: 28px;
+    border: 0; background: transparent;
+    color: var(--fg-muted);
+    cursor: pointer;
+    border-radius: 8px;
+    font-size: 17px;
+    display: grid; place-items: center;
+    flex: 0 0 28px;
+  }
+  .page-header .close-x:hover { background: var(--bg-elev); color: var(--fg); }
+
+  .page-body {
+    flex: 1; min-height: 0;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Section: pinned slots — 3x3 grid in this larger window */
+  .slots-section {
+    padding: 14px 18px 6px;
+  }
+  .slots-section .label {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--fg-muted);
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .slots-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+  .slot {
+    position: relative;
+    height: 56px;
+    background: var(--bg-elev);
+    border: 1px dashed var(--divider);
+    border-radius: 10px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 8px 0 24px;
+    overflow: hidden;
+  }
+  .slot.filled { background: var(--bg-elev-2); border-style: solid; border-color: transparent; }
+  .slot .n {
+    position: absolute; top: 4px; left: 8px;
+    font: 10px ui-monospace, monospace;
+    color: var(--fg-muted);
+  }
+  .slot .lbl {
+    flex: 1; min-width: 0;
+    font-size: 12.5px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .slot.empty .lbl { color: var(--fg-muted); }
+  .slot .remove {
+    width: 20px; height: 20px;
+    border: 0; background: transparent;
+    color: var(--fg-muted); cursor: pointer;
+    border-radius: 5px; padding: 0;
+    display: grid; place-items: center;
+    font-size: 13px;
+    flex: 0 0 20px;
+  }
+  .slot .remove:hover { background: var(--bg-elev); color: var(--fg); }
+
+  /* Items list — scrollable */
+  .items-section {
+    flex: 1; min-height: 0;
+    display: flex; flex-direction: column;
+    margin-top: 8px;
+  }
+  .items-section .label {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--fg-muted);
+    font-weight: 600;
+    padding: 6px 18px 6px;
+  }
+  .items-list {
+    flex: 1; min-height: 0;
+    overflow-y: auto;
+    border-top: 1px solid var(--divider);
+  }
+  .item-row {
+    display: flex; align-items: center; gap: 11px;
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--divider);
+    cursor: pointer;
+  }
+  .item-row:hover { background: var(--hover); }
+  .item-row .check {
+    width: 18px; height: 18px;
+    border-radius: 5px;
+    border: 1.5px solid var(--divider);
+    flex: 0 0 18px;
+    display: grid; place-items: center;
+    transition: background 80ms, border-color 80ms;
+  }
+  .item-row.in .check { background: var(--tint); border-color: var(--tint); }
+  .item-row.in .check::after { content: '✓'; color: var(--tint-fg); font-size: 12px; font-weight: 700; line-height: 1; }
+  .item-row .text {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column; gap: 1px;
+  }
+  .item-row .row-lbl {
+    font-size: 13px; font-weight: 500;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .item-row .row-val {
+    font-size: 11px; color: var(--fg-muted);
+    font-family: ui-monospace, monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .item-row .pin-btn {
+    background: transparent;
+    border: 1px solid var(--divider);
+    border-radius: 7px;
+    color: var(--fg-dim);
+    font: inherit; font-size: 11px;
+    padding: 4px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .item-row .pin-btn:hover { background: var(--bg-elev); color: var(--fg); }
+  .item-row .pin-btn.pinned {
+    background: var(--tint-soft);
+    border-color: transparent;
+    color: var(--fg);
+    font-weight: 600;
+  }
+  .item-row .pin-btn.hidden { visibility: hidden; }
+
+  .page-footer {
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 18px;
+    border-top: 1px solid var(--divider);
+    background: var(--bg-elev);
+  }
+  .page-footer .spacer { flex: 1; }
+</style>
+</head>
+<body class="theme-dark">
+
+<div class="page">
+  <header class="page-header">
+    <svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="4" y="11" width="16" height="7" rx="1.5"/>
+      <path d="M6 8h12"/>
+      <path d="M8 5h8"/>
+    </svg>
+    <div class="titles">
+      <div class="kicker">Edit stash</div>
+      <div class="stash-name" id="stashName">—</div>
+    </div>
+    <button class="close-x" id="closeBtn" title="Close">✕</button>
+  </header>
+
+  <main class="page-body">
+    <section class="slots-section">
+      <div class="label">Cursor numpad — top 9 (pinned items first)</div>
+      <div class="slots-grid" id="slotsGrid"></div>
+    </section>
+
+    <section class="items-section">
+      <div class="label">All items — click to toggle membership</div>
+      <div class="items-list" id="itemsList"></div>
+    </section>
+  </main>
+
+  <footer class="page-footer">
+    <button class="btn danger" id="deleteBtn">Delete stash</button>
+    <div class="spacer"></div>
+    <button class="btn primary" id="doneBtn">Done</button>
+  </footer>
+</div>
+
+<script src="stash-edit-renderer.js"></script>
+</body>
+</html>

@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; script-src 'self'; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com;" />
+  <title>Restash</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- .shell is the visible card; body has transparent padding around it so
+       the custom drop-shadow has room to render (window itself is bigger). -->
+  <div class="shell">
+  <header class="topbar">
+    <span class="search-icon">⌕</span>
+    <input id="search" class="search" type="search" placeholder="Search and paste…" autocomplete="off" autofocus />
+  </header>
+
+  <div id="accessBanner" class="access-banner hidden">
+    <div class="access-text">
+      Allow Restash to paste into apps
+    </div>
+    <button id="accessGrantBtn" class="btn small primary">Grant</button>
+  </div>
+
+  <div id="empty" class="empty hidden">
+    <div class="empty-glyph">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="34" height="34">
+        <rect x="4" y="11" width="16" height="7" rx="1.5"/>
+        <path d="M6 8h12"/>
+        <path d="M8 5h8"/>
+      </svg>
+    </div>
+    <div class="empty-title">No saved items</div>
+    <div class="empty-sub">Press <kbd>⌘N</kbd> to add one.</div>
+  </div>
+
+  <div id="stashBar" class="stash-bar"></div>
+  <main id="list" class="list"></main>
+
+  <!-- QR decoder preview — shown when mode === 'qr'. Populated by renderQRPanel(). -->
+  <section id="qrPanel" class="qr-panel hidden"></section>
+  <main id="gridWrap" class="grid-wrap hidden">
+    <div class="stash-header">
+      <div id="stashDots" class="stash-dots"></div>
+      <div id="stashName" class="stash-name"><span class="label">All</span></div>
+    </div>
+    <div id="grid" class="grid-viewport"></div>
+  </main>
+
+  <div id="hintbarList" class="hintbar">
+    <span><kbd>↑↓</kbd> select</span>
+    <span><kbd>↵</kbd> paste</span>
+    <span><kbd>⌘N</kbd> new</span>
+  </div>
+
+  <div id="hintbarGrid" class="hintbar hidden">
+    <span><kbd>1</kbd>–<kbd>9</kbd> paste</span>
+    <span id="gridCycleHint" class="hidden"><kbd id="gridCycleKey">⌃⇧V</kbd> cycle stash</span>
+    <span><kbd>esc</kbd> close</span>
+  </div>
+
+  <!-- Menu-bar dropdown footer (list mode only) -->
+  <footer id="dropdownFooter" class="dropdown-footer hidden">
+    <button class="footer-btn" data-act="new">＋ New</button>
+    <div class="footer-spacer"></div>
+    <button class="footer-btn icon-only" data-act="theme" id="themeToggle" title="Toggle dark mode">☾</button>
+    <button class="footer-btn icon-only" data-act="settings" title="Settings (⌘,)">⚙</button>
+    <button class="footer-btn icon-only" data-act="updates" title="Check for updates">↻</button>
+    <button class="footer-btn icon-only" data-act="billing" title="Billing & account">＄</button>
+    <button class="footer-btn icon-only danger" data-act="quit" title="Quit Restash">⏻</button>
+  </footer>
+
+  <!-- Restash brand mark — pinned to the very bottom, under everything else -->
+  <div class="brandbar" id="brandbar">
+    <svg class="brandmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="4" y="11" width="16" height="7" rx="1.5"/>
+      <path d="M6 8h12"/>
+      <path d="M8 5h8"/>
+    </svg>
+    <span class="brandname">Restash</span>
+  </div>
+
+  <!-- Editor modal -->
+  <div id="editorBackdrop" class="backdrop hidden">
+    <div class="modal">
+      <div class="modal-header"><span id="editorTitle">New item</span></div>
+      <div class="modal-body">
+        <div class="kind-picker" id="kindPicker"></div>
+        <div class="field hidden" id="fAgentRow">
+          <span>Starter templates</span>
+          <div id="fAgentPicker" class="agent-picker"></div>
+        </div>
+        <label class="field">
+          <span>Label</span>
+          <input id="fLabel" type="text" placeholder="My ETH wallet" />
+        </label>
+        <label class="field" id="fValueRow">
+          <span>Value</span>
+          <textarea id="fValue" rows="3" placeholder="0x…"></textarea>
+        </label>
+        <div class="field hidden" id="fFileRow">
+          <span>File</span>
+          <!-- Empty state: dashed drop-zone -->
+          <button type="button" class="file-zone-empty" id="filePickEmpty">
+            <span class="ic">📎</span>
+            <span class="heading">Click to choose a file</span>
+            <span class="sub">max 100 MB</span>
+          </button>
+          <!-- Picked state: filename + size + remove -->
+          <div class="file-zone-picked hidden" id="filePickPicked">
+            <div class="thumb" id="fileThumb"></div>
+            <div class="meta">
+              <div class="name" id="fileName"></div>
+              <div class="sub" id="fileMeta"></div>
+            </div>
+            <button type="button" class="x-btn" id="fileRemove" title="Remove">×</button>
+          </div>
+        </div>
+        <div class="field" id="fStashRow">
+          <span>Stashes</span>
+          <div id="fStashPicker" class="stash-picker"></div>
+        </div>
+        <div class="field hidden" id="fChainRow">
+          <span>Blockchain</span>
+          <div id="fChainPicker" class="chain-picker"></div>
+        </div>
+        <div class="field hidden" id="fContactRow">
+          <span>Contact details</span>
+          <div class="contact-fields">
+            <label class="contact-field">
+              <span>Email</span>
+              <input id="fContactEmail" type="email" placeholder="alice@example.com" />
+            </label>
+            <label class="contact-field">
+              <span>Phone</span>
+              <input id="fContactPhone" type="tel" placeholder="+1 555 123 4567" />
+            </label>
+            <label class="contact-field">
+              <span>Company</span>
+              <input id="fContactCompany" type="text" placeholder="Acme Inc." />
+            </label>
+            <label class="contact-field">
+              <span>Wallet</span>
+              <input id="fContactWallet" type="text" placeholder="0x… (optional)" />
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="delBtn" class="btn danger hidden">Delete</button>
+        <div class="spacer"></div>
+        <button id="cancelBtn" class="btn ghost" data-close="editor">Cancel</button>
+        <button id="saveBtn" class="btn primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings modal -->
+  <div id="settingsBackdrop" class="backdrop hidden">
+    <div class="modal">
+      <div class="modal-header">Settings</div>
+      <div class="modal-body">
+        <div class="field">
+          <span>Global hotkey</span>
+          <div class="hotkey-row">
+            <div id="hotkeyDisplay" class="hotkey-display">⌘⇧V</div>
+            <button id="hotkeyRecordBtn" class="btn">Change…</button>
+            <button id="hotkeyResetBtn" class="btn ghost" title="Reset to default">↺</button>
+          </div>
+          <div id="hotkeyStatus" class="hotkey-status hidden"></div>
+        </div>
+        <div class="field">
+          <span>Decode QR code on screen</span>
+          <div class="hotkey-row">
+            <div id="qrHotkeyDisplay" class="hotkey-display">⌘⇧F</div>
+            <button id="qrHotkeyRecordBtn" class="btn">Change…</button>
+            <button id="qrHotkeyResetBtn" class="btn ghost" title="Reset to default">↺</button>
+          </div>
+          <div id="qrHotkeyStatus" class="hotkey-status hidden"></div>
+        </div>
+        <div class="field">
+          <span>Accessibility (required for auto-paste)</span>
+          <div id="accessStatusRow" class="access-status-row">
+            <div id="accessStatusText">Checking…</div>
+            <button id="accessOpenBtn" class="btn">Open Settings</button>
+          </div>
+        </div>
+        <div class="settings-note">
+          <div><strong>Hotkey tips</strong></div>
+          <ul>
+            <li>Must include at least one modifier (⌘ / ⌃ / ⌥ / ⇧) plus another key.</li>
+            <li>Avoid common app shortcuts like <kbd>⌘S</kbd> / <kbd>⌘C</kbd> / <kbd>⌘V</kbd> — they'd be hijacked everywhere.</li>
+            <li>If a combo is already used by another app or macOS, Restash will refuse it.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div class="spacer"></div>
+        <button id="settingsCloseBtn" class="btn primary" data-close="settings">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Billing modal — body is rendered by renderBilling() based on tier. -->
+  <div id="billingBackdrop" class="backdrop hidden">
+    <div class="modal">
+      <div class="modal-header">Billing</div>
+      <div class="modal-body" id="billingBody"></div>
+      <div class="modal-footer">
+        <button class="btn ghost" id="billingSupportBtn">Contact support</button>
+        <div class="spacer"></div>
+        <button class="btn primary" data-close="billing">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- One-time offer — a single high-intent conversion card. Body filled by renderOTO(). -->
+  <div id="otoBackdrop" class="backdrop hidden">
+    <div class="oto-card" id="otoCard"></div>
+  </div>
+
+  <!-- QR modal -->
+  <div id="qrBackdrop" class="backdrop hidden">
+    <div class="modal qr-modal">
+      <div class="modal-header" id="qrLabel">QR code</div>
+      <div class="modal-body qr-body">
+        <img id="qrImg" alt="QR code" />
+        <div id="qrValue" class="qr-value"></div>
+      </div>
+      <div class="modal-footer">
+        <div class="spacer"></div>
+        <button id="qrCloseBtn" class="btn primary" data-close="qr">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Free-tier upgrade nudge (Option C) — slides up when a limit is hit. -->
+  <div id="limitNudge" class="limit-nudge hidden">
+    <span class="ln-ic">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>
+      </svg>
+    </span>
+    <span class="ln-text">
+      <span class="ln-title">Limit reached</span>
+      <span class="ln-sub">Free plan</span>
+    </span>
+    <button class="ln-btn" id="limitNudgeBtn">Upgrade</button>
+  </div>
+
+  </div><!-- /.shell -->
+  <script src="renderer.js"></script>
+</body>
+</html>
