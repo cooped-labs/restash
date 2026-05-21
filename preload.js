@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('restash', {
   copy: (text) => ipcRenderer.invoke('clipboard:write', text),
   openExternal: (url) => ipcRenderer.invoke('shell:open', url),
   hideWindow: () => ipcRenderer.invoke('window:hide'),
+  resizeWindow: (payload) => ipcRenderer.invoke('window:resize', payload),
   qrDataURL: (text) => ipcRenderer.invoke('qr:dataurl', text),
   shareItem: ({ text, url, filePath, label, iconPath }) =>
     ipcRenderer.invoke('share:item', { text, url, filePath, label, iconPath }),

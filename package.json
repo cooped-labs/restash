@@ -1,6 +1,6 @@
 {
   "name": "restash",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "macOS menu bar app for saving and re-pasting items",
   "main": "main.js",
   "scripts": {

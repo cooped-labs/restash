@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Restash — Share a copy (link) mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f5f5f4; --bg-elev:#ebebe9; --bg-elev-2:#dedcd9; --modal-bg:#ffffff;
+  --fg:#1c1c1e; --fg-dim:#5a5a5c; --fg-muted:#8a8a8c;
+  --tint:#1c1c1e; --tint-soft:rgba(28,28,30,.06); --tint-fg:#ffffff;
+  --divider:rgba(0,0,0,.08); --hover:rgba(0,0,0,.04); --shell-edge:rgba(0,0,0,.10);
+}
+body.dark{
+  --bg:#1e1e20; --bg-elev:#2a2a2d; --bg-elev-2:#34343a; --modal-bg:#28282b;
+  --fg:#f2f2f7; --fg-dim:#b8b8be; --fg-muted:#8a8a92;
+  --tint:#f2f2f7; --tint-soft:rgba(255,255,255,.08); --tint-fg:#1c1c1e;
+  --divider:rgba(255,255,255,.09); --hover:rgba(255,255,255,.05); --shell-edge:rgba(255,255,255,.12);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{
+  font:13px "Inter",-apple-system,system-ui,sans-serif; color:var(--fg);
+  background:radial-gradient(1200px 600px at 70% 0%,#c9d6e6 0%,#aab8cc 45%,#8c9bb3 100%);
+  -webkit-font-smoothing:antialiased; overflow:hidden; user-select:none;
+  display:flex; align-items:center; justify-content:center; height:100vh;
+}
+body.dark{background:radial-gradient(1200px 600px at 70% 0%,#2c3340 0%,#20252e 55%,#161a20 100%);}
+
+/* ============ SENDER — Restash popover + share modal ============ */
+.popover{
+  width:330px; height:470px;
+  background:var(--bg); border:1px solid var(--shell-edge); border-radius:13px;
+  box-shadow:0 18px 50px rgba(0,0,0,.34),0 3px 10px rgba(0,0,0,.2);
+  display:flex; flex-direction:column; overflow:hidden; position:relative;
+}
+.popover.hidden{display:none;}
+.topbar{
+  display:flex; align-items:center; gap:7px; padding:9px 11px;
+  border-bottom:1px solid var(--divider); flex-shrink:0;
+}
+.topbar .mag{color:var(--fg-muted); font-size:14px;}
+.topbar input{flex:1;border:0;background:transparent;outline:none;font:inherit;font-size:12.5px;color:var(--fg);}
+.topbar input::placeholder{color:var(--fg-muted);}
+.ghost-list{flex:1;padding:6px 0;opacity:.4;filter:saturate(.6);}
+.gl-row{display:flex;align-items:center;gap:9px;padding:7px 12px;}
+.gl-ic{width:22px;height:22px;border-radius:6px;background:var(--tint-soft);}
+.gl-bar{height:9px;border-radius:4px;background:var(--bg-elev-2);}
+
+.backdrop{
+  position:absolute;inset:0;background:rgba(0,0,0,.30);
+  -webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);
+  display:flex;align-items:center;justify-content:center;padding:15px;
+}
+.modal{
+  width:100%;background:var(--modal-bg);border-radius:12px;
+  box-shadow:0 12px 30px rgba(0,0,0,.3);overflow:hidden;
+}
+.m-head{display:flex;align-items:center;gap:8px;padding:12px 13px 11px;}
+.m-head .ttl{font-weight:600;font-size:13.5px;flex:1;}
+.m-head .x{
+  width:22px;height:22px;border:0;border-radius:6px;background:var(--bg-elev);
+  color:var(--fg-dim);cursor:pointer;font-size:13px;
+}
+.m-body{padding:0 13px 14px;}
+
+.item-card{
+  display:flex;align-items:center;gap:10px;
+  background:var(--bg-elev);border-radius:10px;padding:9px 11px;margin-bottom:14px;
+}
+.item-card .ic{
+  width:30px;height:30px;flex:0 0 30px;border-radius:8px;
+  display:grid;place-items:center;background:var(--tint);color:var(--tint-fg);
+}
+.item-card .ic svg{width:17px;height:17px;}
+.item-card .meta{min-width:0;flex:1;}
+.item-card .meta .l{font-weight:600;font-size:12.5px;}
+.item-card .meta .v{
+  font:11px ui-monospace,Menlo,monospace;color:var(--fg-muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;
+}
+.item-card .kindtag{
+  font-size:9px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;
+  color:var(--fg-muted);background:var(--bg-elev-2);padding:2px 6px;border-radius:5px;
+}
+
+.field-lbl{
+  font-size:9.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;
+  color:var(--fg-muted);margin-bottom:7px;
+}
+.link-row{
+  display:flex;align-items:center;gap:8px;
+  background:var(--bg-elev);border:1px solid var(--divider);
+  border-radius:9px;padding:8px 9px 8px 11px;
+}
+.link-row .url{
+  flex:1;font:12px ui-monospace,Menlo,monospace;color:var(--fg);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.copy-btn{
+  border:0;border-radius:7px;background:var(--tint);color:var(--tint-fg);
+  font:inherit;font-size:11px;font-weight:600;padding:6px 11px;cursor:pointer;
+  display:inline-flex;align-items:center;gap:5px;
+}
+.copy-btn svg{width:13px;height:13px;}
+
+.meta-line{
+  display:flex;align-items:center;gap:6px;
+  font-size:10.5px;color:var(--fg-muted);margin-top:10px;
+}
+.meta-line svg{width:12px;height:12px;flex-shrink:0;}
+
+/* branding strip inside the share modal — explains what the recipient sees */
+.brand-note{
+  display:flex;align-items:flex-start;gap:9px;
+  margin-top:13px;padding:10px 11px;border-radius:9px;
+  background:var(--tint-soft);
+}
+.brand-note .bmark{
+  width:24px;height:24px;flex:0 0 24px;border-radius:6px;
+  background:var(--tint);color:var(--tint-fg);display:grid;place-items:center;
+}
+.brand-note .bmark svg{width:14px;height:14px;}
+.brand-note .bt{flex:1;font-size:11px;line-height:1.45;color:var(--fg-dim);}
+.brand-note .bt b{color:var(--fg);}
+.brand-note .up{
+  border:0;background:none;color:var(--fg);font:inherit;font-size:11px;
+  font-weight:700;cursor:pointer;text-decoration:underline;padding:0;
+}
+.brand-note.pro{background:rgba(31,138,59,.10);}
+body.dark .brand-note.pro{background:rgba(62,207,106,.12);}
+
+/* ============ RECIPIENT — web page ============ */
+.browser{
+  width:430px;height:580px;border-radius:13px;overflow:hidden;
+  box-shadow:0 18px 50px rgba(0,0,0,.34);
+  display:none;flex-direction:column;background:#fff;
+}
+.browser.show{display:flex;}
+body.dark .browser{background:#1c1c1e;}
+.chrome{
+  height:38px;background:#e4e4e2;display:flex;align-items:center;gap:7px;
+  padding:0 12px;flex-shrink:0;
+}
+body.dark .chrome{background:#2a2a2d;}
+.chrome .dot{width:11px;height:11px;border-radius:50%;}
+.chrome .url{
+  flex:1;margin-left:8px;background:#fff;border-radius:6px;
+  font:11px ui-monospace,Menlo,monospace;color:#5a5a5c;padding:5px 10px;
+}
+body.dark .chrome .url{background:#1c1c1e;color:#8a8a8c;}
+.web{
+  flex:1;overflow-y:auto;background:var(--bg);
+  display:flex;flex-direction:column;align-items:center;
+  padding:0 28px;text-align:center;position:relative;
+}
+.web-inner{
+  flex:1;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;width:100%;padding:36px 0 20px;
+}
+.web .topmark{display:flex;align-items:center;gap:7px;margin-bottom:24px;}
+.web .topmark svg{width:19px;height:19px;color:var(--fg);}
+.web .topmark b{font-size:13.5px;font-weight:700;}
+.web .from{font-size:12.5px;color:var(--fg-dim);margin-bottom:5px;}
+.web .from b{color:var(--fg);}
+.web h1{font-size:19px;font-weight:700;margin-bottom:18px;}
+.content-card{
+  width:100%;background:var(--modal-bg);border:1px solid var(--divider);
+  border-radius:13px;padding:17px;
+}
+.cc-top{display:flex;align-items:center;gap:9px;margin-bottom:12px;}
+.cc-ic{
+  width:32px;height:32px;border-radius:8px;background:var(--tint);color:var(--tint-fg);
+  display:grid;place-items:center;flex:0 0 32px;
+}
+.cc-ic svg{width:18px;height:18px;}
+.cc-l{font-weight:600;font-size:13px;text-align:left;}
+.cc-k{
+  font-size:9px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;
+  color:var(--fg-muted);background:var(--bg-elev-2);padding:2px 7px;border-radius:5px;
+  margin-left:auto;
+}
+.cc-val{
+  font:13px ui-monospace,Menlo,monospace;color:var(--fg);
+  background:var(--bg-elev);border-radius:9px;padding:13px;
+  word-break:break-all;line-height:1.5;margin-bottom:12px;text-align:left;
+}
+.copy-big{
+  width:100%;border:0;border-radius:10px;background:var(--tint);color:var(--tint-fg);
+  font:inherit;font-size:13px;font-weight:700;padding:12px;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+}
+.copy-big svg{width:15px;height:15px;}
+.web .expiry{font-size:10.5px;color:var(--fg-muted);margin-top:13px;}
+
+/* the "Shared with Restash" badge — free-tier attribution, pinned to the page */
+.share-badge{
+  display:flex;align-items:center;justify-content:center;gap:7px;
+  width:100%;padding:13px;border-top:1px solid var(--divider);
+  background:var(--modal-bg);flex-shrink:0;
+}
+.share-badge .bm{
+  width:20px;height:20px;border-radius:5px;background:var(--tint);color:var(--tint-fg);
+  display:grid;place-items:center;
+}
+.share-badge .bm svg{width:12px;height:12px;}
+.share-badge .bx{text-align:left;line-height:1.25;}
+.share-badge .bx .a{font-size:11px;font-weight:600;}
+.share-badge .bx .b{font-size:10px;color:var(--fg-muted);}
+.share-badge .get{
+  margin-left:auto;border:0;border-radius:7px;background:var(--tint);color:var(--tint-fg);
+  font:inherit;font-size:10.5px;font-weight:700;padding:6px 11px;cursor:pointer;
+}
+.share-badge.hide{display:none;}
+/* paid: just a whisper-quiet mark, no upsell */
+.quiet-mark{
+  display:none;align-items:center;justify-content:center;gap:5px;
+  width:100%;padding:11px;font-size:10px;color:var(--fg-muted);flex-shrink:0;
+}
+.quiet-mark.show{display:flex;}
+.quiet-mark svg{width:11px;height:11px;}
+
+/* ============ control panel ============ */
+.panel{
+  position:fixed;left:26px;bottom:26px;width:252px;
+  background:rgba(255,255,255,.93);
+  -webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);
+  border:1px solid rgba(0,0,0,.1);border-radius:12px;
+  box-shadow:0 10px 30px rgba(0,0,0,.22);padding:14px 15px;color:#1c1c1e;z-index:60;
+}
+body.dark .panel{background:rgba(40,40,43,.94);color:#f2f2f7;border-color:rgba(255,255,255,.1);}
+.panel h3{font-size:12px;font-weight:700;margin-bottom:3px;}
+.panel p{font-size:11px;line-height:1.5;color:var(--fg-dim);margin-bottom:11px;}
+.panel .lbl{font-size:9px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--fg-muted);margin:9px 0 5px;}
+.seg{display:flex;background:rgba(0,0,0,.06);border-radius:8px;padding:3px;}
+body.dark .seg{background:rgba(255,255,255,.07);}
+.seg button{
+  flex:1;border:0;background:transparent;color:inherit;font:inherit;
+  font-size:11px;font-weight:600;padding:5px;border-radius:6px;cursor:pointer;
+}
+.seg button.on{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.14);}
+body.dark .seg button.on{background:#4a4a50;}
+.tbtn{
+  width:100%;border:1px solid rgba(0,0,0,.12);background:transparent;color:inherit;
+  font:inherit;font-size:11px;font-weight:500;padding:7px;border-radius:8px;
+  cursor:pointer;margin-top:10px;
+}
+body.dark .tbtn{border-color:rgba(255,255,255,.14);}
+.toast{
+  position:fixed;left:50%;bottom:34px;transform:translateX(-50%);
+  background:var(--tint);color:var(--tint-fg);font-size:11.5px;font-weight:600;
+  padding:8px 16px;border-radius:8px;opacity:0;transition:opacity .15s ease;z-index:80;
+}
+.toast.show{opacity:1;}
+</style>
+</head>
+<body>
+
+<!-- ============ SENDER ============ -->
+<div class="popover" id="popover">
+  <div class="topbar"><span class="mag">⌕</span><input placeholder="Search and paste…" /></div>
+  <div class="ghost-list">
+    <div class="gl-row"><div class="gl-ic"></div><div class="gl-bar" style="width:42%"></div></div>
+    <div class="gl-row"><div class="gl-ic"></div><div class="gl-bar" style="width:55%"></div></div>
+    <div class="gl-row"><div class="gl-ic"></div><div class="gl-bar" style="width:38%"></div></div>
+  </div>
+  <div class="backdrop">
+    <div class="modal">
+      <div class="m-head"><span class="ttl">Share a copy</span><button class="x">✕</button></div>
+      <div class="m-body">
+        <div class="item-card">
+          <div class="ic">
+            <svg viewBox="0 0 22 22" fill="currentColor"><path d="M16.84 11.69a1.38 1.38 0 1 1-2.75 0 1.38 1.38 0 0 1 2.75 0zm3.44-3.1v6.88a2.75 2.75 0 0 1-2.75 2.75H5.16a2.75 2.75 0 0 1-2.75-2.75V5.24a2.83 2.83 0 0 1 2.75-2.83h11.34a1.03 1.03 0 0 1 0 2.06H5.16c-.39 0-.7.34-.69.72.02.37.34.66.72.66h12.34a2.75 2.75 0 0 1 2.75 2.75zm-2.06 0c0-.38-.31-.69-.69-.69H5.2a2.75 2.75 0 0 1-.73-.09v7.66c0 .38.31.69.69.69h12.37c.38 0 .69-.31.69-.69V8.59z"/></svg>
+          </div>
+          <div class="meta">
+            <div class="l">Wisemen Wallet</div>
+            <div class="v">CJbUGxnVG2oXdsYD2dVVkhkoR8WQJEjch35VRa7xifsi</div>
+          </div>
+          <span class="kindtag">SOL</span>
+        </div>
+
+        <div class="field-lbl">Share link</div>
+        <div class="link-row">
+          <span class="url">rstsh.to/k7x2p9</span>
+          <button class="copy-btn" id="copyLink">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+            Copy
+          </button>
+        </div>
+        <div class="meta-line">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          Anyone with the link can view it · expires in 24 hours
+        </div>
+
+        <!-- branding strip — changes with tier -->
+        <div class="brand-note" id="brandNote"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ RECIPIENT ============ -->
+<div class="browser" id="browser">
+  <div class="chrome">
+    <span class="dot" style="background:#f25b54"></span>
+    <span class="dot" style="background:#f9bd2e"></span>
+    <span class="dot" style="background:#3fc14e"></span>
+    <span class="url">rstsh.to/k7x2p9</span>
+  </div>
+  <div class="web">
+    <div class="web-inner">
+      <div class="topmark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="7" rx="1.5"/><path d="M6 8h12"/><path d="M8 5h8"/></svg>
+        <b>Restash</b>
+      </div>
+      <div class="from"><b>Kevin</b> shared a copy with you</div>
+      <h1>Wisemen Wallet</h1>
+      <div class="content-card">
+        <div class="cc-top">
+          <div class="cc-ic">
+            <svg viewBox="0 0 22 22" fill="currentColor"><path d="M16.84 11.69a1.38 1.38 0 1 1-2.75 0 1.38 1.38 0 0 1 2.75 0zm3.44-3.1v6.88a2.75 2.75 0 0 1-2.75 2.75H5.16a2.75 2.75 0 0 1-2.75-2.75V5.24a2.83 2.83 0 0 1 2.75-2.83h11.34a1.03 1.03 0 0 1 0 2.06H5.16c-.39 0-.7.34-.69.72.02.37.34.66.72.66h12.34a2.75 2.75 0 0 1 2.75 2.75zm-2.06 0c0-.38-.31-.69-.69-.69H5.2a2.75 2.75 0 0 1-.73-.09v7.66c0 .38.31.69.69.69h12.37c.38 0 .69-.31.69-.69V8.59z"/></svg>
+          </div>
+          <div class="cc-l">Wisemen Wallet</div>
+          <span class="cc-k">SOL Wallet</span>
+        </div>
+        <div class="cc-val">CJbUGxnVG2oXdsYD2dVVkhkoR8WQJEjch35VRa7xifsi</div>
+        <button class="copy-big" id="webCopy">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+          Copy to clipboard
+        </button>
+        <div class="expiry">This link expires in 24 hours.</div>
+      </div>
+    </div>
+
+    <!-- FREE tier: visible attribution badge with a soft pull-in -->
+    <div class="share-badge" id="shareBadge">
+      <div class="bm">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="7" rx="1.5"/><path d="M6 8h12"/><path d="M8 5h8"/></svg>
+      </div>
+      <div class="bx">
+        <div class="a">Shared with Restash</div>
+        <div class="b">Save &amp; paste anything on your Mac</div>
+      </div>
+      <button class="get">Get Restash</button>
+    </div>
+    <!-- PAID tier: quiet mark only, no upsell -->
+    <div class="quiet-mark" id="quietMark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="7" rx="1.5"/><path d="M6 8h12"/><path d="M8 5h8"/></svg>
+      Restash
+    </div>
+  </div>
+</div>
+
+<!-- ============ control panel ============ -->
+<div class="panel">
+  <h3>Share a copy</h3>
+  <p>Any saved item becomes a Restash-branded link. Free shares carry a
+     “Shared with Restash” badge; paid removes it.</p>
+  <div class="lbl">Plan</div>
+  <div class="seg" id="tierSeg">
+    <button data-tier="free" class="on">Free</button>
+    <button data-tier="pro">Pro</button>
+  </div>
+  <div class="lbl">View</div>
+  <div class="seg" id="viewSeg">
+    <button data-view="send" class="on">Sender</button>
+    <button data-view="recv">Recipient page</button>
+  </div>
+  <button class="tbtn" id="theme">Dark mode</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let tier='free', view='send';
+
+function renderBrandNote(){
+  const el=document.getElementById('brandNote');
+  if(tier==='free'){
+    el.className='brand-note';
+    el.innerHTML=`
+      <div class="bmark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="7" rx="1.5"/><path d="M6 8h12"/><path d="M8 5h8"/></svg>
+      </div>
+      <div class="bt">Shared pages show a <b>“Shared with Restash”</b> badge.
+        <button class="up" id="upBtn">Upgrade to remove it</button></div>`;
+  }else{
+    el.className='brand-note pro';
+    el.innerHTML=`
+      <div class="bmark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+      </div>
+      <div class="bt"><b>Clean share.</b> Your link has no Restash badge — just the content.</div>`;
+  }
+}
+function renderRecipient(){
+  document.getElementById('shareBadge').classList.toggle('hide', tier!=='free');
+  document.getElementById('quietMark').classList.toggle('show', tier==='pro');
+}
+function render(){
+  document.getElementById('popover').classList.toggle('hidden', view!=='send');
+  document.getElementById('browser').classList.toggle('show', view==='recv');
+  renderBrandNote();
+  renderRecipient();
+}
+
+document.querySelectorAll('#tierSeg button').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('#tierSeg button').forEach(x=>x.classList.toggle('on',x===b));
+    tier=b.dataset.tier; render();
+  };
+});
+document.querySelectorAll('#viewSeg button').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('#viewSeg button').forEach(x=>x.classList.toggle('on',x===b));
+    view=b.dataset.view; render();
+  };
+});
+document.getElementById('theme').onclick=e=>{
+  document.body.classList.toggle('dark');
+  e.target.textContent=document.body.classList.contains('dark')?'Light mode':'Dark mode';
+};
+
+function toast(m){
+  const t=document.getElementById('toast');
+  t.textContent=m; t.classList.add('show');
+  clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),1300);
+}
+document.getElementById('copyLink').onclick=()=>toast('Link copied');
+document.getElementById('webCopy').onclick=e=>{
+  e.currentTarget.innerHTML=
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M5 13l4 4L19 7"/></svg> Copied!';
+  toast('Copied to clipboard');
+};
+document.querySelector('.x').onclick=()=>toast('(closes the share panel)');
+document.addEventListener('click',e=>{ if(e.target.id==='upBtn') toast('(opens Billing)'); });
+
+render();
+</script>
+</body>
+</html>

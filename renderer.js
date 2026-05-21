@@ -872,6 +872,126 @@ function applyMode(mode) {
   render();
 }
 
+// ---------- window resizing ----------
+// Resize bounds — must match MENU_BOUNDS / GRID_BOUNDS in main.js.
+const RESIZE_BOUNDS = {
+  list: { minW: 280, maxW: 580, minH: 360, maxH: 780 },
+  grid: { minW: 200, maxW: 380, minH: 280, maxH: 520 },
+};
+// Curated size presets surfaced in Settings. Free-drag covers everything else.
+const SIZE_PRESETS = {
+  list: [
+    { name: 'Standard', width: 300, height: 428 },
+    { name: 'Tall',     width: 320, height: 620 },
+    { name: 'Wide',     width: 460, height: 520 },
+  ],
+  grid: [
+    { name: 'Standard', width: 240, height: 332 },
+    { name: 'Large',    width: 300, height: 412 },
+    { name: 'Huge',     width: 360, height: 492 },
+  ],
+};
+
+function clampCardSize(w, h, mode) {
+  const b = RESIZE_BOUNDS[mode] || RESIZE_BOUNDS.list;
+  return {
+    width:  Math.max(b.minW, Math.min(b.maxW, Math.round(w))),
+    height: Math.max(b.minH, Math.min(b.maxH, Math.round(h))),
+  };
+}
+
+// Wire the three drag handles (left/right edge, bottom edge, corner). The
+// window physically resizes as you drag; the final size is committed (saved)
+// on release. Anchor: list grows down-and-left, grid grows down-and-right.
+function wireResizeHandles() {
+  const shell = document.querySelector('.shell');
+  if (!shell) return;
+  const handles = [
+    { el: $('rzEdgeX'),  axis: 'x'  },
+    { el: $('rzEdgeY'),  axis: 'y'  },
+    { el: $('rzCorner'), axis: 'xy' },
+  ];
+  let drag = null;
+  for (const { el, axis } of handles) {
+    if (!el) continue;
+    el.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      drag = {
+        axis, mode: state.mode,
+        sx: e.screenX, sy: e.screenY,
+        w: shell.offsetWidth, h: shell.offsetHeight,
+      };
+      el.setPointerCapture(e.pointerId);
+      document.body.classList.add('resizing');
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      const dx = e.screenX - drag.sx;
+      const dy = e.screenY - drag.sy;
+      let w = drag.w, h = drag.h;
+      if (axis === 'x' || axis === 'xy') {
+        // list anchors top-right → dragging the LEFT edge outward (dx<0) grows;
+        // grid anchors top-left → dragging the RIGHT edge outward (dx>0) grows.
+        w = drag.mode === 'grid' ? drag.w + dx : drag.w - dx;
+      }
+      if (axis === 'y' || axis === 'xy') h = drag.h + dy;
+      const c = clampCardSize(w, h, drag.mode === 'grid' ? 'grid' : 'list');
+      window.restash.resizeWindow({ mode: drag.mode, width: c.width, height: c.height, commit: false });
+    });
+    const end = () => {
+      if (!drag) return;
+      const mode = drag.mode;
+      drag = null;
+      document.body.classList.remove('resizing');
+      // Commit the final size (shell now reflects the resized window).
+      const c = clampCardSize(shell.offsetWidth, shell.offsetHeight, mode === 'grid' ? 'grid' : 'list');
+      if (mode === 'grid') state.gridSize = c; else state.menuSize = c;
+      window.restash.resizeWindow({ mode, width: c.width, height: c.height, commit: true });
+    };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+  }
+}
+
+// Toggle body.modal-open whenever any .backdrop opens/closes, so the resize
+// handles disappear while a modal is up. One observer, no per-modal wiring.
+function watchModals() {
+  const backdrops = Array.from(document.querySelectorAll('.backdrop'));
+  if (!backdrops.length) return;
+  const sync = () => {
+    const open = backdrops.some((b) => !b.classList.contains('hidden'));
+    document.body.classList.toggle('modal-open', open);
+  };
+  const mo = new MutationObserver(sync);
+  backdrops.forEach((b) => mo.observe(b, { attributes: true, attributeFilter: ['class'] }));
+  sync();
+}
+
+// Render the Settings size-preset chips for one modal.
+function renderSizePresets(mode) {
+  const host = $(mode === 'grid' ? 'gridSizePresets' : 'menuSizePresets');
+  if (!host) return;
+  // No saved size yet → the app is at its default, which equals the first
+  // ("Standard") preset, so highlight that.
+  const current = (mode === 'grid' ? state.gridSize : state.menuSize)
+    || SIZE_PRESETS[mode][0];
+  host.innerHTML = SIZE_PRESETS[mode].map((p) => {
+    const active = current && current.width === p.width && current.height === p.height;
+    return `<button type="button" class="size-preset${active ? ' active' : ''}"
+      data-mode="${mode}" data-w="${p.width}" data-h="${p.height}">${p.name}
+      <span class="dim">${p.width}×${p.height}</span></button>`;
+  }).join('');
+  for (const btn of host.querySelectorAll('.size-preset')) {
+    btn.addEventListener('click', () => {
+      const w = Number(btn.dataset.w), h = Number(btn.dataset.h);
+      const c = clampCardSize(w, h, mode);
+      if (mode === 'grid') state.gridSize = c; else state.menuSize = c;
+      window.restash.resizeWindow({ mode, width: c.width, height: c.height, commit: true });
+      renderSizePresets(mode); // refresh active highlight
+    });
+  }
+}
+
 // ---------- rendering ----------
 function render() {
   if (state.mode === 'qr')   return renderQRPanel();
@@ -2444,6 +2564,8 @@ function openSettings() {
   setQRHotkeyDisplay(state.qrHotkey);
   hideHotkeyStatus();
   hideQRHotkeyStatus();
+  renderSizePresets('list');
+  renderSizePresets('grid');
   refreshAccessUI();
   settingsBackdrop.classList.remove('hidden');
 }
@@ -2660,6 +2782,10 @@ function wire() {
 
   // Main process tells us which mode to render before each show.
   window.restash.onModeSet((mode) => applyMode(mode));
+
+  // Drag-to-resize handles + the modal-open watcher that hides them.
+  wireResizeHandles();
+  watchModals();
   // QR decoder pushes a result via main → renderer; stash it and re-render
   // so the qr-mode panel reflects what was decoded.
   window.restash.onQRResult?.((payload) => { state.qrResult = payload; render(); });
@@ -2877,6 +3003,8 @@ function wire() {
     state.billing     = s.billing || null;
     state.entitlement = s.entitlement || { tier: 'free', effective: 'free', trialActive: false, trialDaysLeft: 0 };
     state.otoShown    = !!s.otoShown;
+    state.menuSize    = s.menuSize || null;
+    state.gridSize    = s.gridSize || null;
     applyTheme(s.theme || 'light');
   } catch {}
   try {

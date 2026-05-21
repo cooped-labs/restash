@@ -183,6 +183,14 @@
           <div id="qrHotkeyStatus" class="hotkey-status hidden"></div>
         </div>
         <div class="field">
+          <span>Menu window size</span>
+          <div id="menuSizePresets" class="size-presets"></div>
+        </div>
+        <div class="field">
+          <span>Cursor numpad size</span>
+          <div id="gridSizePresets" class="size-presets"></div>
+        </div>
+        <div class="field">
           <span>Accessibility (required for auto-paste)</span>
           <div id="accessStatusRow" class="access-status-row">
             <div id="accessStatusText">Checking…</div>
@@ -256,6 +264,14 @@
   </div>
 
   </div><!-- /.shell -->
+
+  <!-- Resize handles — live in the transparent shadow gutter, at the card
+       edges. Which edges are active depends on mode (list anchors top-right,
+       grid anchors top-left). Hidden in qr mode and while a modal is open. -->
+  <div class="rz-handle rz-edge-x" id="rzEdgeX"></div>
+  <div class="rz-handle rz-edge-y" id="rzEdgeY"></div>
+  <div class="rz-handle rz-corner" id="rzCorner"></div>
+
   <script src="renderer.js"></script>
 </body>
 </html>

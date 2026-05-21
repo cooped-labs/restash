@@ -39,6 +39,8 @@ function readSettings() {
     onboarded: false, stashes: [], tier: 'free',
     trialStartedAt: 0, // 0 = not yet stamped; ensureTrialStamp() sets it on first run
     otoShown: false,   // one-time-offer fires once, ever
+    menuSize: null,    // {width,height} — user-resized list popover (null = default)
+    gridSize: null,    // {width,height} — user-resized cursor numpad (null = default)
   };
   try {
     if (!fs.existsSync(SETTINGS_FILE)) return defaults;
@@ -430,16 +432,36 @@ let suppressBlurHideUntil = 0;
 //   'list' — Option C full list + management footer, opened from the tray
 let currentMode = 'list';
 
-const SIZE_GRID    = { width: 240, height: 332 };
-const SIZE_LIST    = { width: 300, height: 428 };
+const SIZE_GRID    = { width: 240, height: 332 };  // grid (numpad) default
+const SIZE_LIST    = { width: 300, height: 428 };  // list (menu) default
 const SIZE_QR      = { width: 300, height: 380 };  // QR preview — compact card layout
 const SIZE_BILLING = { width: 300, height: 532 };  // billing modal — fits Option B, no scroll
 
+// Resize bounds for the user-customisable modals (visible card, no gutter).
+// Both list and grid can be freely dragged within these limits.
+const MENU_BOUNDS = { minW: 280, maxW: 580, minH: 360, maxH: 780 };
+const GRID_BOUNDS = { minW: 200, maxW: 380, minH: 280, maxH: 520 };
+
+function clampCard(sz, b) {
+  return {
+    width:  Math.max(b.minW, Math.min(b.maxW, Math.round((sz && sz.width)  || 0))),
+    height: Math.max(b.minH, Math.min(b.maxH, Math.round((sz && sz.height) || 0))),
+  };
+}
+
+// Visible card size for a mode — user-customised for list/grid (persisted in
+// settings.json), fixed for qr/billing.
+function cardSize(mode) {
+  const s = readSettings();
+  if (mode === 'grid')    return clampCard(s.gridSize || SIZE_GRID, GRID_BOUNDS);
+  if (mode === 'qr')      return SIZE_QR;
+  if (mode === 'billing') return SIZE_BILLING;
+  return clampCard(s.menuSize || SIZE_LIST, MENU_BOUNDS);
+}
+
 function setMode(mode) {
   currentMode = mode;
-  const size = mode === 'grid' ? SIZE_GRID
-             : mode === 'qr'   ? SIZE_QR
-             : SIZE_LIST;
+  const size = cardSize(mode);
   if (!win) return;
   // Window = card size + the transparent shadow gutter on all sides.
   // setBounds (vs setSize) is more reliable on macOS when also repositioning.
@@ -1259,13 +1281,44 @@ app.whenReady().then(() => {
   // its content fits with no scroll; restore to list height on close.
   ipcMain.handle('billing:window', (_e, open) => {
     if (!win) return;
-    const size = open ? SIZE_BILLING : SIZE_LIST;
+    // Closing billing restores the user's (possibly customised) list size.
+    const size = open ? SIZE_BILLING : cardSize('list');
     const cur = win.getBounds();
     win.setBounds({
       x: cur.x, y: cur.y,
       width:  size.width  + SHADOW_PAD * 2,
       height: size.height + SHADOW_PAD * 2,
     }, false);
+  });
+
+  // Live resize from the in-window drag handles (and the Settings presets).
+  // payload: { mode:'list'|'grid', width, height, commit }. The window only
+  // physically resizes for the mode that's on screen; the other mode's size
+  // is just persisted, taking effect next time it opens.
+  ipcMain.handle('window:resize', (_e, payload = {}) => {
+    if (!win) return null;
+    const mode = payload.mode === 'grid' ? 'grid' : 'list';
+    const bounds = mode === 'grid' ? GRID_BOUNDS : MENU_BOUNDS;
+    const card = clampCard({ width: payload.width, height: payload.height }, bounds);
+
+    if (payload.commit) {
+      const s = readSettings();
+      if (mode === 'grid') s.gridSize = card; else s.menuSize = card;
+      writeSettings(s);
+    }
+    if (mode === currentMode) {
+      const winW = card.width  + SHADOW_PAD * 2;
+      const winH = card.height + SHADOW_PAD * 2;
+      const cur = win.getBounds();
+      // list keeps its top-RIGHT corner fixed (tray sits near the right edge);
+      // grid keeps its top-LEFT corner fixed (anchored at the cursor).
+      let x = mode === 'list' ? (cur.x + cur.width - winW) : cur.x;
+      let y = cur.y;
+      const wa = screen.getDisplayNearestPoint({ x: cur.x, y: cur.y }).workArea;
+      x = Math.max(wa.x, Math.min(x, wa.x + wa.width - winW));
+      win.setBounds({ x, y, width: winW, height: winH }, false);
+    }
+    return card;
   });
   ipcMain.handle('qrHotkey:set', (_e, accel) => {
     const result = registerHotkeySlot('qr', String(accel || '').trim());

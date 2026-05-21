@@ -84,6 +84,55 @@ body { padding: 24px; }
 
 .hidden { display: none !important; }
 
+/* ============================================================
+   Resize handles — sit in the transparent shadow gutter, straddling
+   the card edges. SHADOW_PAD is 24px, so the card edge is 24px in.
+   ============================================================ */
+.rz-handle { position: fixed; z-index: 48; display: none; }
+body.mode-list .rz-handle,
+body.mode-grid .rz-handle { display: block; }
+body.modal-open .rz-handle { display: none !important; }
+
+/* bottom edge — shared by both modes */
+.rz-edge-y { left: 46px; right: 46px; bottom: 19px; height: 10px; cursor: ns-resize; }
+.rz-corner { width: 18px; height: 18px; bottom: 19px; }
+.rz-corner::after {
+  content: ""; position: absolute; bottom: 0; width: 9px; height: 9px;
+  background:
+    linear-gradient(135deg, transparent 0 45%, var(--fg-muted) 45% 55%, transparent 55%),
+    linear-gradient(135deg, transparent 0 70%, var(--fg-muted) 70% 80%, transparent 80%);
+  opacity: 0.45;
+  transition: opacity 100ms ease;
+}
+.rz-corner:hover::after { opacity: 0.9; }
+
+/* list anchors top-right → resize from the LEFT edge + bottom-LEFT corner */
+body.mode-list .rz-edge-x { top: 46px; bottom: 46px; left: 19px; width: 10px; cursor: ew-resize; }
+body.mode-list .rz-corner { left: 19px; cursor: nesw-resize; }
+body.mode-list .rz-corner::after { left: 0; transform: scaleX(-1); }
+
+/* grid anchors top-left → resize from the RIGHT edge + bottom-RIGHT corner */
+body.mode-grid .rz-edge-x { top: 46px; bottom: 46px; right: 19px; width: 10px; cursor: ew-resize; }
+body.mode-grid .rz-corner { right: 19px; cursor: nwse-resize; }
+body.mode-grid .rz-corner::after { right: 0; }
+
+/* while dragging, freeze content interaction so hover states don't flicker */
+body.resizing .list,
+body.resizing .grid-viewport { pointer-events: none; }
+
+/* Settings → window-size preset buttons */
+.size-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.size-preset {
+  border: 1px solid var(--divider);
+  background: var(--bg-elev);
+  color: var(--fg);
+  font: inherit; font-size: 11px;
+  padding: 5px 10px; border-radius: 999px; cursor: pointer;
+}
+.size-preset:hover { background: var(--bg-elev-2); }
+.size-preset.active { background: var(--tint); border-color: transparent; color: var(--tint-fg); }
+.size-preset .dim { opacity: 0.6; font-size: 10px; margin-left: 3px; }
+
 kbd {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 10px;
