@@ -24,6 +24,7 @@
     "appId": "com.restash.app",
     "productName": "Restash",
     "copyright": "© 2026 Restash",
+    "afterSign": "build/notarize.js",
     "asar": false,
     "directories": {
       "output": "dist",
