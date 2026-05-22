@@ -5,13 +5,71 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "brand": "node scripts/build-brand-assets.js"
+    "brand": "node scripts/build-brand-assets.js",
+    "pack": "electron-builder --mac --dir",
+    "dist": "electron-builder --mac"
   },
+  "author": "Restash",
   "license": "UNLICENSED",
   "private": true,
   "dependencies": {
     "@resvg/resvg-js": "2.6.2",
-    "electron": "33.2.1",
     "qrcode": "1.5.4"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.restash.app",
+    "productName": "Restash",
+    "copyright": "© 2026 Restash",
+    "asar": false,
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer.js",
+      "index.html",
+      "styles.css",
+      "stash-edit.html",
+      "stash-edit-renderer.js",
+      "stash-edit-preload.js",
+      "qr-scan-overlay.html",
+      "qr-scan-overlay-preload.js",
+      "tutorial-preload.js",
+      "onboarding-fullscreen.html",
+      "assets/**/*",
+      "bin/restash-share",
+      "bin/restash-clip-file",
+      "bin/restash-decode-qr",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        { "target": "dmg", "arch": ["arm64"] }
+      ],
+      "icon": "build/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "LSUIElement": true,
+        "NSAccessibilityUsageDescription": "Restash needs Accessibility access to paste saved items into the app you're using.",
+        "NSAppleEventsUsageDescription": "Restash uses AppleEvents to paste into the app you're using."
+      }
+    },
+    "dmg": {
+      "title": "Restash ${version}",
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    }
   }
 }
