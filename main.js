@@ -88,6 +88,21 @@ let win = null;
 
 const STORE_FILE = path.join(app.getPath('userData'), 'items.json');
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
+
+// ── Owner build ──────────────────────────────────────────────────────────
+// Grants permanent full access without a license — for your own machines.
+// Two ways to enable it, both safe for distributed builds (which have neither):
+//   • run with the env var:  RESTASH_OWNER=1 npm start
+//   • or create a marker file (works for a packaged personal build, no rebuild):
+//       touch "$HOME/Library/Application Support/restash/.owner"
+// Never ship a build with the marker bundled — it's read from userData, so a
+// normal release on someone else's Mac simply won't have it.
+const OWNER_MARKER = path.join(app.getPath('userData'), '.owner');
+function isOwnerBuild() {
+  if (process.env.RESTASH_OWNER === '1') return true;
+  try { return fs.existsSync(OWNER_MARKER); } catch { return false; }
+}
+
 const DEFAULT_HOTKEY    = 'Command+Shift+V';
 const DEFAULT_QR_HOTKEY = 'Control+Shift+F';
 
@@ -148,6 +163,17 @@ function ensureTrialStamp() {
 //   - otherwise                     → limited free tier
 // Returns { tier, effective: 'full'|'free', trialDaysLeft, trialActive }.
 function resolveEntitlement() {
+  // Owner build — permanent full access, no license, no trial countdown.
+  if (isOwnerBuild()) {
+    return {
+      tier: 'lifetime',
+      effective: 'full',
+      trialDaysLeft: 0,
+      trialActive: false,
+      limits: FREE_LIMITS,
+      license: { status: 'owner', tier: 'lifetime', keyMasked: 'OWNER', expiresAt: null },
+    };
+  }
   const s = readSettings();
   // An activated Lemon Squeezy license is the source of truth for paid status.
   const lic = s.license;
