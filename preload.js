@@ -19,6 +19,10 @@ contextBridge.exposeInMainWorld('restash', {
 
   loadSettings: () => ipcRenderer.invoke('settings:load'),
   getEntitlement: () => ipcRenderer.invoke('entitlement:get'),
+  // Lemon Squeezy license activation
+  activateLicense:   (key) => ipcRenderer.invoke('license:activate', key),
+  deactivateLicense: () => ipcRenderer.invoke('license:deactivate'),
+  onEntitlementChanged: (cb) => ipcRenderer.on('entitlement:changed', cb),
   setBillingWindow: (open) => ipcRenderer.invoke('billing:window', open),
   markOTOShown: () => ipcRenderer.invoke('oto:markShown'),
   setHotkey: (accel) => ipcRenderer.invoke('hotkey:set', accel),

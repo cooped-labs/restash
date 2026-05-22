@@ -754,9 +754,22 @@ async function maybeShowOTO() {
 // Build the billing body for the current tier. `state.tier` is one of
 // 'free' | 'monthly' | 'yearly' | 'lifetime'; `state.billing.renewsAt` is an
 // epoch-ms timestamp for subscribers (drives the time-left bar).
+// Small footer shown on paid billing views: masked license key + a button to
+// release this device's activation.
+function licenseFooterHTML(lic) {
+  if (!lic) return '';
+  return `
+    <div class="license-foot">
+      <span class="lf-key">Licensed · ${escapeHtml(lic.keyMasked || '')}</span>
+      <button class="lf-deact" data-license-deactivate>Deactivate this device</button>
+    </div>`;
+}
+
 function renderBilling() {
   const body = $('billingBody');
-  const tier = state.tier || 'free';
+  const ent = state.entitlement || {};
+  const tier = ent.tier || 'free';
+  const lic = ent.license || null;
 
   if (tier === 'lifetime') {
     body.innerHTML = `
@@ -769,12 +782,15 @@ function renderBilling() {
         <div class="tier-badge"><span class="spark">✦</span> Lifetime</div>
         <div class="billing-note">You own Restash forever. No renewals, no expiry — every future update included.</div>
       </div>
+      ${licenseFooterHTML(lic)}
     `;
     return;
   }
 
   if (tier === 'monthly' || tier === 'yearly') {
-    const renewsAt = state.billing?.renewsAt || 0;
+    // Lemon Squeezy reports the subscription's next-renewal date as the
+    // license key's expires_at.
+    const renewsAt = (lic && lic.expiresAt) ? Date.parse(lic.expiresAt) : 0;
     const periodMs = tier === 'yearly' ? 365 * 864e5 : 30 * 864e5;
     let barHTML = '';
     if (renewsAt) {
@@ -804,13 +820,13 @@ function renderBilling() {
       ${barHTML}
       <button class="b-btn" data-billing-manage>Manage subscription</button>
       ${upsell}
+      ${licenseFooterHTML(lic)}
     `;
     return;
   }
 
   // Free — segmented picker layout. Trial banner + Free→Pro comparison +
   // a Monthly/Yearly/Lifetime segment that shows one plan + one CTA.
-  const ent = state.entitlement || {};
   const banner = ent.trialActive
     ? `<div class="trial">
          <div class="ico">${CLOCK_SVG}</div>
@@ -851,7 +867,53 @@ function renderBilling() {
       <div class="seg-sub">${plan.sub}</div>
     </div>
     <button class="big-cta" data-billing-cta>Upgrade to ${sel[0].toUpperCase()}${sel.slice(1)}</button>
+    <div class="activate">
+      <button type="button" class="activate-toggle" data-activate-toggle>Already bought Restash? <b>Enter your license key</b></button>
+      <div class="activate-box hidden" id="activateBox">
+        <input id="licenseKeyInput" type="text" placeholder="License key" autocomplete="off" spellcheck="false" />
+        <button type="button" class="b-btn primary" data-activate-go>Activate</button>
+      </div>
+      <div class="activate-msg hidden" id="activateMsg"></div>
+    </div>
   `;
+}
+
+// Run a license activation from the billing modal: call Lemon Squeezy, then
+// refresh the entitlement everywhere on success.
+async function activateLicenseFromBilling() {
+  const input = $('licenseKeyInput');
+  const msg = $('activateMsg');
+  const btn = document.querySelector('[data-activate-go]');
+  if (!input) return;
+  const key = input.value.trim();
+  if (!key) { input.focus(); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Activating…'; }
+  if (msg) msg.classList.add('hidden');
+  const res = await window.restash.activateLicense(key);
+  if (res && res.ok) {
+    state.entitlement = res.entitlement;
+    state.tier = res.entitlement.tier;
+    renderBilling();        // flips to the paid view
+    render();               // limits lifted — refresh the list
+    toast('Restash unlocked — thank you!');
+  } else {
+    if (btn) { btn.disabled = false; btn.textContent = 'Activate'; }
+    if (msg) {
+      msg.textContent = (res && res.error) || 'Activation failed.';
+      msg.classList.remove('hidden');
+    }
+  }
+}
+
+async function deactivateLicenseFromBilling() {
+  const res = await window.restash.deactivateLicense();
+  if (res && res.ok) {
+    state.entitlement = res.entitlement;
+    state.tier = res.entitlement.tier;
+    renderBilling();
+    render();
+    toast('License released on this device');
+  }
 }
 
 
@@ -2505,8 +2567,25 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (e.target.closest('[data-billing-manage]')) {
-    // Lemon Squeezy customer portal — REPLACE with the real portal URL.
-    window.restash.openExternal('https://restash.lemonsqueezy.com/billing');
+    // Lemon Squeezy customer order portal — buyers enter their email to get a
+    // magic link for invoices, plan changes, and cancellation.
+    window.restash.openExternal('https://app.lemonsqueezy.com/my-orders');
+    return;
+  }
+  if (e.target.closest('[data-activate-toggle]')) {
+    const box = $('activateBox');
+    if (box) {
+      box.classList.toggle('hidden');
+      if (!box.classList.contains('hidden')) $('licenseKeyInput')?.focus();
+    }
+    return;
+  }
+  if (e.target.closest('[data-activate-go]')) {
+    activateLicenseFromBilling();
+    return;
+  }
+  if (e.target.closest('[data-license-deactivate]')) {
+    deactivateLicenseFromBilling();
     return;
   }
   if (e.target.closest('#billingSupportBtn')) {
@@ -2782,6 +2861,24 @@ function wire() {
 
   // Main process tells us which mode to render before each show.
   window.restash.onModeSet((mode) => applyMode(mode));
+
+  // License re-check downgraded us (refund / expiry) — refresh entitlement.
+  window.restash.onEntitlementChanged?.(async () => {
+    try {
+      state.entitlement = await window.restash.getEntitlement();
+      state.tier = state.entitlement.tier;
+      if (!billingBackdrop.classList.contains('hidden')) renderBilling();
+      render();
+    } catch {}
+  });
+
+  // Enter inside the license-key field submits the activation.
+  document.addEventListener('keydown', (e) => {
+    if (e.target && e.target.id === 'licenseKeyInput' && e.key === 'Enter') {
+      e.preventDefault();
+      activateLicenseFromBilling();
+    }
+  });
 
   // Drag-to-resize handles + the modal-open watcher that hides them.
   wireResizeHandles();

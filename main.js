@@ -2,7 +2,83 @@ const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, clipboard, shell, 
 const path = require('node:path');
 const fs = require('node:fs');
 const { execFile } = require('node:child_process');
+const os = require('node:os');
 const QRCode = require('qrcode');
+
+// ── Lemon Squeezy licensing ──────────────────────────────────────────────
+// Restash stays serverless: Lemon Squeezy mints the license keys and its
+// public license API verifies them, so the app talks to LS directly — no
+// backend. Two things get filled in once the LS store + products exist:
+//
+//   1. Checkout URLs — in renderer.js (CHECKOUT_URLS).
+//   2. The VARIANT-ID → tier map below. In Lemon Squeezy open Store →
+//      Products; every variant has a numeric ID. Turn ON "license keys" for
+//      each product, with an activation limit (e.g. 3 devices).
+const LS_LICENSE_API = 'https://api.lemonsqueezy.com/v1/licenses';
+const LS_VARIANT_TIERS = {
+  // 'REPLACE-MONTHLY-VARIANT-ID':      'monthly',
+  // 'REPLACE-YEARLY-VARIANT-ID':       'yearly',
+  // 'REPLACE-LIFETIME-VARIANT-ID':     'lifetime',
+  // 'REPLACE-OTO-YEARLY-VARIANT-ID':   'yearly',
+  // 'REPLACE-OTO-LIFETIME-VARIANT-ID': 'lifetime',
+};
+
+// A valid-but-unmapped variant still unlocks the app (fail open for the user).
+function tierForVariant(variantId) {
+  return LS_VARIANT_TIERS[String(variantId)] || 'lifetime';
+}
+function licenseInstanceName() {
+  try { return `Restash · ${os.hostname()}`; } catch { return 'Restash'; }
+}
+function maskKey(key) {
+  const k = String(key || '');
+  return k.length <= 8 ? k : `${k.slice(0, 4)}····${k.slice(-4)}`;
+}
+
+// POST to the Lemon Squeezy license API (activate / validate / deactivate).
+// These endpoints are unauthenticated — designed to be called straight from
+// the client — so no API key is needed.
+async function lsLicenseCall(action, params) {
+  try {
+    const res = await fetch(`${LS_LICENSE_API}/${action}`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams(params).toString(),
+    });
+    return (await res.json().catch(() => ({}))) || {};
+  } catch (err) {
+    return { error: (err && err.message) || 'network error', _network: true };
+  }
+}
+
+// On launch, re-check the stored license so refunds / expiries / disabled
+// keys downgrade the app. Offline → keep current state, never punish.
+async function revalidateLicense() {
+  const lic = readSettings().license;
+  if (!lic || !lic.key) return;
+  const r = await lsLicenseCall('validate', {
+    license_key: lic.key,
+    instance_id: lic.instanceId || '',
+  });
+  if (r && r._network) return;
+  const lk = r && r.license_key;
+  const stillValid = !!(r && r.valid && lk && lk.status === 'active');
+  const s = readSettings();
+  if (!s.license) return;
+  if (stillValid) {
+    s.license.status = 'active';
+    s.license.expiresAt = (lk && lk.expires_at) || s.license.expiresAt || null;
+    writeSettings(s);
+  } else {
+    s.license = null;
+    s.tier = 'free';
+    writeSettings(s);
+    if (win && !win.isDestroyed()) win.webContents.send('entitlement:changed');
+  }
+}
 
 // Hide from Dock (menu-bar-only app)
 if (process.platform === 'darwin' && app.dock) app.dock.hide();
@@ -37,6 +113,7 @@ function readSettings() {
   const defaults = {
     hotkey: DEFAULT_HOTKEY, qrHotkey: DEFAULT_QR_HOTKEY, theme: 'light',
     onboarded: false, stashes: [], tier: 'free',
+    license: null,     // { key, instanceId, variantId, tier, status, expiresAt } once activated
     trialStartedAt: 0, // 0 = not yet stamped; ensureTrialStamp() sets it on first run
     otoShown: false,   // one-time-offer fires once, ever
     menuSize: null,    // {width,height} — user-resized list popover (null = default)
@@ -72,17 +149,23 @@ function ensureTrialStamp() {
 // Returns { tier, effective: 'full'|'free', trialDaysLeft, trialActive }.
 function resolveEntitlement() {
   const s = readSettings();
-  const paid = s.tier === 'monthly' || s.tier === 'yearly' || s.tier === 'lifetime';
+  // An activated Lemon Squeezy license is the source of truth for paid status.
+  const lic = s.license;
+  const licensed = !!(lic && lic.status === 'active');
+  const tier = licensed ? (lic.tier || 'lifetime') : 'free';
   const started = s.trialStartedAt || Date.now();
   const msLeft = (started + TRIAL_DAYS * 864e5) - Date.now();
   const trialDaysLeft = Math.max(0, Math.ceil(msLeft / 864e5));
-  const trialActive = !paid && msLeft > 0;
+  const trialActive = !licensed && msLeft > 0;
   return {
-    tier: s.tier || 'free',
-    effective: (paid || trialActive) ? 'full' : 'free',
+    tier,
+    effective: (licensed || trialActive) ? 'full' : 'free',
     trialDaysLeft,
     trialActive,
     limits: FREE_LIMITS,
+    license: lic
+      ? { status: lic.status, tier: lic.tier, keyMasked: maskKey(lic.key), expiresAt: lic.expiresAt || null }
+      : null,
   };
 }
 
@@ -1270,6 +1353,54 @@ app.whenReady().then(() => {
   }));
   // Renderer asks for a fresh entitlement read (e.g. after the billing modal).
   ipcMain.handle('entitlement:get', () => resolveEntitlement());
+
+  // ── Lemon Squeezy license activation ──────────────────────────────────
+  // Activate a license key on this device; on success the entitlement flips
+  // to the matching paid tier and is persisted to settings.json.
+  ipcMain.handle('license:activate', async (_e, rawKey) => {
+    const key = String(rawKey || '').trim();
+    if (!key) return { ok: false, error: 'Enter your license key.' };
+    const r = await lsLicenseCall('activate', {
+      license_key: key,
+      instance_name: licenseInstanceName(),
+    });
+    if (r && r.activated) {
+      const variantId = r.meta && r.meta.variant_id;
+      const lk = r.license_key || {};
+      const s = readSettings();
+      s.license = {
+        key,
+        instanceId: (r.instance && r.instance.id) || null,
+        variantId: variantId != null ? String(variantId) : null,
+        tier: tierForVariant(variantId),
+        status: 'active',
+        expiresAt: lk.expires_at || null,
+        activatedAt: Date.now(),
+      };
+      s.tier = s.license.tier;
+      writeSettings(s);
+      return { ok: true, entitlement: resolveEntitlement() };
+    }
+    let error = (r && r.error) || 'That license key could not be activated.';
+    if (r && r._network) error = 'Could not reach Lemon Squeezy — check your connection.';
+    return { ok: false, error };
+  });
+
+  // Release this device's activation slot and drop back to the free tier.
+  ipcMain.handle('license:deactivate', async () => {
+    const s = readSettings();
+    const lic = s.license;
+    if (lic && lic.key && lic.instanceId) {
+      await lsLicenseCall('deactivate', { license_key: lic.key, instance_id: lic.instanceId });
+    }
+    s.license = null;
+    s.tier = 'free';
+    writeSettings(s);
+    return { ok: true, entitlement: resolveEntitlement() };
+  });
+
+  // Fire-and-forget: re-verify the stored license against Lemon Squeezy.
+  revalidateLicense();
   // Mark the one-time offer as shown so it never fires again.
   ipcMain.handle('oto:markShown', () => {
     const s = readSettings();

@@ -695,6 +695,52 @@ body.theme-dark .modal { box-shadow: 0 16px 40px rgba(0,0,0,0.55); }
   background: var(--tint); color: var(--tint-fg); cursor: pointer;
 }
 .big-cta:hover { opacity: 0.92; }
+
+/* ---- license activation (free billing view) ---- */
+.activate { margin-top: 12px; text-align: center; }
+.activate-toggle {
+  background: none; border: 0; cursor: pointer;
+  font: inherit; font-size: 11.5px; color: var(--fg-muted);
+}
+.activate-toggle b { color: var(--fg); font-weight: 600; }
+.activate-toggle:hover b { text-decoration: underline; }
+.activate-box {
+  display: flex; gap: 6px; margin-top: 9px;
+}
+.activate-box input {
+  flex: 1; min-width: 0;
+  font: inherit; font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 7px 9px;
+  background: var(--bg-elev); color: var(--fg);
+  border: 1px solid var(--divider); border-radius: 8px; outline: none;
+}
+.activate-box input:focus { border-color: var(--tint); }
+.activate-box .b-btn { flex-shrink: 0; }
+.b-btn.primary {
+  background: var(--tint); color: var(--tint-fg); border-color: transparent;
+}
+.b-btn.primary:hover { background: var(--tint); opacity: 0.92; }
+.b-btn:disabled { opacity: 0.5; cursor: default; }
+.activate-msg {
+  margin-top: 8px; font-size: 11px; color: var(--red); text-align: center;
+}
+
+/* ---- license footer (paid billing views) ---- */
+.license-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-top: 14px; padding-top: 11px;
+  border-top: 1px solid var(--divider);
+}
+.lf-key {
+  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--fg-muted);
+}
+.lf-deact {
+  background: none; border: 0; cursor: pointer;
+  font: inherit; font-size: 11px; color: var(--fg-muted);
+}
+.lf-deact:hover { color: var(--red); text-decoration: underline; }
 .section-label {
   font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px;
   color: var(--fg-muted); font-weight: 600; text-align: center;
