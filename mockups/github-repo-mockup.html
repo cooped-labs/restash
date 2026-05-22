@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Restash — GitHub repo page mockup</title>
+<style>
+:root{
+  --bg:#ffffff; --canvas:#ffffff; --subtle:#f6f8fa;
+  --fg:#1f2328; --muted:#59636e; --border:#d1d9e0; --border-soft:#d1d9e0b3;
+  --link:#0969da; --btn:#f6f8fa; --green:#1f883d;
+}
+body.dark{
+  --bg:#0d1117; --canvas:#0d1117; --subtle:#151b23;
+  --fg:#f0f6fc; --muted:#9198a1; --border:#3d444d; --border-soft:#3d444db3;
+  --link:#4493f8; --btn:#212830; --green:#3fb950;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0; background:var(--canvas); color:var(--fg);
+  font:14px -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:var(--link);text-decoration:none;}
+a:hover{text-decoration:underline;}
+
+/* ---- GitHub global header ---- */
+.gh-header{
+  background:#1f2328; color:#fff; height:62px;
+  display:flex;align-items:center;gap:16px;padding:0 16px;
+}
+body.dark .gh-header{background:#010409;border-bottom:1px solid #3d444d;}
+.gh-logo{width:32px;height:32px;}
+.gh-search{
+  flex:1;max-width:280px;height:30px;border:1px solid #3d444d;border-radius:6px;
+  background:#0d1117;color:#9198a1;font-size:13px;display:flex;align-items:center;
+  padding:0 10px;
+}
+.gh-spacer{flex:1;}
+.gh-ic{width:20px;height:20px;color:#fff;opacity:.85;}
+.gh-av{width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#5b8def,#9b5bef);}
+
+/* ---- repo head ---- */
+.repo-head{
+  padding:16px 24px 0;border-bottom:1px solid var(--border);
+}
+.repo-title{display:flex;align-items:center;gap:8px;font-size:20px;}
+.repo-title .book{width:17px;height:17px;color:var(--muted);}
+.repo-title .owner{color:var(--link);}
+.repo-title .name{color:var(--link);font-weight:600;}
+.repo-title .sep{color:var(--muted);font-weight:300;}
+.repo-title .priv{
+  font-size:12px;font-weight:500;color:var(--muted);
+  border:1px solid var(--border);border-radius:2em;padding:2px 9px;margin-left:4px;
+}
+.repo-actions{display:flex;gap:8px;margin-left:auto;}
+.gh-btn{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:12px;font-weight:500;color:var(--fg);
+  background:var(--btn);border:1px solid var(--border);border-radius:6px;
+  padding:5px 12px;cursor:pointer;
+}
+.gh-btn svg{width:14px;height:14px;color:var(--muted);}
+.gh-btn .count{
+  background:var(--bg);border:1px solid var(--border);border-radius:2em;
+  padding:0 7px;font-size:11px;
+}
+.repo-tabs{display:flex;gap:2px;margin-top:14px;}
+.repo-tabs .tab{
+  font-size:14px;color:var(--fg);padding:8px 12px;border-radius:6px;cursor:pointer;
+  display:flex;align-items:center;gap:7px;
+}
+.repo-tabs .tab:hover{background:var(--subtle);}
+.repo-tabs .tab.active{font-weight:600;}
+.repo-tabs .tab.active{border-bottom:2px solid #fd8c73;border-radius:0;padding-bottom:6px;}
+.repo-tabs .tab svg{width:16px;height:16px;color:var(--muted);}
+.repo-tabs .tab .num{
+  background:var(--subtle);border-radius:2em;font-size:11px;padding:1px 7px;color:var(--muted);
+}
+
+/* ---- layout ---- */
+.wrap{display:flex;gap:24px;padding:24px;max-width:1280px;margin:0 auto;}
+.col-main{flex:1;min-width:0;}
+.col-side{width:296px;flex-shrink:0;}
+
+/* about sidebar */
+.side-h{
+  display:flex;align-items:center;justify-content:space-between;
+  font-size:16px;font-weight:600;margin-bottom:8px;
+}
+.side-h svg{width:16px;height:16px;color:var(--muted);}
+.about-desc{font-size:14px;line-height:1.5;margin-bottom:14px;}
+.topics{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;}
+.topic{
+  font-size:12px;font-weight:500;color:var(--link);
+  background:#ddf4ff;border-radius:2em;padding:3px 11px;cursor:pointer;
+}
+body.dark .topic{background:#121d2f;}
+.side-meta{font-size:14px;color:var(--muted);display:flex;flex-direction:column;gap:9px;}
+.side-meta .row{display:flex;align-items:center;gap:8px;}
+.side-meta svg{width:16px;height:16px;}
+.side-div{height:1px;background:var(--border);margin:16px 0;}
+
+/* ---- README card ---- */
+.readme{
+  border:1px solid var(--border);border-radius:6px;overflow:hidden;
+}
+.readme-bar{
+  display:flex;align-items:center;gap:8px;
+  padding:8px 16px;border-bottom:1px solid var(--border);
+  font-size:14px;font-weight:600;background:var(--bg);
+  position:sticky;top:0;
+}
+.readme-bar svg{width:16px;height:16px;color:var(--muted);}
+.readme-body{padding:32px 6%;}
+@media(max-width:1100px){ .col-side{display:none;} }
+
+/* markdown styling (GitHub-ish) */
+.md{line-height:1.6;}
+.md .center{text-align:center;}
+.md img.logo{width:104px;}
+.md h1{
+  font-size:2em;font-weight:600;border-bottom:1px solid var(--border);
+  padding-bottom:.3em;margin:.4em 0 .6em;
+}
+.md .center h1{border:0;padding:0;}
+.md h2{
+  font-size:1.5em;font-weight:600;border-bottom:1px solid var(--border);
+  padding-bottom:.3em;margin:1.5em 0 .8em;
+}
+.md h3{font-size:1.25em;font-weight:600;margin:.2em 0;}
+.md .center h3{color:var(--muted);font-weight:400;}
+.md p{margin:0 0 14px;}
+.md hr{border:0;border-top:1px solid var(--border);margin:22px 0;}
+.md code{
+  font:12px ui-monospace,SFMono-Regular,Menlo,monospace;
+  background:var(--subtle);border-radius:6px;padding:.2em .4em;
+}
+.md pre{
+  background:var(--subtle);border-radius:6px;padding:14px 16px;overflow:auto;margin:0 0 14px;
+}
+.md pre code{background:none;padding:0;font-size:12.5px;line-height:1.55;display:block;}
+.md table{border-collapse:collapse;margin:0 0 16px;width:100%;}
+.md table td{border:1px solid var(--border);padding:7px 13px;vertical-align:top;}
+.md table tr:nth-child(2n){background:var(--subtle);}
+.md table td:first-child{white-space:nowrap;}
+.md ul{margin:0 0 14px;padding-left:2em;}
+.md li{margin:3px 0;}
+.md blockquote{
+  margin:0 0 14px;padding:0 1em;color:var(--muted);
+  border-left:.25em solid var(--border);
+}
+.md .meta-row{color:var(--muted);font-size:14px;}
+
+/* control */
+.ctl{
+  position:fixed;right:18px;bottom:18px;display:flex;gap:8px;z-index:50;
+}
+.ctl button{
+  font:12px -apple-system,sans-serif;font-weight:600;
+  background:#1f2328;color:#fff;border:0;border-radius:8px;padding:8px 13px;cursor:pointer;
+  box-shadow:0 4px 14px rgba(0,0,0,.25);
+}
+</style>
+</head>
+<body>
+
+<!-- GitHub global header -->
+<div class="gh-header">
+  <svg class="gh-logo" viewBox="0 0 16 16" fill="#fff"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+  <div class="gh-search">Type <kbd style="margin:0 3px">/</kbd> to search</div>
+  <div class="gh-spacer"></div>
+  <svg class="gh-ic" viewBox="0 0 16 16" fill="currentColor"><path d="M8 2c1.981 0 3.671.992 4.933 2.078 1.27 1.091 2.187 2.345 2.637 3.023a1.62 1.62 0 0 1 0 1.798c-.45.678-1.367 1.932-2.637 3.023C12.67 13.008 10.981 14 8 14c-1.981 0-3.671-.992-4.933-2.078C1.797 10.83.88 9.576.43 8.898a1.62 1.62 0 0 1 0-1.798c.45-.677 1.367-1.931 2.637-3.022C4.33 2.992 6.019 2 8 2ZM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"/></svg>
+  <svg class="gh-ic" viewBox="0 0 16 16" fill="currentColor"><path d="M8 16a2 2 0 0 0 1.985-1.75c.017-.137-.097-.25-.235-.25h-3.5c-.138 0-.252.113-.235.25A2 2 0 0 0 8 16ZM3 5a5 5 0 0 1 10 0v2.947c0 .05.015.098.042.139l1.703 2.555A1.519 1.519 0 0 1 13.482 13H2.518a1.516 1.516 0 0 1-1.263-2.36l1.703-2.554A.255.255 0 0 0 3 7.947Z"/></svg>
+  <div class="gh-av"></div>
+</div>
+
+<!-- repo head -->
+<div class="repo-head">
+  <div style="display:flex;align-items:center;">
+    <div class="repo-title">
+      <svg class="book" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z"/></svg>
+      <span class="owner">pue-llo</span>
+      <span class="sep">/</span>
+      <span class="name">restash</span>
+      <span class="priv">Private</span>
+    </div>
+    <div class="repo-actions">
+      <span class="gh-btn"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 2c1.981 0 3.671.992 4.933 2.078 1.27 1.091 2.187 2.345 2.637 3.023a1.62 1.62 0 0 1 0 1.798c-.45.678-1.367 1.932-2.637 3.023C12.67 13.008 10.981 14 8 14c-1.981 0-3.671-.992-4.933-2.078C1.797 10.83.88 9.576.43 8.898a1.62 1.62 0 0 1 0-1.798c.45-.677 1.367-1.931 2.637-3.022C4.33 2.992 6.019 2 8 2Z"/></svg>Watch <span class="count">1</span></span>
+      <span class="gh-btn"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 5.372v.878c0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75v-.878a2.25 2.25 0 1 1 1.5 0v.878a2.25 2.25 0 0 1-2.25 2.25h-1.5v2.128a2.251 2.251 0 1 1-1.5 0V8.5h-1.5A2.25 2.25 0 0 1 3.5 6.25v-.878a2.25 2.25 0 1 1 1.5 0Z"/></svg>Fork <span class="count">0</span></span>
+      <span class="gh-btn"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>Star <span class="count">0</span></span>
+    </div>
+  </div>
+  <div class="repo-tabs">
+    <div class="tab active"><svg viewBox="0 0 16 16" fill="currentColor"><path d="m11.28 3.22 4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734L13.94 8l-3.72-3.72a.749.749 0 0 1 .326-1.275.749.749 0 0 1 .734.215Zm-6.56 0a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042L2.06 8l3.72 3.72a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L.47 8.53a.75.75 0 0 1 0-1.06Z"/></svg>Code</div>
+    <div class="tab">Issues <span class="num">0</span></div>
+    <div class="tab">Pull requests <span class="num">0</span></div>
+    <div class="tab">Actions</div>
+    <div class="tab">Projects</div>
+    <div class="tab">Settings</div>
+  </div>
+</div>
+
+<!-- body -->
+<div class="wrap">
+  <div class="col-main">
+    <div class="readme">
+      <div class="readme-bar">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 1.75A.75.75 0 0 1 .75 1h4.253c1.227 0 2.317.59 3 1.501A3.743 3.743 0 0 1 11.006 1h4.245a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75h-4.507a2.25 2.25 0 0 0-1.591.659l-.622.621a.75.75 0 0 1-1.06 0l-.622-.621A2.25 2.25 0 0 0 5.258 13H.75a.75.75 0 0 1-.75-.75Zm7.251 10.324.004-5.073-.002-2.253A2.25 2.25 0 0 0 5.003 2.5H1.5v9h3.757a3.75 3.75 0 0 1 1.994.574ZM8.755 4.75l-.004 7.322a3.752 3.752 0 0 1 1.992-.572H14.5v-9h-3.495a2.25 2.25 0 0 0-2.25 2.25Z"/></svg>
+        README
+      </div>
+      <div class="readme-body">
+        <div class="md">
+
+          <div class="center">
+            <img class="logo" src="../assets/brand/app/256.png" alt="Restash" />
+            <h1>Restash</h1>
+            <h3>Stash anything. Paste it anywhere.</h3>
+            <p>A macOS menu-bar app that keeps the things you reach for — wallet
+            addresses, links, snippets, commands, contacts, files, even AI agent
+            prompts — one hotkey away from any app you're in.</p>
+            <p class="meta-row"><code>v1.0.0</code> &nbsp;·&nbsp; macOS 12+ &nbsp;·&nbsp; Electron &nbsp;·&nbsp; Private</p>
+          </div>
+
+          <hr/>
+
+          <h2>Why Restash</h2>
+          <p>Your clipboard holds <strong>one</strong> thing and forgets it the
+          moment you copy the next. Restash is the opposite: a small, fast vault
+          for the things you paste over and over. Summon it at your cursor,
+          press a number, and it's pasted into whatever app had focus — Mail, a
+          terminal, a wallet, a DM.</p>
+          <p>No window juggling. No re-typing your ETH address. No digging
+          through Notes.</p>
+
+          <h2>Features</h2>
+          <table>
+            <tr><td>🎯 <strong>Cursor numpad</strong></td><td>Press the global hotkey and a 3×3 pad appears at your cursor. Keys <code>1</code>–<code>9</code> paste instantly.</td></tr>
+            <tr><td>📋 <strong>Menu-bar dropdown</strong></td><td>A searchable list in the menu bar — type, hit <code>↵</code>, it's pasted. Fully resizable.</td></tr>
+            <tr><td>🗂 <strong>Stashes</strong></td><td>Group items into profiles. Each stash has its own 9-slot numpad. Cycle them with one hotkey.</td></tr>
+            <tr><td>🤖 <strong>Agent templates</strong></td><td>Save Markdown AI personas and drop them into Claude / ChatGPT / Cursor in a tap. Curated starter pack included.</td></tr>
+            <tr><td>🔳 <strong>QR decoder</strong></td><td>Drag a box around any QR code on screen — Restash decodes and classifies it.</td></tr>
+            <tr><td>📎 <strong>Multi-file items</strong></td><td>Stash a set of files; one paste attaches all of them.</td></tr>
+            <tr><td>🪙 <strong>Crypto-aware</strong></td><td>Wallet items show authentic chain badges (BTC, ETH, SOL +7).</td></tr>
+            <tr><td>↗ <strong>Share a copy</strong></td><td>Turn any item into a Restash-branded share link.</td></tr>
+          </table>
+
+          <h2>How it works</h2>
+          <pre><code>1.  ⌃⇧V            →  numpad appears at your cursor
+2.  press 1–9      →  item is pasted into the app you were in
+3.  ⌃⇧V again      →  cycle to the next stash</code></pre>
+          <p>Restash captures the frontmost app before it opens, then re-focuses
+          it and posts <code>⌘V</code> — so the paste always lands where you
+          meant it to.</p>
+
+          <h2>Build &amp; run</h2>
+          <pre><code>git clone git@github.com:pue-llo/restash.git
+cd restash
+npm install
+npm start</code></pre>
+          <blockquote>macOS only. Restash needs <strong>Accessibility</strong>
+          permission to paste into other apps — it'll prompt you on first run.</blockquote>
+
+          <h2>Roadmap</h2>
+          <ul>
+            <li>📱 <strong>Mobile companion</strong> — cross-device clipboard sync</li>
+            <li>🕘 <strong>Clipboard memory</strong> — auto-capture the last <em>N</em> copies</li>
+            <li>🪟 Windows / Linux ports</li>
+          </ul>
+
+          <h2>License</h2>
+          <p>Restash is <strong>proprietary</strong> — © Restash. All rights
+          reserved. This repository is private; the code is not licensed for
+          reuse or redistribution.</p>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- About sidebar -->
+  <div class="col-side">
+    <div class="side-h">About
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>
+    </div>
+    <div class="about-desc">
+      A macOS menu-bar app to stash wallets, links, snippets, files &amp; AI
+      agent prompts — and paste any of them with a global hotkey. 📋⚡
+    </div>
+    <div class="topics">
+      <span class="topic">macos</span>
+      <span class="topic">menu-bar</span>
+      <span class="topic">electron</span>
+      <span class="topic">clipboard</span>
+      <span class="topic">productivity</span>
+      <span class="topic">swift</span>
+      <span class="topic">crypto</span>
+    </div>
+    <div class="side-meta">
+      <div class="row"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 1.75A.75.75 0 0 1 .75 1h4.253c1.227 0 2.317.59 3 1.501A3.743 3.743 0 0 1 11.006 1h4.245a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75h-4.507a2.25 2.25 0 0 0-1.591.659l-.622.621a.75.75 0 0 1-1.06 0l-.622-.621A2.25 2.25 0 0 0 5.258 13H.75a.75.75 0 0 1-.75-.75Z"/></svg> Readme</div>
+      <div class="row"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg> 0 stars</div>
+      <div class="row"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 2c1.981 0 3.671.992 4.933 2.078 1.27 1.091 2.187 2.345 2.637 3.023a1.62 1.62 0 0 1 0 1.798c-.45.678-1.367 1.932-2.637 3.023C12.67 13.008 10.981 14 8 14c-1.981 0-3.671-.992-4.933-2.078C1.797 10.83.88 9.576.43 8.898a1.62 1.62 0 0 1 0-1.798c.45-.677 1.367-1.931 2.637-3.022C4.33 2.992 6.019 2 8 2Z"/></svg> 1 watching</div>
+    </div>
+    <div class="side-div"></div>
+    <div class="side-h" style="font-size:14px;">Releases</div>
+    <div class="side-meta">
+      <div class="row"><span style="background:var(--green);color:#fff;font-size:10px;font-weight:600;border-radius:2em;padding:1px 7px;">Latest</span> <a href="#">v1.0.0</a></div>
+    </div>
+  </div>
+</div>
+
+<div class="ctl">
+  <button id="theme">Toggle GitHub dark</button>
+</div>
+<script>
+document.getElementById('theme').onclick=()=>document.body.classList.toggle('dark');
+</script>
+</body>
+</html>
