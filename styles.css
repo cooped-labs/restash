@@ -512,6 +512,14 @@ kbd {
   flex: 1;
 }
 .empty-glyph { font-size: 32px; color: var(--fg-muted); margin-bottom: 6px; }
+.script-logo {
+  font-family: 'Snell Roundhand', 'Zapf Chancery', 'Brush Script MT', cursive;
+  font-size: 38px;
+  font-weight: 400;
+  color: var(--fg-muted);
+  line-height: 1.1;
+  display: block;
+}
 .empty-title { font-weight: 500; }
 .empty-sub { font-size: 11.5px; color: var(--fg-muted); margin-top: 4px; }
 
@@ -528,29 +536,31 @@ kbd {
 }
 .hintbar span { display: inline-flex; align-items: center; gap: 3px; }
 
-/* Brand bar — small Restash mark + wordmark at very bottom of popover */
+/* Brand bar — icon + wordmark at very bottom of both modals */
 .brandbar {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 5px 10px;
+  gap: 6px;
+  padding: 6px 10px 8px;
   border-top: 1px solid var(--divider);
   color: var(--fg-muted);
-  font-size: 10.5px;
-  letter-spacing: 0.3px;
+  opacity: 0.75;
 }
-.brandbar .brandmark {
-  width: 11px;
-  height: 11px;
-  display: block;
-  opacity: 0.7;
+.brand-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
 }
 .brandbar .brandname {
+  font-family: 'Inter', -apple-system, sans-serif;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.4px;
-  opacity: 0.85;
+  letter-spacing: 0.2px;
 }
+.mode-grid .brandbar { padding: 5px 8px 7px; }
+.mode-grid .brand-icon { width: 14px; height: 14px; }
+.mode-grid .brandbar .brandname { font-size: 12px; }
 
 /* ---------- buttons (used in modals) ---------- */
 .btn {
@@ -591,6 +601,11 @@ kbd {
 body.theme-dark .modal { box-shadow: 0 16px 40px rgba(0,0,0,0.55); }
 .modal-header { padding: 10px 12px; font-weight: 600; border-bottom: 1px solid var(--divider); font-size: 12.5px; }
 .modal-body { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto; }
+
+/* The add/edit-item modal runs roomier — the window grows to fit it
+   (see SIZE_EDITOR / the editor:window IPC in main.js). */
+#editorBackdrop .modal { width: 320px; }
+#editorBackdrop .modal-body { max-height: 392px; }
 
 /* ===================== Billing ===================== */
 #billingBody { gap: 12px; }
@@ -1736,29 +1751,11 @@ body.theme-dark .file-zone-picked .file-row.error .thumb {
 /* Stash pager header — dots + animated name. Mirrors the mockup. */
 .stash-header {
   flex: 0 0 auto;
-  padding: 7px 12px 5px;
+  padding: 5px 12px 4px;
   text-align: center;
   border-bottom: 1px solid var(--divider);
 }
-.stash-dots {
-  display: flex; gap: 4px; justify-content: center;
-  margin-bottom: 4px;
-}
-.stash-dot {
-  width: 5px; height: 5px;
-  border-radius: 50%;
-  /* Mid-gray so inactive dots are clearly visible against the off-white card
-     (and the dark card in dark mode) — was an invisible white-on-light. */
-  background: var(--fg-muted);
-  opacity: 0.55;
-  transition: all 220ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.stash-dot.active {
-  background: var(--fg);
-  opacity: 1;
-  width: 18px;
-  border-radius: 3px;
-}
+
 .stash-name {
   font-weight: 600;
   font-size: 12.5px;

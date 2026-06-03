@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('restash', {
   deactivateLicense: () => ipcRenderer.invoke('license:deactivate'),
   onEntitlementChanged: (cb) => ipcRenderer.on('entitlement:changed', cb),
   setBillingWindow: (open) => ipcRenderer.invoke('billing:window', open),
+  setEditorWindow: (open) => ipcRenderer.invoke('editor:window', open),
   markOTOShown: () => ipcRenderer.invoke('oto:markShown'),
   setHotkey: (accel) => ipcRenderer.invoke('hotkey:set', accel),
   resetHotkey: () => ipcRenderer.invoke('hotkey:reset'),

@@ -105,7 +105,7 @@ let panel = NSPanel(
     defer: false
 )
 panel.alphaValue = 0.0
-panel.level = .popUpMenu
+panel.level = .screenSaver  // must be above Restash's pop-up-menu level
 panel.isFloatingPanel = true
 panel.hidesOnDeactivate = false
 

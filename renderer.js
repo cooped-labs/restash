@@ -1429,13 +1429,8 @@ function buildGridPage(stash) {
 }
 
 function renderStashHeader(stashes, activeIdx, previousIdx) {
-  const dotsEl = document.getElementById('stashDots');
   const nameEl = document.getElementById('stashName');
-  if (!dotsEl || !nameEl) return;
-
-  dotsEl.innerHTML = stashes.map((_, i) =>
-    `<div class="stash-dot ${i === activeIdx ? 'active' : ''}"></div>`
-  ).join('');
+  if (!nameEl) return;
 
   if (previousIdx === undefined || previousIdx === activeIdx) {
     nameEl.innerHTML = `<span class="label">${escapeHtml(stashes[activeIdx].name)}</span>`;
@@ -2131,6 +2126,8 @@ async function openEditor(item, opts = {}) {
   syncKindUI();
   $('delBtn').classList.toggle('hidden', !item);
 
+  // Grow the popover window so the add/edit form has room to breathe.
+  window.restash.setEditorWindow?.(true);
   editorBackdrop.classList.remove('hidden');
   setTimeout(() => $('fLabel').focus(), 0);
 }
@@ -2403,6 +2400,7 @@ function syncKindUI() {
 
 function closeEditor() {
   editorBackdrop.classList.add('hidden');
+  window.restash.setEditorWindow?.(false);
   state.editing = null;
   focusSearch();
 }

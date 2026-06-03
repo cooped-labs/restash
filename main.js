@@ -80,8 +80,7 @@ async function revalidateLicense() {
   }
 }
 
-// Hide from Dock (menu-bar-only app)
-if (process.platform === 'darwin' && app.dock) app.dock.hide();
+// Show in Dock so users can see Restash is running and click to open it.
 
 let tray = null;
 let win = null;
@@ -545,6 +544,7 @@ const SIZE_GRID    = { width: 240, height: 332 };  // grid (numpad) default
 const SIZE_LIST    = { width: 300, height: 428 };  // list (menu) default
 const SIZE_QR      = { width: 300, height: 380 };  // QR preview — compact card layout
 const SIZE_BILLING = { width: 300, height: 532 };  // billing modal — fits Option B, no scroll
+const SIZE_EDITOR  = { width: 340, height: 500 };  // add/edit-item modal — roomier than the list
 
 // Resize bounds for the user-customisable modals (visible card, no gutter).
 // Both list and grid can be freely dragged within these limits.
@@ -831,15 +831,17 @@ app.whenReady().then(() => {
 
   createWindow();
 
-  // Open the tutorial on first launch (or whenever onboarded is false).
-  // While we're actively testing the tutorial flow, always open it — flip
-  // this to `if (!readSettings().onboarded)` once we ship.
-  setTimeout(() => createTutorialWindow(), 600);
+  // Open the tutorial on first launch only.
+  if (!readSettings().onboarded) setTimeout(() => createTutorialWindow(), 600);
 
   tray = new Tray(createTrayIcon());
   tray.setToolTip('Restash');
-  tray.setTitle(' Restash'); // visible text label in the menu bar
+  tray.setTitle(' Restash');
   tray.on('click', togglePopover);
+
+  // Clicking the Dock icon opens/toggles the popover (same as tray click).
+  app.on('activate', () => togglePopover());
+
   tray.on('right-click', () => {
     const menu = Menu.buildFromTemplate([
       { label: 'Open Restash', click: togglePopover },
@@ -1178,14 +1180,29 @@ app.whenReady().then(() => {
     }
 
     try {
-      // Suppress blur-hide for 60s — long enough for the user to interact
-      // with the share sheet (pick AirDrop target, type a message, etc.).
+      // Suppress blur-hide so the popover stays visible while the share sheet
+      // is open and the user interacts with it.
       suppressBlurHideUntil = Date.now() + 60_000;
+
+      // Temporarily drop Restash to normal window level so the system
+      // NSSharingServicePicker (which runs at pop-up-menu level) floats above it.
+      if (win) win.setAlwaysOnTop(false);
+
       const child = require('node:child_process').spawn(helper, args, {
-        detached: true,
+        detached: false,  // keep reference so we know when the sheet is gone
         stdio: 'ignore',
       });
+
+      // Restore pop-up-menu level and blur-hide once the share sheet closes.
+      const restore = () => {
+        suppressBlurHideUntil = 0;
+        if (win) win.setAlwaysOnTop(true, 'pop-up-menu');
+      };
+      child.once('exit', restore);
+      // Safety: restore after 65 s even if the process somehow never exits.
+      setTimeout(restore, 65_000);
       child.unref();
+
       return { ok: true };
     } catch (err) {
       return { ok: false, reason: 'spawn-failed', error: err.message };
@@ -1434,12 +1451,24 @@ app.whenReady().then(() => {
     writeSettings(s);
     return { ok: true };
   });
-  // Grow the popover to billing height while the billing modal is open so
-  // its content fits with no scroll; restore to list height on close.
-  ipcMain.handle('billing:window', (_e, open) => {
+  // Billing is an overlay inside the existing window — no resize needed.
+  ipcMain.handle('billing:window', (_e, _open) => { return { ok: true }; });
+
+  // The add/edit-item modal needs more room than the list. While it's open,
+  // grow the window to SIZE_EDITOR — but never below the user's current list
+  // size — then restore the focused mode's size on close.
+  ipcMain.handle('editor:window', (_e, open) => {
     if (!win) return;
-    // Closing billing restores the user's (possibly customised) list size.
-    const size = open ? SIZE_BILLING : cardSize('list');
+    let size;
+    if (open) {
+      const list = cardSize('list');
+      size = {
+        width:  Math.max(list.width,  SIZE_EDITOR.width),
+        height: Math.max(list.height, SIZE_EDITOR.height),
+      };
+    } else {
+      size = cardSize(currentMode);
+    }
     const cur = win.getBounds();
     win.setBounds({
       x: cur.x, y: cur.y,
