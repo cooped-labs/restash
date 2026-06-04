@@ -5,6 +5,16 @@ const { execFile } = require('node:child_process');
 const os = require('node:os');
 const QRCode = require('qrcode');
 
+// Single-instance lock — Restash is a menu-bar singleton. A second launch must
+// NOT spin up a rival instance: duplicates race on settings.json (theme flips)
+// and answer the global hotkey with their own stale window. If we don't own the
+// lock, this process is a redundant duplicate — quit hard before any tray,
+// window, or settings write happens. The original instance gets 'second-instance'.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+  process.exit(0);
+}
+
 // ── Lemon Squeezy licensing ──────────────────────────────────────────────
 // Restash stays serverless: Lemon Squeezy mints the license keys and its
 // public license API verifies them, so the app talks to LS directly — no
@@ -841,6 +851,10 @@ app.whenReady().then(() => {
 
   // Clicking the Dock icon opens/toggles the popover (same as tray click).
   app.on('activate', () => togglePopover());
+
+  // A second launch (Spotlight, double-click, `npm start`) is bounced by the
+  // single-instance lock above — when it happens, surface THIS instance instead.
+  app.on('second-instance', () => togglePopover());
 
   tray.on('right-click', () => {
     const menu = Menu.buildFromTemplate([
