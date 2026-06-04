@@ -1742,6 +1742,9 @@ body.theme-dark .file-zone-picked .file-row.error .thumb {
    Hiding the topbar entirely gives the tiles more vertical room. */
 .mode-grid .topbar { display: none; }
 .mode-grid .hintbar { padding: 4px 8px; font-size: 9.5px; }
+/* Brand mark lives in the stash-header (top) for the cursor modal, so the
+   bottom brandbar would be a duplicate — hide it in grid mode only. */
+.mode-grid #brandbar { display: none; }
 .grid-wrap {
   flex: 1;
   display: flex; flex-direction: column;
@@ -1751,9 +1754,19 @@ body.theme-dark .file-zone-picked .file-row.error .thumb {
 /* Stash pager header — dots + animated name. Mirrors the mockup. */
 .stash-header {
   flex: 0 0 auto;
-  padding: 5px 12px 4px;
+  padding: 6px 12px 5px;
   text-align: center;
   border-bottom: 1px solid var(--divider);
+}
+/* Constant Restash brand mark above the (changing) stash name. */
+.stash-brand {
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+  color: var(--fg-muted);
+  margin-bottom: 3px;
+}
+.stash-brand .brand-icon { width: 13px; height: 13px; flex-shrink: 0; }
+.stash-brand .brandname {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.2px; opacity: 0.85;
 }
 
 .stash-name {
