@@ -828,8 +828,11 @@ async function togglePopoverAtCursor() {
 }
 
 app.whenReady().then(() => {
-  // About panel (Apple menu → "About Restash" — shown if Dock icon is ever
-  // surfaced or via right-click → "About Restash" we can add later).
+  // Show in the Dock like a normal app. Forced at runtime so it's reliable even
+  // if LaunchServices has a stale LSUIElement=true cached from an earlier build.
+  if (process.platform === 'darwin' && app.dock) app.dock.show();
+
+  // About panel (Apple menu → "About Restash").
   if (process.platform === 'darwin') {
     app.setAboutPanelOptions({
       applicationName: 'Restash',
