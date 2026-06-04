@@ -558,9 +558,7 @@ kbd {
   font-weight: 600;
   letter-spacing: 0.2px;
 }
-.mode-grid .brandbar { padding: 5px 8px 7px; }
-.mode-grid .brand-icon { width: 14px; height: 14px; }
-.mode-grid .brandbar .brandname { font-size: 12px; }
+/* Identical brand mark in both the main menu and the cursor menu — uniform. */
 
 /* ---------- buttons (used in modals) ---------- */
 .btn {
