@@ -17,8 +17,9 @@ contextBridge.exposeInMainWorld('restash', {
   revealFile: (storedPath) => ipcRenderer.invoke('file:reveal', storedPath),
   onPopoverShown: (cb) => ipcRenderer.on('popover:shown', cb),
 
-  // Environment kind: list installed apps (for the dropdown) + open a whole env.
+  // Environment kind: capture the current workspace + open a whole env.
   listApps: () => ipcRenderer.invoke('apps:list'),
+  captureEnvironment: () => ipcRenderer.invoke('env:capture'),
   openEnvironment: (env) => ipcRenderer.invoke('env:open', env),
 
   loadSettings: () => ipcRenderer.invoke('settings:load'),

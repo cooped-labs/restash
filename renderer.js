@@ -2116,12 +2116,11 @@ let editorFiles = [];
 let editorFileErrors = [];
 
 // Environment-kind editor state. Targets are an ordered list of
-// { type: 'site'|'app', value, path? }. urlMode controls how sites open:
-// 'window' = all sites as tabs in one browser window; 'separate' = each in
-// its own window. installedApps is the /Applications scan for the app dropdown.
+// { type: 'site'|'app', value, path? }, snapshotted by "Capture what's open".
+// urlMode controls how sites reopen: 'window' = all sites as tabs in one
+// browser window; 'separate' = each in its own window.
 let editorEnvTargets = [];
 let editorEnvUrlMode = 'window';
-let installedApps = [];
 
 async function openEditor(item, opts = {}) {
   // Pull the latest stash list from main before opening, so a stash created
@@ -2165,9 +2164,6 @@ async function openEditor(item, opts = {}) {
   } else {
     editorEnvTargets = [];
     editorEnvUrlMode = 'window';
-  }
-  if (!installedApps.length) {
-    try { installedApps = await window.restash.listApps(); } catch { installedApps = []; }
   }
 
   $('editorTitle').textContent = item ? 'Edit item' : 'New item';
@@ -2287,88 +2283,81 @@ function renderFormulaPicker() {
 
 // Environment editor — a list of targets (sites + apps), add buttons, and a
 // site-open mode toggle. Rebuilt from editorEnvTargets on every change.
+// Environment editor — capture-only. The user opens the sites/apps they want,
+// hits "Capture what's open", and Restash snapshots the open browser tabs +
+// running apps into the target list (remove-only). A site-open mode toggle
+// controls how the sites reopen.
 function renderEnvEditor() {
   const host = $('fEnvPicker');
   if (!host) return;
 
-  const appOptions = (selPath) => installedApps.map((a) =>
-    `<option value="${escapeHtml(a.path)}"${a.path === selPath ? ' selected' : ''}>${escapeHtml(a.name)}</option>`
-  ).join('');
-
   const rows = editorEnvTargets.map((t, i) => {
-    if (t.type === 'app') {
-      return `<div class="env-row" data-i="${i}">
-        <span class="env-ic" title="App">${ICONS.environment}</span>
-        <select class="env-app" data-i="${i}">${appOptions(t.path)}</select>
-        <button type="button" class="env-x" data-i="${i}" title="Remove">×</button>
-      </div>`;
-    }
-    return `<div class="env-row" data-i="${i}">
-      <span class="env-ic" title="Site">${ICONS.url}</span>
-      <input type="text" class="env-url" data-i="${i}" placeholder="https://…" value="${escapeHtml(t.value || '')}" />
+    const ic = t.type === 'app' ? ICONS.environment : ICONS.url;
+    const cls = t.type === 'app' ? 'is-app' : 'is-site';
+    return `<div class="env-cap-row ${cls}" data-i="${i}">
+      <span class="env-ic">${ic}</span>
+      <span class="env-cap-val" title="${escapeHtml(t.value || '')}">${escapeHtml(t.value || '')}</span>
       <button type="button" class="env-x" data-i="${i}" title="Remove">×</button>
     </div>`;
   }).join('');
 
+  const count = editorEnvTargets.length;
   const hasSites = editorEnvTargets.some((t) => t.type === 'site');
+  const siteN = editorEnvTargets.filter((t) => t.type === 'site').length;
+  const appN  = editorEnvTargets.filter((t) => t.type === 'app').length;
+
   host.innerHTML = `
-    <div class="env-rows">${rows || '<div class="env-empty">No sites or apps yet.</div>'}</div>
-    <div class="env-add">
-      <button type="button" class="env-add-btn" data-add="site">+ Add site</button>
-      <button type="button" class="env-add-btn" data-add="app">+ Add app</button>
-    </div>
+    <button type="button" class="env-capture-btn" id="envCaptureBtn">
+      <span class="cap-ic">✦</span>
+      <span class="cap-lbl">${count ? 'Re-capture open tabs & apps' : 'Capture open tabs & apps'}</span>
+    </button>
+    <div class="env-cap-hint" id="envCapHint">${count
+      ? `${siteN} ${siteN === 1 ? 'site' : 'sites'} · ${appN} ${appN === 1 ? 'app' : 'apps'} — remove anything you don't want.`
+      : 'Open the tabs and apps you want, then capture this workspace.'}</div>
+    <div class="env-rows">${rows}</div>
     <div class="env-mode${hasSites ? '' : ' hidden'}">
       <span>Open sites in:</span>
       <button type="button" class="env-mode-btn${editorEnvUrlMode === 'window' ? ' active' : ''}" data-mode="window">One window</button>
       <button type="button" class="env-mode-btn${editorEnvUrlMode === 'separate' ? ' active' : ''}" data-mode="separate">Separate windows</button>
     </div>`;
 
-  // Wire URL inputs
-  host.querySelectorAll('.env-url').forEach((inp) => {
-    inp.addEventListener('input', () => {
-      const i = Number(inp.dataset.i);
-      if (editorEnvTargets[i]) editorEnvTargets[i].value = inp.value;
-    });
-  });
-  // Wire app selects
-  host.querySelectorAll('.env-app').forEach((sel) => {
-    const i = Number(sel.dataset.i);
-    // Default a freshly-added app row to the first option if unset.
-    if (editorEnvTargets[i] && !editorEnvTargets[i].path && sel.value) {
-      editorEnvTargets[i].path = sel.value;
-      editorEnvTargets[i].value = sel.options[sel.selectedIndex]?.textContent || '';
+  // Capture button — snapshot the current workspace.
+  $('envCaptureBtn')?.addEventListener('click', async () => {
+    const btn = $('envCaptureBtn');
+    const hint = $('envCapHint');
+    const lbl = btn.querySelector('.cap-lbl');
+    btn.disabled = true;
+    btn.classList.add('busy');
+    lbl.textContent = 'Capturing…';
+    try {
+      const snap = await window.restash.captureEnvironment();
+      const targets = [];
+      for (const url of (snap?.sites || [])) targets.push({ type: 'site', value: url });
+      for (const a of (snap?.apps || [])) targets.push({ type: 'app', value: a.name, path: a.path || '' });
+      editorEnvTargets = targets;
+      renderEnvEditor();
+      if (!targets.length && $('envCapHint')) {
+        $('envCapHint').textContent = 'Nothing detected. Open some tabs/apps (and allow Restash to control your browser when prompted), then try again.';
+      } else if (targets.length && !$('fLabel').value.trim()) {
+        $('fLabel').value = 'My workspace';
+      }
+    } catch {
+      btn.disabled = false;
+      btn.classList.remove('busy');
+      lbl.textContent = count ? 'Re-capture open tabs & apps' : 'Capture open tabs & apps';
+      if (hint) hint.textContent = 'Capture failed — allow Restash to control your browser in System Settings → Privacy → Automation.';
     }
-    sel.addEventListener('change', () => {
-      if (!editorEnvTargets[i]) return;
-      editorEnvTargets[i].path = sel.value;
-      editorEnvTargets[i].value = sel.options[sel.selectedIndex]?.textContent || '';
-    });
   });
-  // Remove buttons
+
+  // Remove buttons.
   host.querySelectorAll('.env-x').forEach((btn) => {
     btn.addEventListener('click', () => {
       editorEnvTargets.splice(Number(btn.dataset.i), 1);
       renderEnvEditor();
     });
   });
-  // Add buttons
-  host.querySelectorAll('.env-add-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      if (btn.dataset.add === 'app') {
-        const first = installedApps[0];
-        editorEnvTargets.push({ type: 'app', value: first?.name || '', path: first?.path || '' });
-      } else {
-        editorEnvTargets.push({ type: 'site', value: '' });
-      }
-      renderEnvEditor();
-      // Focus the newly added site input for quick typing.
-      if (btn.dataset.add === 'site') {
-        const inputs = host.querySelectorAll('.env-url');
-        inputs[inputs.length - 1]?.focus();
-      }
-    });
-  });
-  // Mode toggle
+
+  // Site-open mode toggle.
   host.querySelectorAll('.env-mode-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       editorEnvUrlMode = btn.dataset.mode;

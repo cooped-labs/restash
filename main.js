@@ -1168,13 +1168,13 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('shell:open', (_e, url) => shell.openExternal(String(url)));
 
-  // --- IPC: installed apps (Environment kind app dropdown) ---
-  // Scans the standard app folders for .app bundles. Names only — no metadata.
-  ipcMain.handle('apps:list', () => {
+  // Scan the standard app folders for .app bundles → [{ name, path }].
+  function scanInstalledApps() {
     const dirs = [
       '/Applications',
       '/Applications/Utilities',
       '/System/Applications',
+      '/System/Applications/Utilities',
       path.join(os.homedir(), 'Applications'),
     ];
     const apps = [];
@@ -1192,6 +1192,91 @@ app.whenReady().then(() => {
     }
     apps.sort((a, b) => a.name.localeCompare(b.name));
     return apps;
+  }
+
+  // --- IPC: installed apps ---
+  ipcMain.handle('apps:list', () => scanInstalledApps());
+
+  // Run an AppleScript via osascript, async (never blocks the main process).
+  // Resolves the stdout string, or null on any error / timeout / denial.
+  const runOsa = (script, timeout = 8000) => new Promise((resolve) => {
+    try {
+      execFile('/usr/bin/osascript', ['-e', script], { timeout }, (err, stdout) => {
+        resolve(err ? null : String(stdout || ''));
+      });
+    } catch { resolve(null); }
+  });
+
+  // --- IPC: capture the current workspace (open browser tabs + running apps) ---
+  // Returns { sites: [url…], apps: [{ name, path }] }. Browser tabs are read via
+  // each browser's AppleScript dictionary (guarded by `is running` so a closed
+  // browser is never launched). Running apps come from System Events; we drop
+  // Restash itself, Finder, and obvious system UI, plus any browser whose tabs
+  // we already captured (re-opening the tabs relaunches it).
+  ipcMain.handle('env:capture', async () => {
+    const result = { sites: [], apps: [] };
+
+    // Browsers whose tab list we can read (Chromium family + Safari share the
+    // windows→tabs→URL shape). Firefox/Arc don't expose tabs → captured as apps.
+    const BROWSERS = ['Safari', 'Google Chrome', 'Brave Browser', 'Microsoft Edge', 'Vivaldi', 'Opera'];
+    const seenUrl = new Set();
+    const capturedBrowsers = new Set();
+
+    for (const name of BROWSERS) {
+      const safe = name.replace(/[^A-Za-z0-9 .]/g, '');
+      const script = `if application "${safe}" is running then
+  set out to ""
+  tell application "${safe}"
+    repeat with w in windows
+      try
+        repeat with t in tabs of w
+          set out to out & (URL of t) & linefeed
+        end repeat
+      end try
+    end repeat
+  end tell
+  return out
+else
+  return ""
+end if`;
+      const out = await runOsa(script, 8000);
+      if (out == null) continue; // not installed, denied, or timed out
+      const urls = out.split('\n').map((s) => s.trim()).filter((u) => /^https?:\/\//i.test(u));
+      let got = 0;
+      for (const u of urls) {
+        if (seenUrl.has(u)) continue;
+        seenUrl.add(u);
+        result.sites.push(u);
+        got++;
+      }
+      if (got > 0) capturedBrowsers.add(name);
+    }
+
+    // Running foreground GUI apps (names) → app targets.
+    const namesOut = await runOsa(
+      'tell application "System Events" to get name of every process whose background only is false',
+      5000,
+    );
+    const runningNames = namesOut
+      ? namesOut.split(',').map((s) => s.trim()).filter(Boolean)
+      : [];
+
+    const EXCLUDE = new Set([
+      'Restash', 'Electron', 'Finder', 'System Events', 'loginwindow', 'Dock',
+      'SystemUIServer', 'Control Center', 'Control Centre', 'Notification Center',
+      'NotificationCenter', 'Spotlight', 'WindowManager', 'Window Server',
+      'TextInputMenuAgent', 'universalaccessd',
+    ]);
+    const appMap = new Map(scanInstalledApps().map((a) => [a.name, a.path]));
+    const seenApp = new Set();
+    for (const name of runningNames) {
+      if (EXCLUDE.has(name)) continue;
+      if (capturedBrowsers.has(name)) continue; // its tabs already represent it
+      if (seenApp.has(name)) continue;
+      seenApp.add(name);
+      result.apps.push({ name, path: appMap.get(name) || '' });
+    }
+    return result;
   });
 
   // --- IPC: open an Environment (a set of sites + apps) in one shot ---
