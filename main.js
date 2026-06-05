@@ -1167,6 +1167,74 @@ app.whenReady().then(() => {
     return true;
   });
   ipcMain.handle('shell:open', (_e, url) => shell.openExternal(String(url)));
+
+  // --- IPC: installed apps (Environment kind app dropdown) ---
+  // Scans the standard app folders for .app bundles. Names only — no metadata.
+  ipcMain.handle('apps:list', () => {
+    const dirs = [
+      '/Applications',
+      '/Applications/Utilities',
+      '/System/Applications',
+      path.join(os.homedir(), 'Applications'),
+    ];
+    const apps = [];
+    const seen = new Set();
+    for (const dir of dirs) {
+      let entries = [];
+      try { entries = fs.readdirSync(dir); } catch { continue; }
+      for (const e of entries) {
+        if (!e.endsWith('.app')) continue;
+        const name = e.slice(0, -4);
+        if (seen.has(name)) continue;
+        seen.add(name);
+        apps.push({ name, path: path.join(dir, e) });
+      }
+    }
+    apps.sort((a, b) => a.name.localeCompare(b.name));
+    return apps;
+  });
+
+  // --- IPC: open an Environment (a set of sites + apps) in one shot ---
+  // Sites: 'window' mode = one `open` call with every URL → tabs in one browser
+  // window; 'separate' = `open -n` per URL → a new window each. Apps: launched
+  // by bundle path (or by name as a fallback).
+  ipcMain.handle('env:open', (_e, env) => {
+    const OPEN = '/usr/bin/open';
+    const targets = Array.isArray(env?.targets) ? env.targets : [];
+    const urlMode = env?.urlMode === 'separate' ? 'separate' : 'window';
+
+    const normalizeUrl = (u) => {
+      const s = String(u || '').trim();
+      if (!s) return '';
+      // Already has a scheme (http://, https://, mailto:, etc.) — leave it.
+      if (/^[a-z][a-z0-9+.-]*:/i.test(s)) return s;
+      return 'https://' + s;
+    };
+
+    const apps  = targets.filter((t) => t && t.type === 'app');
+    const sites = targets
+      .filter((t) => t && t.type === 'site' && (t.value || '').trim())
+      .map((t) => normalizeUrl(t.value));
+
+    // Launch apps first (so browsers aren't stealing focus mid-launch).
+    for (const a of apps) {
+      const args = a.path ? [a.path] : ['-a', String(a.value || '')];
+      if (!args[0]) continue;
+      try { execFile(OPEN, args, () => {}); } catch {}
+    }
+
+    if (sites.length) {
+      if (urlMode === 'separate') {
+        // Stagger so the browser reliably spawns distinct windows.
+        sites.forEach((u, i) => setTimeout(() => {
+          try { execFile(OPEN, ['-n', u], () => {}); } catch {}
+        }, i * 280));
+      } else {
+        try { execFile(OPEN, sites, () => {}); } catch {}
+      }
+    }
+    return { ok: true };
+  });
   ipcMain.handle('qr:dataurl', (_e, text) => QRCode.toDataURL(String(text ?? ''), {
     errorCorrectionLevel: 'H',
     margin: 1,

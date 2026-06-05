@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld('restash', {
   revealFile: (storedPath) => ipcRenderer.invoke('file:reveal', storedPath),
   onPopoverShown: (cb) => ipcRenderer.on('popover:shown', cb),
 
+  // Environment kind: list installed apps (for the dropdown) + open a whole env.
+  listApps: () => ipcRenderer.invoke('apps:list'),
+  openEnvironment: (env) => ipcRenderer.invoke('env:open', env),
+
   loadSettings: () => ipcRenderer.invoke('settings:load'),
   getEntitlement: () => ipcRenderer.invoke('entitlement:get'),
   // Lemon Squeezy license activation

@@ -18,6 +18,10 @@ const ICONS = {
   contact: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12.4a4.2 4.2 0 1 0 0-8.4 4.2 4.2 0 0 0 0 8.4zm0 1.9c-4.06 0-7.6 2.06-7.6 5.04V21h15.2v-1.66c0-2.98-3.54-5.04-7.6-5.04z"/></svg>`,
   // Twin AI sparkle — Agent template kind
   agent: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 2.5l1.85 5.15L18 9.5l-5.15 1.85L11 16.5l-1.85-5.15L4 9.5l5.15-1.85z"/><path d="M17.5 14l.95 2.55L21 17.5l-2.55.95L17.5 21l-.95-2.55L14 17.5l2.55-.95z"/></svg>`,
+  // "fx" — the universal spreadsheet formula mark (Excel's formula bar)
+  formula: `<svg viewBox="0 0 24 24" fill="currentColor"><text x="2.5" y="17.5" font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-weight="600" font-size="16">f</text><text x="11" y="17.5" font-family="Inter, system-ui" font-weight="600" font-size="11.5">x</text></svg>`,
+  // 2×2 launchpad grid — Environment kind (a set of sites/apps)
+  environment: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg>`,
 };
 
 // Monochrome SVG glyphs per file kind. All use currentColor so they pick up
@@ -127,6 +131,8 @@ const KINDS = {
   contact:         { icon: ICONS.contact,      name: 'Contact', labelPlaceholder: 'Alice Martin',        valuePlaceholder: '',                           tagLabel: 'Tag',   tagPlaceholder: '' },
   file:            { icon: ICONS.file,         name: 'File',    labelPlaceholder: 'Brand kit / Resume',  valuePlaceholder: '',                           tagLabel: 'Tag',   tagPlaceholder: '' },
   agent:           { icon: ICONS.agent,        name: 'Agent',   labelPlaceholder: 'Strategist persona',  valuePlaceholder: '# Role\nYou are a…',          tagLabel: 'Tag',   tagPlaceholder: '' },
+  formula:         { icon: ICONS.formula,      name: 'Formula', labelPlaceholder: 'Monthly revenue total', valuePlaceholder: '=SUMIF(A:A,">100",B:B)',   tagLabel: 'Tag',   tagPlaceholder: '' },
+  environment:     { icon: ICONS.environment,  name: 'Environment', labelPlaceholder: 'Morning setup',   valuePlaceholder: '',                           tagLabel: 'Tag',   tagPlaceholder: '' },
 };
 
 // ---------- agent templates ----------
@@ -303,6 +309,23 @@ You turn numbers into decisions. You are skeptical of tidy stories and careful a
 ## Task
 `,
   },
+];
+
+// ---------- formula templates ----------
+// Curated, ready-to-tweak spreadsheet formulas (Excel / Google Sheets syntax).
+// Picking one drops it into the Value field; the user renames the placeholder
+// ranges and pastes it straight into a cell.
+const FORMULA_TEMPLATES = [
+  { name: 'VLOOKUP',     label: 'VLOOKUP',        body: '=VLOOKUP(lookup_value, table_array, col_index, FALSE)' },
+  { name: 'XLOOKUP',     label: 'XLOOKUP',        body: '=XLOOKUP(lookup_value, lookup_array, return_array, "Not found")' },
+  { name: 'INDEX/MATCH', label: 'INDEX + MATCH',  body: '=INDEX(return_range, MATCH(lookup_value, lookup_range, 0))' },
+  { name: 'SUMIF',       label: 'SUMIF',          body: '=SUMIF(range, ">100", sum_range)' },
+  { name: 'SUMIFS',      label: 'SUMIFS',         body: '=SUMIFS(sum_range, criteria_range1, criteria1, criteria_range2, criteria2)' },
+  { name: 'COUNTIF',     label: 'COUNTIF',        body: '=COUNTIF(range, criteria)' },
+  { name: 'IF',          label: 'IF',             body: '=IF(logical_test, value_if_true, value_if_false)' },
+  { name: 'IFERROR',     label: 'IFERROR',        body: '=IFERROR(your_formula, "")' },
+  { name: 'TEXTJOIN',    label: 'TEXTJOIN',       body: '=TEXTJOIN(", ", TRUE, range)' },
+  { name: '% change',    label: '% change',       body: '=(new_value - old_value) / old_value' },
 ];
 
 const state = {
@@ -486,6 +509,8 @@ function computeStashes() {
   if (has('physicalAddress')) stashes.push({ id: 'addresses', name: 'Addresses', filter: (i) => i.kind === 'physicalAddress', pinnedOnly: false });
   if (has('text'))            stashes.push({ id: 'snippets',  name: 'Snippets',  filter: (i) => i.kind === 'text',            pinnedOnly: false });
   if (has('agent'))           stashes.push({ id: 'agents',    name: 'Agents',    filter: (i) => i.kind === 'agent',           pinnedOnly: false });
+  if (has('formula'))         stashes.push({ id: 'formulas',  name: 'Formulas',  filter: (i) => i.kind === 'formula',         pinnedOnly: false });
+  if (has('environment'))     stashes.push({ id: 'envs',      name: 'Environments', filter: (i) => i.kind === 'environment',   pinnedOnly: false });
   return stashes;
 }
 
@@ -1747,7 +1772,7 @@ function renderList() {
     // Hover-only actions (QR + native share). Replace the key indicator on hover.
     // QR is meaningless for file items (would just encode a local path), so
     // skip it there.
-    const qrButton = (item.kind === 'file' || item.kind === 'agent') ? '' : `
+    const qrButton = (item.kind === 'file' || item.kind === 'agent' || item.kind === 'formula' || item.kind === 'environment') ? '' : `
         <button class="row-act" data-act="qr" title="Show QR code" aria-label="Show QR code">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="7" height="7" rx="1"/>
@@ -1932,6 +1957,17 @@ function peekHTML(item) {
       `<div class="peek-agent-line${i === 0 ? ' head' : ''}">${escapeHtml(l)}</div>`
     ).join('');
   }
+  if (item.kind === 'formula') {
+    return `<div class="peek-formula">${escapeHtml(item.value || '')}</div>`;
+  }
+  if (item.kind === 'environment') {
+    const targets = Array.isArray(item.env?.targets) ? item.env.targets : [];
+    if (!targets.length) return `<div class="peek-line">No sites or apps</div>`;
+    return targets.map((t) => {
+      const ic = t.type === 'app' ? ICONS.environment : ICONS.url;
+      return `<div class="peek-env"><span class="pe-ic">${ic}</span><span class="pe-val">${escapeHtml(t.value || '')}</span></div>`;
+    }).join('');
+  }
   return `<div class="peek-line">${escapeHtml(item.value || '')}</div>`;
 }
 
@@ -2018,6 +2054,14 @@ async function pasteItem(item) {
   item.lastUsedAt = Date.now();
   await persist();
 
+  // Environment items don't paste — they OPEN. One action launches every site
+  // and app in the environment, then the popover closes.
+  if (item.kind === 'environment') {
+    try { await window.restash.openEnvironment(item.env || { targets: [], urlMode: 'window' }); } catch {}
+    window.restash.hideWindow?.();
+    return;
+  }
+
   // File items go through the file-URL pasteboard path so ⌘V behaves
   // correctly in Finder / Mail / Slack. Multi-file items paste all files in
   // one shot (Mail attaches all, Finder copies all, etc.).
@@ -2071,6 +2115,14 @@ let editorFiles = [];
 // fleeting toast that's easy to miss.
 let editorFileErrors = [];
 
+// Environment-kind editor state. Targets are an ordered list of
+// { type: 'site'|'app', value, path? }. urlMode controls how sites open:
+// 'window' = all sites as tabs in one browser window; 'separate' = each in
+// its own window. installedApps is the /Applications scan for the app dropdown.
+let editorEnvTargets = [];
+let editorEnvUrlMode = 'window';
+let installedApps = [];
+
 async function openEditor(item, opts = {}) {
   // Pull the latest stash list from main before opening, so a stash created
   // elsewhere shows up immediately.
@@ -2105,6 +2157,19 @@ async function openEditor(item, opts = {}) {
   }
   editorFileErrors = [];  // fresh editor = no leftover warnings
 
+  // Environment kind: hydrate the target list + site-open mode, and make sure
+  // the installed-apps list is loaded for the app dropdowns (cached after 1st).
+  if (item?.kind === 'environment') {
+    editorEnvTargets = Array.isArray(item.env?.targets) ? item.env.targets.map((t) => ({ ...t })) : [];
+    editorEnvUrlMode = item.env?.urlMode === 'separate' ? 'separate' : 'window';
+  } else {
+    editorEnvTargets = [];
+    editorEnvUrlMode = 'window';
+  }
+  if (!installedApps.length) {
+    try { installedApps = await window.restash.listApps(); } catch { installedApps = []; }
+  }
+
   $('editorTitle').textContent = item ? 'Edit item' : 'New item';
   $('fLabel').value = item?.label || prefill?.label || '';
   $('fValue').value = (item?.kind === 'file' || editorKind === 'file')
@@ -2121,6 +2186,8 @@ async function openEditor(item, opts = {}) {
   renderKindPicker();
   renderChainPicker();
   renderAgentPicker();
+  renderFormulaPicker();
+  renderEnvEditor();
   renderStashPicker();
   renderFilePicker();
   syncKindUI();
@@ -2192,6 +2259,123 @@ function renderAgentPicker() {
       $('fValue').focus();
     });
   }
+}
+
+// Formula starter chips — same chip pattern as agents, but drop the formula
+// text into the Value field (which renders monospace for the formula kind).
+function renderFormulaPicker() {
+  const host = $('fFormulaPicker');
+  if (!host) return;
+  host.innerHTML = FORMULA_TEMPLATES.map((t, i) => `
+    <button type="button" class="agent-chip" data-tpl="${i}">
+      <span class="chip-lbl">${escapeHtml(t.name)}</span>
+    </button>
+  `).join('');
+  for (const btn of host.querySelectorAll('.agent-chip')) {
+    btn.addEventListener('click', () => {
+      const tpl = FORMULA_TEMPLATES[Number(btn.dataset.tpl)];
+      if (!tpl) return;
+      $('fValue').value = tpl.body;
+      if (!$('fLabel').value.trim()) $('fLabel').value = tpl.label;
+      for (const b of host.querySelectorAll('.agent-chip')) {
+        b.classList.toggle('active', b === btn);
+      }
+      $('fValue').focus();
+    });
+  }
+}
+
+// Environment editor — a list of targets (sites + apps), add buttons, and a
+// site-open mode toggle. Rebuilt from editorEnvTargets on every change.
+function renderEnvEditor() {
+  const host = $('fEnvPicker');
+  if (!host) return;
+
+  const appOptions = (selPath) => installedApps.map((a) =>
+    `<option value="${escapeHtml(a.path)}"${a.path === selPath ? ' selected' : ''}>${escapeHtml(a.name)}</option>`
+  ).join('');
+
+  const rows = editorEnvTargets.map((t, i) => {
+    if (t.type === 'app') {
+      return `<div class="env-row" data-i="${i}">
+        <span class="env-ic" title="App">${ICONS.environment}</span>
+        <select class="env-app" data-i="${i}">${appOptions(t.path)}</select>
+        <button type="button" class="env-x" data-i="${i}" title="Remove">×</button>
+      </div>`;
+    }
+    return `<div class="env-row" data-i="${i}">
+      <span class="env-ic" title="Site">${ICONS.url}</span>
+      <input type="text" class="env-url" data-i="${i}" placeholder="https://…" value="${escapeHtml(t.value || '')}" />
+      <button type="button" class="env-x" data-i="${i}" title="Remove">×</button>
+    </div>`;
+  }).join('');
+
+  const hasSites = editorEnvTargets.some((t) => t.type === 'site');
+  host.innerHTML = `
+    <div class="env-rows">${rows || '<div class="env-empty">No sites or apps yet.</div>'}</div>
+    <div class="env-add">
+      <button type="button" class="env-add-btn" data-add="site">+ Add site</button>
+      <button type="button" class="env-add-btn" data-add="app">+ Add app</button>
+    </div>
+    <div class="env-mode${hasSites ? '' : ' hidden'}">
+      <span>Open sites in:</span>
+      <button type="button" class="env-mode-btn${editorEnvUrlMode === 'window' ? ' active' : ''}" data-mode="window">One window</button>
+      <button type="button" class="env-mode-btn${editorEnvUrlMode === 'separate' ? ' active' : ''}" data-mode="separate">Separate windows</button>
+    </div>`;
+
+  // Wire URL inputs
+  host.querySelectorAll('.env-url').forEach((inp) => {
+    inp.addEventListener('input', () => {
+      const i = Number(inp.dataset.i);
+      if (editorEnvTargets[i]) editorEnvTargets[i].value = inp.value;
+    });
+  });
+  // Wire app selects
+  host.querySelectorAll('.env-app').forEach((sel) => {
+    const i = Number(sel.dataset.i);
+    // Default a freshly-added app row to the first option if unset.
+    if (editorEnvTargets[i] && !editorEnvTargets[i].path && sel.value) {
+      editorEnvTargets[i].path = sel.value;
+      editorEnvTargets[i].value = sel.options[sel.selectedIndex]?.textContent || '';
+    }
+    sel.addEventListener('change', () => {
+      if (!editorEnvTargets[i]) return;
+      editorEnvTargets[i].path = sel.value;
+      editorEnvTargets[i].value = sel.options[sel.selectedIndex]?.textContent || '';
+    });
+  });
+  // Remove buttons
+  host.querySelectorAll('.env-x').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      editorEnvTargets.splice(Number(btn.dataset.i), 1);
+      renderEnvEditor();
+    });
+  });
+  // Add buttons
+  host.querySelectorAll('.env-add-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.add === 'app') {
+        const first = installedApps[0];
+        editorEnvTargets.push({ type: 'app', value: first?.name || '', path: first?.path || '' });
+      } else {
+        editorEnvTargets.push({ type: 'site', value: '' });
+      }
+      renderEnvEditor();
+      // Focus the newly added site input for quick typing.
+      if (btn.dataset.add === 'site') {
+        const inputs = host.querySelectorAll('.env-url');
+        inputs[inputs.length - 1]?.focus();
+      }
+    });
+  });
+  // Mode toggle
+  host.querySelectorAll('.env-mode-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      editorEnvUrlMode = btn.dataset.mode;
+      host.querySelectorAll('.env-mode-btn').forEach((b) =>
+        b.classList.toggle('active', b.dataset.mode === editorEnvUrlMode));
+    });
+  });
 }
 
 function renderStashPicker() {
@@ -2377,23 +2561,31 @@ function syncKindUI() {
   const isContact = editorKind === 'contact';
   $('fContactRow').classList.toggle('hidden', !isContact);
 
+  // Environment kind swaps the Value field for the targets editor.
+  const isEnv = editorKind === 'environment';
+  $('fEnvRow').classList.toggle('hidden', !isEnv);
+
   // File kind swaps the text Value field for the file picker zone.
   const isFile = editorKind === 'file';
-  $('fValueRow').classList.toggle('hidden', isFile || isContact);
+  $('fValueRow').classList.toggle('hidden', isFile || isContact || isEnv);
   $('fFileRow').classList.toggle('hidden', !isFile);
 
   // Agent kind reveals the curated starter-template chips above the fields.
   const isAgent = editorKind === 'agent';
   $('fAgentRow').classList.toggle('hidden', !isAgent);
 
-  // Command kind: render the value field in monospace so shell syntax reads
-  // cleanly. Agent kind: a taller field, since persona prompts run long.
-  $('fValue').classList.toggle('mono', editorKind === 'command');
+  // Formula kind reveals the curated starter-formula chips.
+  const isFormula = editorKind === 'formula';
+  $('fFormulaRow').classList.toggle('hidden', !isFormula);
+
+  // Command + formula: monospace value so syntax reads cleanly. Agent: taller.
+  $('fValue').classList.toggle('mono', editorKind === 'command' || isFormula);
   $('fValue').rows = isAgent ? 9 : 3;
   const valueLabel = $('fValueRow')?.querySelector('span');
   if (valueLabel) {
     valueLabel.textContent = editorKind === 'command' ? 'Command'
       : isAgent ? 'Template (Markdown)'
+      : isFormula ? 'Formula'
       : 'Value';
   }
 }
@@ -2409,6 +2601,7 @@ async function saveFromEditor() {
   const label = $('fLabel').value.trim();
   const isFile = editorKind === 'file';
   const isContact = editorKind === 'contact';
+  const isEnv = editorKind === 'environment';
   // Crypto: tag = chain code. Other kinds don't use tag.
   const tag = editorKind === 'cryptoAddress' ? (editorChain || undefined) : undefined;
   const validIds = new Set(availableStashes.map((s) => s.id));
@@ -2424,11 +2617,18 @@ async function saveFromEditor() {
   // The pasted value for a contact = its most useful single field.
   const contactValue = contact.email || contact.phone || contact.wallet || contact.company || '';
 
-  // Validation: file kind needs ≥1 file; contact needs ≥1 field; others need a value.
+  // Environment: keep only targets with a value (URL or chosen app).
+  const envTargets = editorEnvTargets
+    .map((t) => ({ type: t.type === 'app' ? 'app' : 'site', value: (t.value || '').trim(), ...(t.path ? { path: t.path } : {}) }))
+    .filter((t) => t.value || t.path);
+
+  // Validation: file → ≥1 file; contact → ≥1 field; env → ≥1 target; else value.
   if (isFile) {
     if (!label || !editorFiles.length) return;
   } else if (isContact) {
     if (!label || !contactValue) return;
+  } else if (isEnv) {
+    if (!label || !envTargets.length) return;
   } else {
     const value = $('fValue').value.trim();
     if (!label || !value) return;
@@ -2474,6 +2674,26 @@ async function saveFromEditor() {
         value: contactValue,
         stashIds,
         contact,
+        createdAt: Date.now(),
+        lastUsedAt: null,
+        pins: {},
+      });
+    }
+  } else if (isEnv) {
+    const env = { targets: envTargets, urlMode: editorEnvUrlMode === 'separate' ? 'separate' : 'window' };
+    // value = newline summary of targets, so search + row peek have something.
+    const value = envTargets.map((t) => t.value).join('\n');
+    if (state.editing) {
+      Object.assign(state.editing, { kind: 'environment', label, value, tag: undefined, stashIds, env });
+      delete state.editing.contact;
+    } else {
+      state.items.push({
+        id: uid(),
+        kind: 'environment',
+        label,
+        value,
+        stashIds,
+        env,
         createdAt: Date.now(),
         lastUsedAt: null,
         pins: {},
