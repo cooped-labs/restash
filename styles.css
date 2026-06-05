@@ -278,12 +278,6 @@ kbd {
   padding: 1px 0;
 }
 .peek-agent-line.head { font-weight: 600; opacity: 0.95; }
-/* Formula peek — monospace so the syntax reads cleanly. */
-.peek-formula {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11.5px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
 /* Environment peek — one line per site/app, with a small type glyph. */
 .peek-env {
   display: flex; align-items: center; gap: 6px;

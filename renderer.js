@@ -18,8 +18,6 @@ const ICONS = {
   contact: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12.4a4.2 4.2 0 1 0 0-8.4 4.2 4.2 0 0 0 0 8.4zm0 1.9c-4.06 0-7.6 2.06-7.6 5.04V21h15.2v-1.66c0-2.98-3.54-5.04-7.6-5.04z"/></svg>`,
   // Twin AI sparkle — Agent template kind
   agent: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 2.5l1.85 5.15L18 9.5l-5.15 1.85L11 16.5l-1.85-5.15L4 9.5l5.15-1.85z"/><path d="M17.5 14l.95 2.55L21 17.5l-2.55.95L17.5 21l-.95-2.55L14 17.5l2.55-.95z"/></svg>`,
-  // "fx" — the universal spreadsheet formula mark (Excel's formula bar)
-  formula: `<svg viewBox="0 0 24 24" fill="currentColor"><text x="2.5" y="17.5" font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-weight="600" font-size="16">f</text><text x="11" y="17.5" font-family="Inter, system-ui" font-weight="600" font-size="11.5">x</text></svg>`,
   // 2×2 launchpad grid — Environment kind (a set of sites/apps)
   environment: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg>`,
 };
@@ -131,7 +129,6 @@ const KINDS = {
   contact:         { icon: ICONS.contact,      name: 'Contact', labelPlaceholder: 'Alice Martin',        valuePlaceholder: '',                           tagLabel: 'Tag',   tagPlaceholder: '' },
   file:            { icon: ICONS.file,         name: 'File',    labelPlaceholder: 'Brand kit / Resume',  valuePlaceholder: '',                           tagLabel: 'Tag',   tagPlaceholder: '' },
   agent:           { icon: ICONS.agent,        name: 'Agent',   labelPlaceholder: 'Strategist persona',  valuePlaceholder: '# Role\nYou are a…',          tagLabel: 'Tag',   tagPlaceholder: '' },
-  formula:         { icon: ICONS.formula,      name: 'Formula', labelPlaceholder: 'Monthly revenue total', valuePlaceholder: '=SUMIF(A:A,">100",B:B)',   tagLabel: 'Tag',   tagPlaceholder: '' },
   environment:     { icon: ICONS.environment,  name: 'Environment', labelPlaceholder: 'Morning setup',   valuePlaceholder: '',                           tagLabel: 'Tag',   tagPlaceholder: '' },
 };
 
@@ -309,23 +306,6 @@ You turn numbers into decisions. You are skeptical of tidy stories and careful a
 ## Task
 `,
   },
-];
-
-// ---------- formula templates ----------
-// Curated, ready-to-tweak spreadsheet formulas (Excel / Google Sheets syntax).
-// Picking one drops it into the Value field; the user renames the placeholder
-// ranges and pastes it straight into a cell.
-const FORMULA_TEMPLATES = [
-  { name: 'VLOOKUP',     label: 'VLOOKUP',        body: '=VLOOKUP(lookup_value, table_array, col_index, FALSE)' },
-  { name: 'XLOOKUP',     label: 'XLOOKUP',        body: '=XLOOKUP(lookup_value, lookup_array, return_array, "Not found")' },
-  { name: 'INDEX/MATCH', label: 'INDEX + MATCH',  body: '=INDEX(return_range, MATCH(lookup_value, lookup_range, 0))' },
-  { name: 'SUMIF',       label: 'SUMIF',          body: '=SUMIF(range, ">100", sum_range)' },
-  { name: 'SUMIFS',      label: 'SUMIFS',         body: '=SUMIFS(sum_range, criteria_range1, criteria1, criteria_range2, criteria2)' },
-  { name: 'COUNTIF',     label: 'COUNTIF',        body: '=COUNTIF(range, criteria)' },
-  { name: 'IF',          label: 'IF',             body: '=IF(logical_test, value_if_true, value_if_false)' },
-  { name: 'IFERROR',     label: 'IFERROR',        body: '=IFERROR(your_formula, "")' },
-  { name: 'TEXTJOIN',    label: 'TEXTJOIN',       body: '=TEXTJOIN(", ", TRUE, range)' },
-  { name: '% change',    label: '% change',       body: '=(new_value - old_value) / old_value' },
 ];
 
 const state = {
@@ -509,7 +489,6 @@ function computeStashes() {
   if (has('physicalAddress')) stashes.push({ id: 'addresses', name: 'Addresses', filter: (i) => i.kind === 'physicalAddress', pinnedOnly: false });
   if (has('text'))            stashes.push({ id: 'snippets',  name: 'Snippets',  filter: (i) => i.kind === 'text',            pinnedOnly: false });
   if (has('agent'))           stashes.push({ id: 'agents',    name: 'Agents',    filter: (i) => i.kind === 'agent',           pinnedOnly: false });
-  if (has('formula'))         stashes.push({ id: 'formulas',  name: 'Formulas',  filter: (i) => i.kind === 'formula',         pinnedOnly: false });
   if (has('environment'))     stashes.push({ id: 'envs',      name: 'Environments', filter: (i) => i.kind === 'environment',   pinnedOnly: false });
   return stashes;
 }
@@ -1772,7 +1751,7 @@ function renderList() {
     // Hover-only actions (QR + native share). Replace the key indicator on hover.
     // QR is meaningless for file items (would just encode a local path), so
     // skip it there.
-    const qrButton = (item.kind === 'file' || item.kind === 'agent' || item.kind === 'formula' || item.kind === 'environment') ? '' : `
+    const qrButton = (item.kind === 'file' || item.kind === 'agent' || item.kind === 'environment') ? '' : `
         <button class="row-act" data-act="qr" title="Show QR code" aria-label="Show QR code">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="7" height="7" rx="1"/>
@@ -1956,9 +1935,6 @@ function peekHTML(item) {
     return lines.map((l, i) =>
       `<div class="peek-agent-line${i === 0 ? ' head' : ''}">${escapeHtml(l)}</div>`
     ).join('');
-  }
-  if (item.kind === 'formula') {
-    return `<div class="peek-formula">${escapeHtml(item.value || '')}</div>`;
   }
   if (item.kind === 'environment') {
     const targets = Array.isArray(item.env?.targets) ? item.env.targets : [];
@@ -2182,7 +2158,6 @@ async function openEditor(item, opts = {}) {
   renderKindPicker();
   renderChainPicker();
   renderAgentPicker();
-  renderFormulaPicker();
   renderEnvEditor();
   renderStashPicker();
   renderFilePicker();
@@ -2246,30 +2221,6 @@ function renderAgentPicker() {
   for (const btn of host.querySelectorAll('.agent-chip')) {
     btn.addEventListener('click', () => {
       const tpl = AGENT_TEMPLATES[Number(btn.dataset.tpl)];
-      if (!tpl) return;
-      $('fValue').value = tpl.body;
-      if (!$('fLabel').value.trim()) $('fLabel').value = tpl.label;
-      for (const b of host.querySelectorAll('.agent-chip')) {
-        b.classList.toggle('active', b === btn);
-      }
-      $('fValue').focus();
-    });
-  }
-}
-
-// Formula starter chips — same chip pattern as agents, but drop the formula
-// text into the Value field (which renders monospace for the formula kind).
-function renderFormulaPicker() {
-  const host = $('fFormulaPicker');
-  if (!host) return;
-  host.innerHTML = FORMULA_TEMPLATES.map((t, i) => `
-    <button type="button" class="agent-chip" data-tpl="${i}">
-      <span class="chip-lbl">${escapeHtml(t.name)}</span>
-    </button>
-  `).join('');
-  for (const btn of host.querySelectorAll('.agent-chip')) {
-    btn.addEventListener('click', () => {
-      const tpl = FORMULA_TEMPLATES[Number(btn.dataset.tpl)];
       if (!tpl) return;
       $('fValue').value = tpl.body;
       if (!$('fLabel').value.trim()) $('fLabel').value = tpl.label;
@@ -2563,18 +2514,13 @@ function syncKindUI() {
   const isAgent = editorKind === 'agent';
   $('fAgentRow').classList.toggle('hidden', !isAgent);
 
-  // Formula kind reveals the curated starter-formula chips.
-  const isFormula = editorKind === 'formula';
-  $('fFormulaRow').classList.toggle('hidden', !isFormula);
-
-  // Command + formula: monospace value so syntax reads cleanly. Agent: taller.
-  $('fValue').classList.toggle('mono', editorKind === 'command' || isFormula);
+  // Command: monospace value so shell syntax reads cleanly. Agent: taller.
+  $('fValue').classList.toggle('mono', editorKind === 'command');
   $('fValue').rows = isAgent ? 9 : 3;
   const valueLabel = $('fValueRow')?.querySelector('span');
   if (valueLabel) {
     valueLabel.textContent = editorKind === 'command' ? 'Command'
       : isAgent ? 'Template (Markdown)'
-      : isFormula ? 'Formula'
       : 'Value';
   }
 }
