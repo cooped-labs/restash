@@ -1350,10 +1350,33 @@ end if`;
   // Sites: 'window' mode = one `open` call with every URL → tabs in one browser
   // window; 'separate' = `open -n` per URL → a new window each. Apps: launched
   // by bundle path (or by name as a fallback).
+  // Chrome's main binary — used to open URLs in a SPECIFIC profile via
+  // --profile-directory (the only reliable way to target a profile).
+  const CHROME_BIN = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
+  // --- IPC: list the user's Chrome profiles (dir → display name + account) ---
+  // Read from Chrome's Local State so Environment sites can be assigned a
+  // profile to reopen in. Empty array when Chrome isn't installed.
+  ipcMain.handle('chrome:profiles', () => {
+    try {
+      const lp = path.join(app.getPath('appData'), 'Google', 'Chrome', 'Local State');
+      const d = JSON.parse(fs.readFileSync(lp, 'utf8'));
+      const cache = (d && d.profile && d.profile.info_cache) || {};
+      const out = Object.entries(cache).map(([dir, info]) => ({
+        dir,
+        name: (info && info.name) || dir,
+        account: (info && info.user_name) || '',
+      }));
+      out.sort((a, b) => a.name.localeCompare(b.name));
+      return out;
+    } catch { return []; }
+  });
+
   ipcMain.handle('env:open', (_e, env) => {
     const OPEN = '/usr/bin/open';
     const targets = Array.isArray(env?.targets) ? env.targets : [];
     const urlMode = env?.urlMode === 'separate' ? 'separate' : 'window';
+    const hasChrome = fs.existsSync(CHROME_BIN);
 
     const normalizeUrl = (u) => {
       const s = String(u || '').trim();
@@ -1364,9 +1387,7 @@ end if`;
     };
 
     const apps  = targets.filter((t) => t && t.type === 'app');
-    const sites = targets
-      .filter((t) => t && t.type === 'site' && (t.value || '').trim())
-      .map((t) => normalizeUrl(t.value));
+    const sites = targets.filter((t) => t && t.type === 'site' && (t.value || '').trim());
 
     // Launch apps first (so browsers aren't stealing focus mid-launch).
     for (const a of apps) {
@@ -1375,15 +1396,37 @@ end if`;
       try { execFile(OPEN, args, () => {}); } catch {}
     }
 
-    if (sites.length) {
-      if (urlMode === 'separate') {
-        // Stagger so the browser reliably spawns distinct windows.
-        sites.forEach((u, i) => setTimeout(() => {
-          try { execFile(OPEN, ['-n', u], () => {}); } catch {}
-        }, i * 280));
-      } else {
-        try { execFile(OPEN, sites, () => {}); } catch {}
-      }
+    // Group sites by Chrome profile dir; '' = default browser / last profile.
+    const byProfile = new Map();
+    for (const t of sites) {
+      const url = normalizeUrl(t.value);
+      if (!url) continue;
+      const prof = hasChrome ? String(t.profile || '').trim() : '';
+      if (!byProfile.has(prof)) byProfile.set(prof, []);
+      byProfile.get(prof).push(url);
+    }
+
+    // Open each profile's group, staggered so windows spawn reliably.
+    let delay = 0;
+    for (const [prof, urls] of byProfile) {
+      const launch = (us, sep) => {
+        if (prof && hasChrome) {
+          // Target a specific Chrome profile. --new-window groups the set.
+          if (sep) {
+            us.forEach((u) => { setTimeout(() => { try { execFile(CHROME_BIN, [`--profile-directory=${prof}`, '--new-window', u], () => {}); } catch {} }, delay); delay += 280; });
+          } else {
+            setTimeout(() => { try { execFile(CHROME_BIN, [`--profile-directory=${prof}`, '--new-window', ...us], () => {}); } catch {} }, delay); delay += 220;
+          }
+        } else {
+          // Default browser / profile via `open`.
+          if (sep) {
+            us.forEach((u) => { setTimeout(() => { try { execFile(OPEN, ['-n', u], () => {}); } catch {} }, delay); delay += 280; });
+          } else {
+            setTimeout(() => { try { execFile(OPEN, us, () => {}); } catch {} }, delay); delay += 220;
+          }
+        }
+      };
+      launch(urls, urlMode === 'separate');
     }
     return { ok: true };
   });

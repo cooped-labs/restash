@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('restash', {
   // Environment kind: capture the current workspace + open a whole env.
   listApps: () => ipcRenderer.invoke('apps:list'),
   captureEnvironment: (scope) => ipcRenderer.invoke('env:capture', scope),
+  getChromeProfiles: () => ipcRenderer.invoke('chrome:profiles'),
   openEnvironment: (env) => ipcRenderer.invoke('env:open', env),
 
   loadSettings: () => ipcRenderer.invoke('settings:load'),

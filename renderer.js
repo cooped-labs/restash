@@ -2096,6 +2096,7 @@ let editorFileErrors = [];
 // urlMode controls how sites reopen: 'window' = all sites as tabs in one
 // browser window; 'separate' = each in its own window.
 let editorEnvTargets = [];
+let chromeProfiles = [];  // [{ dir, name, account }] — loaded for env editor
 let editorEnvUrlMode = 'window';
 
 async function openEditor(item, opts = {}) {
@@ -2137,6 +2138,14 @@ async function openEditor(item, opts = {}) {
   if (item?.kind === 'environment') {
     editorEnvTargets = Array.isArray(item.env?.targets) ? item.env.targets.map((t) => ({ ...t })) : [];
     editorEnvUrlMode = item.env?.urlMode === 'separate' ? 'separate' : 'window';
+    // Load the user's Chrome profiles once, so each site can pick which profile
+    // to reopen in. Re-render when they arrive (fetch is async).
+    if (!chromeProfiles.length) {
+      window.restash.getChromeProfiles?.().then((list) => {
+        chromeProfiles = Array.isArray(list) ? list : [];
+        if (editorKind === 'environment') renderEnvEditor();
+      }).catch(() => {});
+    }
   } else {
     editorEnvTargets = [];
     editorEnvUrlMode = 'window';
@@ -2242,12 +2251,21 @@ function renderEnvEditor() {
   const host = $('fEnvPicker');
   if (!host) return;
 
+  const profileSelect = (t, i) => {
+    // Only sites get a profile picker, and only when Chrome profiles exist.
+    if (t.type !== 'site' || !chromeProfiles.length) return '';
+    const opts = [`<option value="">Default profile</option>`]
+      .concat(chromeProfiles.map((p) =>
+        `<option value="${escapeHtml(p.dir)}"${t.profile === p.dir ? ' selected' : ''}>${escapeHtml(p.name)}</option>`));
+    return `<select class="env-profile" data-i="${i}" title="Open this tab in Chrome profile">${opts.join('')}</select>`;
+  };
   const rows = editorEnvTargets.map((t, i) => {
     const ic = t.type === 'app' ? ICONS.environment : ICONS.url;
     const cls = t.type === 'app' ? 'is-app' : 'is-site';
     return `<div class="env-cap-row ${cls}" data-i="${i}">
       <span class="env-ic">${ic}</span>
       <span class="env-cap-val" title="${escapeHtml(t.value || '')}">${escapeHtml(t.value || '')}</span>
+      ${profileSelect(t, i)}
       <button type="button" class="env-x" data-i="${i}" title="Remove">×</button>
     </div>`;
   }).join('');
@@ -2314,6 +2332,14 @@ function renderEnvEditor() {
     btn.addEventListener('click', () => {
       editorEnvTargets.splice(Number(btn.dataset.i), 1);
       renderEnvEditor();
+    });
+  });
+
+  // Per-site Chrome-profile pickers. No re-render — just update the model.
+  host.querySelectorAll('.env-profile').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      const t = editorEnvTargets[Number(sel.dataset.i)];
+      if (t) t.profile = sel.value || undefined;
     });
   });
 
@@ -2563,7 +2589,12 @@ async function saveFromEditor() {
 
   // Environment: keep only targets with a value (URL or chosen app).
   const envTargets = editorEnvTargets
-    .map((t) => ({ type: t.type === 'app' ? 'app' : 'site', value: (t.value || '').trim(), ...(t.path ? { path: t.path } : {}) }))
+    .map((t) => ({
+      type: t.type === 'app' ? 'app' : 'site',
+      value: (t.value || '').trim(),
+      ...(t.path ? { path: t.path } : {}),
+      ...(t.type !== 'app' && t.profile ? { profile: t.profile } : {}),
+    }))
     .filter((t) => t.value || t.path);
 
   // Validation: file → ≥1 file; contact → ≥1 field; env → ≥1 target; else value.

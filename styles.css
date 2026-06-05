@@ -921,6 +921,17 @@ body.theme-dark .modal { box-shadow: 0 16px 40px rgba(0,0,0,0.55); }
 .env-capture-btn .cap-ic svg { width: 14px; height: 14px; display: block; }
 .env-capture-btn.busy .cap-ic { animation: env-spin 0.8s linear infinite; }
 @keyframes env-spin { to { transform: rotate(360deg); } }
+
+/* Per-site Chrome-profile picker inside a captured row. */
+.env-profile {
+  flex: 0 0 auto; max-width: 116px;
+  font: inherit; font-size: 10.5px; color: var(--fg-dim);
+  padding: 2px 4px;
+  background: var(--bg-elev); color: var(--fg);
+  border: 1px solid var(--divider); border-radius: 6px;
+  cursor: pointer; outline: none;
+}
+.env-profile:hover { border-color: var(--tint); }
 .env-cap-hint {
   font-size: 10.5px; color: var(--fg-muted);
   line-height: 1.35; text-align: center;
