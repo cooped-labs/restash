@@ -2258,13 +2258,18 @@ function renderEnvEditor() {
   const appN  = editorEnvTargets.filter((t) => t.type === 'app').length;
 
   host.innerHTML = `
-    <button type="button" class="env-capture-btn" id="envCaptureBtn">
-      <span class="cap-ic">✦</span>
-      <span class="cap-lbl">${count ? 'Re-capture open tabs & apps' : 'Capture open tabs & apps'}</span>
-    </button>
+    <div class="env-capture-row">
+      <button type="button" class="env-capture-btn" data-scope="desktop" id="envCapDesktop">
+        <span class="cap-ic">${ICONS.environment}</span>
+        <span class="cap-lbl">This desktop</span>
+      </button>
+      <button type="button" class="env-capture-btn ghost" data-scope="all" id="envCapAll">
+        <span class="cap-lbl">Everything open</span>
+      </button>
+    </div>
     <div class="env-cap-hint" id="envCapHint">${count
       ? `${siteN} ${siteN === 1 ? 'site' : 'sites'} · ${appN} ${appN === 1 ? 'app' : 'apps'} — remove anything you don't want.`
-      : 'Open the tabs and apps you want, then capture this workspace.'}</div>
+      : '“This desktop” grabs what’s on your current Space. “Everything open” grabs every app + tab.'}</div>
     <div class="env-rows">${rows}</div>
     <div class="env-mode${hasSites ? '' : ' hidden'}">
       <span>Open sites in:</span>
@@ -2272,33 +2277,37 @@ function renderEnvEditor() {
       <button type="button" class="env-mode-btn${editorEnvUrlMode === 'separate' ? ' active' : ''}" data-mode="separate">Separate windows</button>
     </div>`;
 
-  // Capture button — snapshot the current workspace.
-  $('envCaptureBtn')?.addEventListener('click', async () => {
-    const btn = $('envCaptureBtn');
+  // Capture buttons — snapshot the current Desktop, or everything open.
+  const doCapture = async (scope, btn) => {
     const hint = $('envCapHint');
     const lbl = btn.querySelector('.cap-lbl');
-    btn.disabled = true;
+    const prev = lbl.textContent;
+    host.querySelectorAll('.env-capture-btn').forEach((b) => { b.disabled = true; });
     btn.classList.add('busy');
     lbl.textContent = 'Capturing…';
     try {
-      const snap = await window.restash.captureEnvironment();
+      const snap = await window.restash.captureEnvironment(scope);
       const targets = [];
       for (const url of (snap?.sites || [])) targets.push({ type: 'site', value: url });
       for (const a of (snap?.apps || [])) targets.push({ type: 'app', value: a.name, path: a.path || '' });
       editorEnvTargets = targets;
       renderEnvEditor();
       if (!targets.length && $('envCapHint')) {
-        $('envCapHint').textContent = 'Nothing detected. Open some tabs/apps (and allow Restash to control your browser when prompted), then try again.';
+        $('envCapHint').textContent = scope === 'desktop'
+          ? 'Nothing on this desktop. Open some tabs/apps here, then capture again.'
+          : 'Nothing detected. Open some tabs/apps (allow Restash to control your browser when prompted), then try again.';
       } else if (targets.length && !$('fLabel').value.trim()) {
-        $('fLabel').value = 'My workspace';
+        $('fLabel').value = scope === 'desktop' ? 'This desktop' : 'My workspace';
       }
     } catch {
-      btn.disabled = false;
+      host.querySelectorAll('.env-capture-btn').forEach((b) => { b.disabled = false; });
       btn.classList.remove('busy');
-      lbl.textContent = count ? 'Re-capture open tabs & apps' : 'Capture open tabs & apps';
+      lbl.textContent = prev;
       if (hint) hint.textContent = 'Capture failed — allow Restash to control your browser in System Settings → Privacy → Automation.';
     }
-  });
+  };
+  $('envCapDesktop')?.addEventListener('click', (e) => doCapture('desktop', e.currentTarget));
+  $('envCapAll')?.addEventListener('click', (e) => doCapture('all', e.currentTarget));
 
   // Remove buttons.
   host.querySelectorAll('.env-x').forEach((btn) => {

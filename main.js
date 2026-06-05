@@ -1207,27 +1207,30 @@ app.whenReady().then(() => {
     } catch { resolve(null); }
   });
 
-  // --- IPC: capture the current workspace (open browser tabs + running apps) ---
-  // Returns { sites: [url…], apps: [{ name, path }] }. Browser tabs are read via
-  // each browser's AppleScript dictionary (guarded by `is running` so a closed
-  // browser is never launched). Running apps come from System Events; we drop
-  // Restash itself, Finder, and obvious system UI, plus any browser whose tabs
-  // we already captured (re-opening the tabs relaunches it).
-  ipcMain.handle('env:capture', async () => {
-    const result = { sites: [], apps: [] };
+  // Browsers whose tab list we can read (Chromium family + Safari share the
+  // windows→tabs→URL shape). Firefox/Arc don't expose tabs → captured as apps.
+  const BROWSERS = ['Safari', 'Google Chrome', 'Brave Browser', 'Microsoft Edge', 'Vivaldi', 'Opera'];
+  const CAPTURE_EXCLUDE = new Set([
+    'Restash', 'Electron', 'Finder', 'System Events', 'loginwindow', 'Dock',
+    'SystemUIServer', 'Control Center', 'Control Centre', 'Notification Center',
+    'NotificationCenter', 'Spotlight', 'WindowManager', 'Window Server',
+    'TextInputMenuAgent', 'universalaccessd',
+  ]);
 
-    // Browsers whose tab list we can read (Chromium family + Safari share the
-    // windows→tabs→URL shape). Firefox/Arc don't expose tabs → captured as apps.
-    const BROWSERS = ['Safari', 'Google Chrome', 'Brave Browser', 'Microsoft Edge', 'Vivaldi', 'Opera'];
-    const seenUrl = new Set();
-    const capturedBrowsers = new Set();
-
-    for (const name of BROWSERS) {
-      const safe = name.replace(/[^A-Za-z0-9 .]/g, '');
-      const script = `if application "${safe}" is running then
+  // AppleScript reading a browser's windows → "##WIN##<title>" then its tab URLs.
+  // Title is best-effort (needs the active tab); tabs are captured regardless.
+  const windowTabsScript = (name) => {
+    const safe = name.replace(/[^A-Za-z0-9 .]/g, '');
+    const titleExpr = safe === 'Safari' ? 'name of w' : 'title of active tab of w';
+    return `if application "${safe}" is running then
   set out to ""
   tell application "${safe}"
     repeat with w in windows
+      set wt to ""
+      try
+        set wt to (${titleExpr})
+      end try
+      set out to out & "##WIN##" & wt & linefeed
       try
         repeat with t in tabs of w
           set out to out & (URL of t) & linefeed
@@ -1239,38 +1242,102 @@ app.whenReady().then(() => {
 else
   return ""
 end if`;
-      const out = await runOsa(script, 8000);
-      if (out == null) continue; // not installed, denied, or timed out
-      const urls = out.split('\n').map((s) => s.trim()).filter((u) => /^https?:\/\//i.test(u));
+  };
+  // Parse the ##WIN## stream into [{ title, urls }].
+  const parseWindows = (out) => {
+    const windows = [];
+    let cur = null;
+    for (const raw of String(out || '').split('\n')) {
+      const line = raw.replace(/\r$/, '');
+      if (line.startsWith('##WIN##')) {
+        cur = { title: line.slice(7).trim(), urls: [] };
+        windows.push(cur);
+      } else if (cur && /^https?:\/\//i.test(line.trim())) {
+        cur.urls.push(line.trim());
+      }
+    }
+    return windows;
+  };
+  const titleMatch = (a, b) => {
+    const x = String(a || '').trim().toLowerCase();
+    const y = String(b || '').trim().toLowerCase();
+    if (!x || !y) return false;
+    return x === y || x.includes(y) || y.includes(x);
+  };
+  // Windows on the CURRENT macOS Desktop (Space), via the Swift helper.
+  const currentDesktopWindows = () => new Promise((resolve) => {
+    try {
+      execFile(path.join(__dirname, 'bin', 'restash-windows'), [], { timeout: 5000 }, (err, stdout) => {
+        if (err) return resolve([]);
+        try {
+          const arr = JSON.parse(String(stdout || '[]'));
+          resolve(Array.isArray(arr) ? arr : []);
+        } catch { resolve([]); }
+      });
+    } catch { resolve([]); }
+  });
+
+  // --- IPC: capture the workspace (open browser tabs + running apps) ---
+  // scope 'desktop' = only what's on the current Desktop/Space (via the window
+  // helper); 'all' = every running foreground app + all open tabs (machine-wide).
+  // Returns { sites: [url…], apps: [{ name, path }], scope }. Browser tabs are
+  // read by AppleScript (guarded by `is running`, never launches a closed app);
+  // a browser whose tabs we captured isn't also listed as an app.
+  ipcMain.handle('env:capture', async (_e, scopeArg) => {
+    const scope = scopeArg === 'desktop' ? 'desktop' : 'all';
+    const result = { sites: [], apps: [], scope };
+    const seenUrl = new Set();
+    const capturedBrowsers = new Set();
+
+    // Decide which apps + browsers to consider for this scope.
+    let appNames = [];
+    let candidateBrowsers = BROWSERS.slice();
+    let desktopWindows = [];
+    if (scope === 'desktop') {
+      desktopWindows = await currentDesktopWindows();
+      appNames = [...new Set(desktopWindows.map((w) => w.owner).filter(Boolean))];
+      candidateBrowsers = BROWSERS.filter((b) => appNames.includes(b));
+    } else {
+      const namesOut = await runOsa(
+        'tell application "System Events" to get name of every process whose background only is false',
+        5000,
+      );
+      appNames = namesOut ? namesOut.split(',').map((s) => s.trim()).filter(Boolean) : [];
+    }
+
+    // Read tabs from the candidate browsers.
+    for (const name of candidateBrowsers) {
+      const out = await runOsa(windowTabsScript(name), 8000);
+      if (out == null) continue; // not running, denied, or timed out
+      let windows = parseWindows(out);
+      if (scope === 'desktop') {
+        const onScreen = desktopWindows
+          .filter((w) => w.owner === name)
+          .map((w) => (w.title || '').trim())
+          .filter(Boolean);
+        // Scope tabs to this Desktop's windows by title. If titles are
+        // unavailable (no Screen Recording), keep all the browser's tabs.
+        if (onScreen.length) {
+          windows = windows.filter((win) => onScreen.some((t) => titleMatch(t, win.title)));
+        }
+      }
       let got = 0;
-      for (const u of urls) {
-        if (seenUrl.has(u)) continue;
-        seenUrl.add(u);
-        result.sites.push(u);
-        got++;
+      for (const win of windows) {
+        for (const u of win.urls) {
+          if (seenUrl.has(u)) continue;
+          seenUrl.add(u);
+          result.sites.push(u);
+          got++;
+        }
       }
       if (got > 0) capturedBrowsers.add(name);
     }
 
-    // Running foreground GUI apps (names) → app targets.
-    const namesOut = await runOsa(
-      'tell application "System Events" to get name of every process whose background only is false',
-      5000,
-    );
-    const runningNames = namesOut
-      ? namesOut.split(',').map((s) => s.trim()).filter(Boolean)
-      : [];
-
-    const EXCLUDE = new Set([
-      'Restash', 'Electron', 'Finder', 'System Events', 'loginwindow', 'Dock',
-      'SystemUIServer', 'Control Center', 'Control Centre', 'Notification Center',
-      'NotificationCenter', 'Spotlight', 'WindowManager', 'Window Server',
-      'TextInputMenuAgent', 'universalaccessd',
-    ]);
+    // Apps = candidate app names minus captured browsers + excluded system UI.
     const appMap = new Map(scanInstalledApps().map((a) => [a.name, a.path]));
     const seenApp = new Set();
-    for (const name of runningNames) {
-      if (EXCLUDE.has(name)) continue;
+    for (const name of appNames) {
+      if (CAPTURE_EXCLUDE.has(name)) continue;
       if (capturedBrowsers.has(name)) continue; // its tabs already represent it
       if (seenApp.has(name)) continue;
       seenApp.add(name);

@@ -19,7 +19,7 @@ contextBridge.exposeInMainWorld('restash', {
 
   // Environment kind: capture the current workspace + open a whole env.
   listApps: () => ipcRenderer.invoke('apps:list'),
-  captureEnvironment: () => ipcRenderer.invoke('env:capture'),
+  captureEnvironment: (scope) => ipcRenderer.invoke('env:capture', scope),
   openEnvironment: (env) => ipcRenderer.invoke('env:open', env),
 
   loadSettings: () => ipcRenderer.invoke('settings:load'),

@@ -47,6 +47,7 @@
       "bin/restash-share",
       "bin/restash-clip-file",
       "bin/restash-decode-qr",
+      "bin/restash-windows",
       "package.json"
     ],
     "mac": {
