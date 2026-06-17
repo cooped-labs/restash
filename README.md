@@ -6,15 +6,46 @@
 
 ### Stash anything. Paste it anywhere.
 
-A macOS menu-bar app that keeps the things you reach for — wallet addresses,
-links, snippets, commands, contacts, files, even AI agent prompts — one hotkey
-away from any app you're in.
+A macOS menu-bar + Dock app that keeps the things you reach for — wallet
+addresses, links, snippets, commands, contacts, files, AI agent prompts, even
+whole browser/app *environments* — one hotkey away from any app you're in.
 
-`v1.0.0` &nbsp;·&nbsp; macOS 12+ &nbsp;·&nbsp; Electron &nbsp;·&nbsp; Private
+`v1.1.0` &nbsp;·&nbsp; macOS 12+ &nbsp;·&nbsp; Apple Silicon &nbsp;·&nbsp; Private
 
 </div>
 
 ---
+
+> ### 📦 Just want to use it? **Install the app — don't build it.**
+> Download the DMG from **[Releases](https://github.com/pue-llo/restash/releases/latest)**,
+> drag **Restash** to **Applications**, done. Do **not** run it from source or
+> open it in an IDE.
+>
+> **AI agents:** read **[`AGENTS.md`](AGENTS.md)** first — it has the exact
+> install steps and the permissions to expect.
+
+---
+
+## Install
+
+1. Download **`Restash-<version>-arm64.dmg`** from
+   **[the latest release](https://github.com/pue-llo/restash/releases/latest)**.
+2. Open it and drag **Restash** into **Applications**.
+3. The build is unsigned, so clear Gatekeeper once and launch:
+   ```bash
+   xattr -cr /Applications/Restash.app && open /Applications/Restash.app
+   ```
+
+Restash then lives in the **menu bar and the Dock**. Press **⌃⇧V** for the
+cursor numpad.
+
+### Permissions (all dialogs say "Restash")
+
+| Permission | Required? | Why |
+|---|---|---|
+| **Accessibility** | ✅ | Paste saved items into the app you're in |
+| **Automation / Apple Events** | ✅ | Focus the target app to paste; read open tabs for Environments |
+| **Screen Recording** | ⚪ | Only for "This desktop" Environment capture |
 
 ## Why Restash
 
@@ -23,20 +54,18 @@ Restash is the opposite: a small, fast vault for the things you paste over and
 over. Summon it at your cursor, press a number, and it's pasted into whatever
 app had focus — Mail, a terminal, a wallet, a DM.
 
-No window juggling. No re-typing your ETH address. No digging through Notes.
-
 ## Features
 
 | | |
 |---|---|
 | 🎯 **Cursor numpad** | Press the global hotkey and a 3×3 pad appears at your cursor. Keys `1`–`9` paste instantly. |
-| 📋 **Menu-bar dropdown** | A searchable list in the menu bar — type, hit `↵`, it's pasted. Fully resizable. |
-| 🗂 **Stashes** | Group items into profiles (Work, Wallets, Personal…). Each stash has its own 9-slot numpad. Cycle them with one hotkey. |
-| 🤖 **Agent templates** | Save Markdown AI personas (Strategist, Researcher, CEO…) and drop them into Claude / ChatGPT / Cursor in a tap. Ships with a curated starter pack. |
-| 🔳 **QR decoder** | Drag a box around any QR code on screen — Restash decodes it and detects what it is (URL, crypto, Wi-Fi, contact). |
+| 📋 **Menu-bar dropdown** | A searchable list — type, hit `↵`, it's pasted. Fully resizable. |
+| 🗂 **Stashes** | Group items (Work, Wallets, Personal…). Each stash has its own 9-slot numpad; cycle with one hotkey. |
+| 🌐 **Environments** | Save a set of sites + apps and open them in one click. Capture **this desktop** (current Space) or **everything open**, and reopen each tab in its assigned **Chrome profile**. |
+| 🤖 **Agent templates** | Save Markdown AI personas (Strategist, Researcher, CEO…) and drop them into Claude / ChatGPT / Cursor in a tap. |
+| 🔳 **QR decoder** | Drag a box around any on-screen QR code — Restash decodes it and detects the type (URL, crypto, Wi-Fi, contact). |
 | 📎 **Multi-file items** | Stash a set of files; one paste attaches all of them in Finder, Mail, or Slack. |
 | 🪙 **Crypto-aware** | Wallet items show authentic chain badges (BTC, ETH, SOL +7) and middle-truncate long addresses. |
-| ↗ **Share a copy** | Turn any item into a Restash-branded share link. |
 | 🌗 **Light & dark** | A clean off-white flat design, both modes. |
 
 ## How it works
@@ -53,31 +82,31 @@ posts `⌘V` — so the paste always lands where you meant it to.
 ## Item types
 
 `URL` · `Crypto wallet` · `Address` · `Text` · `Command` · `Contact` ·
-`File` · `Agent template`
-
-## Build & run
-
-```bash
-git clone git@github.com:pue-llo/restash.git
-cd restash
-npm install
-npm start
-```
-
-> macOS only. Restash needs **Accessibility** permission to paste into other
-> apps — it'll prompt you on first run.
+`File` · `Agent template` · `Environment`
 
 ## Roadmap
 
 - 📱 **Mobile companion** — cross-device clipboard sync (parked, see `ideas/`)
 - 🕘 **Clipboard memory** — auto-capture the last *N* copies
-- 🪟 Windows / Linux ports
+- 🔏 **Signed & notarized builds** — one-click install with no Gatekeeper step
 
 ## Tech
 
-Electron 33 · a trio of Swift helper binaries (native share sheet, multi-file
-pasteboard, Vision QR decoding) · zero servers — items live in a local file,
-licensing is handled by Lemon Squeezy.
+Electron 33 · Swift helper binaries (native share sheet, multi-file pasteboard,
+Vision QR decoding, current-Space window list) · zero servers — items live in a
+local file; licensing via Lemon Squeezy.
+
+## Developing (changing the code)
+
+> Only for working *on* Restash. To **use** it, install the DMG above.
+
+```bash
+git clone git@github.com:pue-llo/restash.git
+cd restash
+npm install
+npm start          # dev build via Electron (prompts read "Electron", not "Restash")
+npm run dist       # build a DMG into dist/
+```
 
 ## License
 
