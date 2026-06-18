@@ -775,6 +775,21 @@ function renderBilling() {
   const tier = ent.tier || 'free';
   const lic = ent.license || null;
 
+  if (tier === 'complete') {
+    body.innerHTML = `
+      <div class="billing-lifetime">
+        <div class="lt-mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="11" width="16" height="7" rx="1.5"/><path d="M6 8h12"/><path d="M8 5h8"/>
+          </svg>
+        </div>
+        <div class="tier-badge"><span class="spark">✦</span> Complete access</div>
+        <div class="billing-note">You have complete access — every feature unlocked, free. No trial, no limits, no expiry.</div>
+      </div>
+    `;
+    return;
+  }
+
   if (tier === 'lifetime') {
     body.innerHTML = `
       <div class="billing-lifetime">

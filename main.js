@@ -166,21 +166,27 @@ function ensureTrialStamp() {
   return s.trialStartedAt;
 }
 
+// While Restash is given away with full access (pre-open-source), EVERY install
+// gets complete access — no trial countdown, no caps, no license needed. Flip
+// this to false to restore the trial / free-tier / paid plans below.
+const OPEN_ACCESS = true;
+
 // Resolve what the user can actually do right now:
+//   - OPEN_ACCESS (current)          → complete access for everyone
 //   - paid (monthly/yearly/lifetime) → full access
 //   - within the 30-day window      → full access (trial)
 //   - otherwise                     → limited free tier
 // Returns { tier, effective: 'full'|'free', trialDaysLeft, trialActive }.
 function resolveEntitlement() {
-  // Owner build — permanent full access, no license, no trial countdown.
-  if (isOwnerBuild()) {
+  // Everyone (and any owner build) gets permanent complete access.
+  if (OPEN_ACCESS || isOwnerBuild()) {
     return {
-      tier: 'lifetime',
+      tier: 'complete',
       effective: 'full',
       trialDaysLeft: 0,
       trialActive: false,
       limits: FREE_LIMITS,
-      license: { status: 'owner', tier: 'lifetime', keyMasked: 'OWNER', expiresAt: null },
+      license: { status: 'open', tier: 'complete', keyMasked: 'COMPLETE ACCESS', expiresAt: null },
     };
   }
   const s = readSettings();
