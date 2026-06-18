@@ -16,28 +16,34 @@ whole browser/app *environments* — one hotkey away from any app you're in.
 
 ---
 
-> ### 📦 Just want to use it? **Install the app — don't build it.**
-> Download the DMG from **[Releases](https://github.com/pue-llo/restash/releases/latest)**,
-> drag **Restash** to **Applications**, done. Do **not** run it from source or
-> open it in an IDE.
+> ### 📦 To use it: **build it once, then install the built app.**
+> Run `npm install && npm run dist`, then install the **Restash.app** it produces.
+> Building gives you the real signed bundle, so permissions say **"Restash"**.
+> Do **not** treat `npm start` as the app, and don't open an IDE to do this.
 >
 > **AI agents:** read **[`AGENTS.md`](AGENTS.md)** first — it has the exact
-> install steps and the permissions to expect.
+> build/install steps and the permissions to expect.
 
 ---
 
-## Install
+## Install (build it once, then use the app)
 
-1. Download **`Restash-<version>-arm64.dmg`** from
-   **[the latest release](https://github.com/pue-llo/restash/releases/latest)**.
-2. Open it and drag **Restash** into **Applications**.
-3. The build is unsigned, so clear Gatekeeper once and launch:
-   ```bash
-   xattr -cr /Applications/Restash.app && open /Applications/Restash.app
-   ```
+Requires **Node.js 18+** on Apple Silicon (macOS 12+). No Xcode needed — the
+native helpers are prebuilt and committed.
 
+```bash
+# From the repo root
+npm install
+npm run dist          # builds + ad-hoc-signs Restash.app into dist/
+
+rm -rf /Applications/Restash.app
+cp -R dist/mac-arm64/Restash.app /Applications/Restash.app
+xattr -cr /Applications/Restash.app && open /Applications/Restash.app
+```
+
+`npm run dist` also writes a drag-to-Applications **`dist/Restash-1.1.0-arm64.dmg`**.
 Restash then lives in the **menu bar and the Dock**. Press **⌃⇧V** for the
-cursor numpad.
+cursor numpad. Full first-run details: **[`AGENTS.md`](AGENTS.md)**.
 
 ### Permissions (all dialogs say "Restash")
 
@@ -98,7 +104,7 @@ local file; licensing via Lemon Squeezy.
 
 ## Developing (changing the code)
 
-> Only for working *on* Restash. To **use** it, install the DMG above.
+> Only for working *on* Restash. To **use** it, build & install it (above).
 
 ```bash
 git clone git@github.com:pue-llo/restash.git

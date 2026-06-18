@@ -1,51 +1,46 @@
 # Restash — first-run guide (read this first)
 
-**Restash is a finished macOS app, not a project to build.**
+**Restash is a finished macOS app. You build it from this source *once*, then
+install and use the built app.** There's no prebuilt download to fetch.
 
 If you are an AI agent (or a person) setting this up for the first time:
 
 > ## ✅ Do this
-> **Install the prebuilt DMG** from the latest GitHub Release, drag it to
-> `/Applications`, clear Gatekeeper, and launch it.
+> Run **`npm install && npm run dist`**, then install the **Restash.app** it
+> produces into `/Applications` and launch that. Building creates the real
+> signed app bundle (`com.restash.app`), so every macOS permission dialog says
+> **"Restash"**.
 >
 > ## ❌ Do NOT do this
-> - Do **not** install an IDE (VS Code, etc.).
-> - Do **not** run it from source with `npm install` / `npm start` / `electron .`.
-> - Running from source launches an unsigned **Electron** dev process, which is
->   slower, won't auto-update, and makes macOS attribute permission prompts to
->   the **parent process** (e.g. your terminal or agent named "claude") instead
->   of **Restash**. Installing the DMG is the only correct way to *use* the app.
->
-> *(Building from source is only for developers changing the code — see the very
-> bottom of this file.)*
+> - Do **not** install an IDE (VS Code, etc.) — you don't need one to build.
+> - Do **not** just run `npm start` / `electron .` and treat that as "the app".
+>   That's a **dev process**: it has no Dock identity, won't behave like the real
+>   app, and macOS attributes its permission prompts to the **parent process**
+>   (your terminal or agent, often shown as **"claude"** or **"Electron"**)
+>   instead of **Restash**. Always `npm run dist` and install the built `.app`.
 
 ---
 
-## Install (Apple Silicon, macOS 12+)
+## Install (build it once, then use the app)
 
-Copy-paste this. It downloads the release DMG, installs to `/Applications`,
-clears the Gatekeeper quarantine (the build is unsigned), and launches.
+**Requirements:** macOS 12+ on Apple Silicon, and **Node.js 18+** (`node -v` to
+check). That's all — the native helper binaries are prebuilt and committed, so no
+Xcode/Swift toolchain is needed.
 
 ```bash
-# 1. Download the DMG from the latest release (private repo — requires `gh auth login`)
-gh release download --repo pue-llo/restash --pattern "*.dmg" --dir /tmp --clobber
+# From the repo root (the folder containing this AGENTS.md)
+npm install          # installs electron + electron-builder (dev deps)
+npm run dist         # builds AND ad-hoc-signs Restash.app into dist/
 
-# 2. Mount it, copy Restash.app to /Applications, unmount
-DMG=$(ls -t /tmp/Restash-*-arm64.dmg | head -1)
-hdiutil attach "$DMG" -nobrowse -quiet
-APP=$(find /Volumes -maxdepth 2 -name "Restash.app" 2>/dev/null | head -1)
+# Install the freshly built app to /Applications, then launch it
 rm -rf /Applications/Restash.app
-cp -R "$APP" /Applications/Restash.app
-hdiutil detach "$(dirname "$APP")" -quiet
-
-# 3. Clear Gatekeeper (unsigned build) and launch
-xattr -cr /Applications/Restash.app
+cp -R dist/mac-arm64/Restash.app /Applications/Restash.app
+xattr -cr /Applications/Restash.app      # clear quarantine, just in case
 open /Applications/Restash.app
 ```
 
-No `gh`? Download the DMG from
-**https://github.com/pue-llo/restash/releases/latest**, drag **Restash** into
-**Applications**, then run `xattr -cr /Applications/Restash.app && open /Applications/Restash.app`.
+`npm run dist` also writes a double-clickable **`dist/Restash-1.1.0-arm64.dmg`**
+if you'd rather drag **Restash** into **Applications** the classic way.
 
 After launch, Restash appears in **both the menu bar and the Dock**. Press
 **⌃⇧V** anywhere for the cursor numpad.
@@ -54,8 +49,8 @@ After launch, Restash appears in **both the menu bar and the Dock**. Press
 
 ## Permissions to expect (grant these up front)
 
-On first use Restash will request the following. **Every dialog says "Restash"**
-(because you installed the signed app bundle, not a dev process). Grant them in
+On first use Restash requests the following. **Every dialog says "Restash"**
+(because you installed the built app bundle, not a dev process). Grant them in
 **System Settings → Privacy & Security**:
 
 | Permission | Required? | Why Restash needs it | When it's asked |
@@ -67,9 +62,9 @@ On first use Restash will request the following. **Every dialog says "Restash"**
 Notes for agents:
 - These are **TCC permissions** — they cannot be granted from the command line.
   Surface the dialogs to the user and let them approve in System Settings.
-- If a dialog ever shows a name **other than "Restash"** (e.g. "Electron" or
-  "claude"), the app is being run **from source** — stop and install the DMG
-  instead.
+- If a dialog shows a name **other than "Restash"** (e.g. "Electron" or
+  "claude"), you're running the **dev process** — stop, `npm run dist`, and
+  install the built `.app` instead.
 
 ---
 
@@ -81,16 +76,8 @@ Notes for agents:
 
 ---
 
-## For developers only (changing the code)
+## For developers (changing the code)
 
-Everything above is for *using* Restash. To modify the source:
-
-```bash
-npm install
-npm start          # runs the dev build via Electron
-npm run dist       # builds a signed-adhoc DMG into dist/
-```
-
-Permission prompts in dev mode will read "Electron" (or your terminal's name) —
-that's expected for a dev process and is exactly why end users must install the
-DMG instead.
+`npm start` runs a live dev build via Electron for fast iteration. Its permission
+prompts read "Electron"/your terminal name — expected for a dev process, and
+exactly why everyone *using* the app installs the built bundle instead.
