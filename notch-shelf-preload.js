@@ -1,6 +1,12 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('shelf', {
+  // Resolve a dropped File to its absolute filesystem path. In a sandboxed
+  // renderer (Electron 32+) File.path is removed, so webUtils is the only
+  // supported way to recover the path for the file:add / ingest pipeline.
+  pathForFile: (file) => {
+    try { return webUtils.getPathForFile(file); } catch { return ''; }
+  },
   // Save a new item from the quick-add path
   addFromQuick: (payload) => ipcRenderer.invoke('shelf:add-from-quick', payload),
   // Undo the most recent add (removes the item from store)

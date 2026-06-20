@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; script-src 'self' 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com;" />
 <title>Restash · Add to stash</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root{
     --ink:#fff; --mute:#8a8a92; --dim:#b8b8be;
@@ -278,7 +283,9 @@
     document.body.classList.remove('drag');
     const dt = e.dataTransfer; if (!dt) return;
     const files = Array.from(dt.files || []);
-    const paths = files.map((f) => f.path).filter(Boolean);
+    // In a sandboxed renderer File.path is undefined; resolve via the preload's
+    // webUtils.getPathForFile bridge so dropped files reach the ingest pipeline.
+    const paths = files.map((f) => (window.shelf?.pathForFile?.(f) || f.path)).filter(Boolean);
     if (paths.length) {
       const r = await window.shelf.ingestFiles(paths, stashSel.value, pinned);
       const stashName = (stashes.find((s) => s.id === stashSel.value) || { name: 'All' }).name;
