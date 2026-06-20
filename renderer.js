@@ -321,6 +321,9 @@ const state = {
   // the other.
   stashIdx: 0,
   theme: 'light',
+  // Clipboard memory (RES-11)
+  clipHistory: [],          // auto-captured recent copies, newest-first
+  clipHistoryMax: 3,        // 0 = Off
 };
 
 let accessGranted = false;
@@ -1697,12 +1700,142 @@ function cycleListStash(direction = 1) {
   render();
 }
 
+// Compact relative time for Recent rows: "now", "2m", "3h", "5d".
+function timeAgo(ts) {
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 45) return 'now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  return `${d}d`;
+}
+
+// ---------- Recent (clipboard memory) ----------
+// Renders the RECENT section at the top of the list. Self-contained so it can
+// be re-rendered on its own when new copies stream in (clipboard-history:updated)
+// without rebuilding the whole list. Only shown in list mode, when the feature
+// is on (max > 0), there's history, and the user isn't searching.
+function renderRecent() {
+  if (!listEl) return;
+  // Remove any prior block first so this is idempotent.
+  const prior = document.getElementById('recentBlock');
+  if (prior) prior.remove();
+
+  const visible = state.mode === 'list'
+    && state.clipHistoryMax > 0
+    && state.clipHistory.length > 0
+    && !state.search;
+  if (!visible) {
+    // If Recent just emptied and there are no saved items either, the list
+    // should fall back to the empty state — do a full render to handle that.
+    if (state.mode === 'list' && state.items.length === 0
+        && !listEl.classList.contains('hidden') && !listEl.firstChild) {
+      render();
+    }
+    return;
+  }
+
+  // If the empty-state is currently showing (no saved items), a full render
+  // is needed to swap it out for the list — re-entrancy guarded by the block
+  // check above.
+  if (listEl.classList.contains('hidden')) { render(); return; }
+
+  const block = document.createElement('div');
+  block.id = 'recentBlock';
+
+  const header = document.createElement('div');
+  header.className = 'list-section recent-section';
+  header.innerHTML = `
+    <span class="rs-label">Recent</span>
+    <button type="button" class="rs-clear" title="Clear recent history">Clear ✕</button>
+  `;
+  header.querySelector('.rs-clear').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    try { await window.restash.clipboardHistory.clear(); } catch {}
+    state.clipHistory = [];
+    renderRecent();
+  });
+  block.appendChild(header);
+
+  state.clipHistory.slice(0, state.clipHistoryMax).forEach((entry) => {
+    block.appendChild(buildRecentRow(entry));
+  });
+
+  // Always sits at the very top, above pinned.
+  listEl.insertBefore(block, listEl.firstChild);
+}
+
+// One Recent row — reuses the row look (icon tile + mono text + relative time);
+// on hover/selected it reveals Paste · Save to Restash · Share · QR.
+function buildRecentRow(entry) {
+  const row = document.createElement('div');
+  row.className = 'row recent-row';
+  row.dataset.cid = entry.id;
+
+  const oneLine = String(entry.text || '').replace(/\s+/g, ' ').trim();
+
+  row.innerHTML = `
+    <div class="row-main">
+      <div class="icon recent-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <rect x="6" y="4" width="12" height="17" rx="2"/>
+          <rect x="9" y="2.5" width="6" height="3.2" rx="1.2" fill="currentColor" stroke="none"/>
+        </svg>
+      </div>
+      <div class="text">
+        <span class="label mono">${escapeHtml(oneLine)}</span>
+      </div>
+      <span class="recent-time">${timeAgo(entry.capturedAt)}</span>
+      <div class="recent-actions">
+        <button class="row-act" data-ract="paste" title="Paste" aria-label="Paste">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L19 7"/></svg>
+        </button>
+        <button class="row-act" data-ract="save" title="Save to Restash" aria-label="Save to Restash">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <button class="row-act" data-ract="share" title="Share…" aria-label="Share">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>
+        </button>
+        <button class="row-act" data-ract="qr" title="Show QR code" aria-label="Show QR code">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v3M14 21h3M21 17v4h-4"/></svg>
+        </button>
+      </div>
+    </div>
+  `;
+
+  row.addEventListener('click', (e) => {
+    const actBtn = e.target.closest('.row-act');
+    const act = actBtn ? actBtn.dataset.ract : 'paste'; // clicking the row pastes
+    e.stopPropagation();
+    if (act === 'paste') {
+      // Reuse the existing paste path (restores the prior clipboard).
+      window.restash.pasteActive(entry.text);
+    } else if (act === 'save') {
+      // Open the editor pre-filled as a new text item for the user to label.
+      applyMode('list');
+      openEditor(null, { prefill: { kind: 'text', value: entry.text } });
+    } else if (act === 'share') {
+      window.restash.shareItem({ text: entry.text, label: 'Recent copy' });
+    } else if (act === 'qr') {
+      openQR({ label: 'Recent copy', value: entry.text });
+    }
+  });
+
+  return row;
+}
+
 function renderList() {
   const wrap = document.getElementById('gridWrap');
   if (wrap) wrap.classList.add('hidden');
   renderListStashBar();
   const rows = filtered();
-  if (state.items.length === 0) {
+  // The Recent (clipboard memory) block can stand on its own even when the
+  // user has no saved items yet — so only show the empty state when BOTH the
+  // saved items AND the visible Recent block are empty.
+  const hasRecent = state.clipHistoryMax > 0 && state.clipHistory.length > 0 && !state.search;
+  if (state.items.length === 0 && !hasRecent) {
     emptyEl.classList.remove('hidden');
     listEl.classList.add('hidden');
     return;
@@ -1721,6 +1854,10 @@ function renderList() {
   const activeId = activeStashId();
 
   listEl.innerHTML = '';
+
+  // Clipboard memory: RECENT section at the very top of list mode.
+  renderRecent();
+
   const addSection = (text) => {
     const h = document.createElement('div');
     h.className = 'list-section';
@@ -2853,8 +2990,18 @@ function openSettings() {
   hideQRHotkeyStatus();
   renderSizePresets('list');
   renderSizePresets('grid');
+  renderClipHistorySeg();
   refreshAccessUI();
   settingsBackdrop.classList.remove('hidden');
+}
+
+// Reflect the saved clipboard-memory count on the segmented control.
+function renderClipHistorySeg() {
+  const seg = $('clipHistorySeg');
+  if (!seg) return;
+  for (const btn of seg.querySelectorAll('button')) {
+    btn.classList.toggle('on', Number(btn.dataset.n) === state.clipHistoryMax);
+  }
 }
 
 function closeSettings() {
@@ -3131,6 +3278,28 @@ function wire() {
   });
   $('qrHotkeyResetBtn').addEventListener('click', resetQRHotkey);
 
+  // Clipboard memory: segmented "Recent items" control + Clear history.
+  $('clipHistorySeg')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-n]');
+    if (!btn) return;
+    const n = Number(btn.dataset.n);
+    if (n === state.clipHistoryMax) return;
+    state.clipHistoryMax = n;
+    renderClipHistorySeg();
+    try { await window.restash.clipboardHistory.setMax(n); } catch {}
+    // Main trims + broadcasts; re-render Recent so the change is immediate.
+    if (state.mode === 'list') renderRecent();
+  });
+  $('clipClearBtn')?.addEventListener('click', async () => {
+    if (!state.clipHistory.length) { toast('No recent copies to clear'); return; }
+    const ok = window.confirm('Clear all captured clipboard copies? This cannot be undone.');
+    if (!ok) return;
+    try { await window.restash.clipboardHistory.clear(); } catch {}
+    state.clipHistory = [];
+    if (state.mode === 'list') renderRecent();
+    toast('Cleared recent copies');
+  });
+
   $('accessGrantBtn').addEventListener('click', async () => {
     // First click: trigger the macOS prompt by calling check(prompt=true)
     await refreshAccessUI(true);
@@ -3310,8 +3479,15 @@ function wire() {
     state.otoShown    = !!s.otoShown;
     state.menuSize    = s.menuSize || null;
     state.gridSize    = s.gridSize || null;
+    state.clipHistoryMax = (typeof s.clipboardHistoryMax === 'number') ? s.clipboardHistoryMax : 3;
     applyTheme(s.theme || 'light');
   } catch {}
+  // Clipboard memory: load captured history + subscribe to live updates.
+  try { state.clipHistory = await window.restash.clipboardHistory.load(); } catch { state.clipHistory = []; }
+  window.restash.clipboardHistory.onUpdated((items) => {
+    state.clipHistory = Array.isArray(items) ? items : [];
+    if (state.mode === 'list') renderRecent();
+  });
   try {
     availableStashes = await window.restash.listStashes();
   } catch { availableStashes = []; }

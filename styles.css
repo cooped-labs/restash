@@ -2243,3 +2243,118 @@ body.theme-dark .qr-safety.warn { background: rgba(255, 159, 10, 0.18); color: #
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+
+/* ============================================================
+   Clipboard memory (RES-11) — RECENT section + Settings control.
+   Reuses the app's tokens (light + dark) and mirrors the existing
+   row / row-actions / size-preset conventions. No hardcoded colors.
+   ============================================================ */
+
+/* Recent section header: "RECENT" + a "Clear ✕" affordance on the right. */
+.list-section.recent-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 12px;
+}
+.recent-section .rs-label { color: var(--fg-muted); }
+.recent-section .rs-clear {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  padding: 2px 2px;
+  transition: color 90ms ease-out;
+}
+.recent-section .rs-clear:hover { color: var(--orange); }
+
+/* Recent row reuses the base .row look. Mono text + a relative time on the
+   right that swaps for the action cluster on hover/selected. */
+.row.recent-row .label.mono {
+  font-weight: 400;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  flex: 1;
+  min-width: 0;
+}
+.row.recent-row .recent-time {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+  transition: opacity 110ms ease-out;
+}
+.row.recent-row .recent-actions {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translate(4px, -50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 110ms ease-out, transform 110ms ease-out;
+  pointer-events: none;
+}
+.row.recent-row:hover .recent-actions,
+.row.recent-row.selected .recent-actions {
+  opacity: 1;
+  transform: translate(0, -50%);
+  pointer-events: auto;
+}
+.row.recent-row:hover .recent-time,
+.row.recent-row.selected .recent-time { opacity: 0; }
+.row.recent-row .recent-icon { color: var(--fg-dim); }
+
+/* Settings → Clipboard memory segmented control. */
+.clip-seg {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+.clip-seg button {
+  flex: 1;
+  font: inherit;
+  font-size: 11.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  border: 1px solid var(--divider);
+  background: var(--bg-elev);
+  color: var(--fg-dim);
+  border-radius: 8px;
+  padding: 7px 0;
+  cursor: pointer;
+  transition: background 90ms ease-out, color 90ms ease-out;
+}
+.clip-seg button:hover { background: var(--bg-elev-2); color: var(--fg); }
+.clip-seg button.on {
+  background: var(--tint);
+  border-color: transparent;
+  color: var(--tint-fg);
+  font-weight: 600;
+}
+.clip-help {
+  font-size: 11px;
+  color: var(--fg-muted);
+  line-height: 1.45;
+  margin-top: 8px;
+}
+.clip-clear-row {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 10px;
+}
+.btn.ghost-danger {
+  background: transparent;
+  border: 1px solid var(--divider);
+  color: var(--fg-dim);
+}
+.btn.ghost-danger:hover {
+  border-color: var(--red);
+  color: var(--red);
+}

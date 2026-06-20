@@ -190,6 +190,21 @@
           <div id="gridSizePresets" class="size-presets"></div>
         </div>
         <div class="field">
+          <span>Clipboard memory</span>
+          <div id="clipHistorySeg" class="clip-seg" role="group" aria-label="Recent items to keep">
+            <button type="button" data-n="0">Off</button>
+            <button type="button" data-n="1">1</button>
+            <button type="button" data-n="2">2</button>
+            <button type="button" data-n="3">3</button>
+            <button type="button" data-n="5">5</button>
+            <button type="button" data-n="10">10</button>
+          </div>
+          <div class="clip-help">Auto-capture your most-recent copies. Restash never sends clipboard data anywhere.</div>
+          <div class="clip-clear-row">
+            <button id="clipClearBtn" class="btn ghost-danger">Clear history</button>
+          </div>
+        </div>
+        <div class="field">
           <span>Accessibility (required for auto-paste)</span>
           <div id="accessStatusRow" class="access-status-row">
             <div id="accessStatusText">Checking…</div>
