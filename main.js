@@ -3,6 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { execFile } = require('node:child_process');
 const os = require('node:os');
+const crypto = require('node:crypto');
 const QRCode = require('qrcode');
 
 // Single-instance lock — Restash is a menu-bar singleton. A second launch must
@@ -97,6 +98,7 @@ let win = null;
 
 const STORE_FILE = path.join(app.getPath('userData'), 'items.json');
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
+const CLIPBOARD_HISTORY_FILE = path.join(app.getPath('userData'), 'clipboard-history.json');
 
 // ── Owner build ──────────────────────────────────────────────────────────
 // Grants permanent full access without a license — for your own machines.
@@ -142,6 +144,7 @@ function readSettings() {
     otoShown: false,   // one-time-offer fires once, ever
     menuSize: null,    // {width,height} — user-resized list popover (null = default)
     gridSize: null,    // {width,height} — user-resized cursor numpad (null = default)
+    clipboardHistoryMax: 3, // Clipboard memory: # of recent copies to auto-capture (0 = Off)
   };
   try {
     if (!fs.existsSync(SETTINGS_FILE)) return defaults;
@@ -154,6 +157,136 @@ function readSettings() {
 function writeSettings(s) {
   fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify(s, null, 2));
+}
+
+// ── Clipboard memory (RES-11) ──────────────────────────────────────────────
+// Auto-captures the user's most-recent text copies into a small, local,
+// newest-first ring of items, stored separately from the user's saved items.
+// Everything stays on-device; nothing is ever sent anywhere.
+//
+// FOLLOW-UP: this v1 is text-only and JS-only. A later pass should add the
+// Swift "concealed pasteboard" detection (org.nspasteboard.ConcealedType /
+// password-manager hints) so password copies are skipped — that needs new
+// native code, so it's deferred to keep this build Xcode-free.
+const CLIP_HISTORY_VERSION = 1;
+const CLIP_MAX_BYTES = 100 * 1024;        // skip strings larger than 100KB
+const CLIP_POLL_MS = 700;                 // clipboard watcher interval
+const CLIP_WRITE_DEBOUNCE_MS = 250;       // debounce json writes
+const CLIP_OWN_WRITE_WINDOW_MS = 2000;    // drop captures that match our own write
+const CLIP_OWN_WRITE_RING = 8;            // cap of the own-write ring buffer
+
+let clipHistory = [];          // in-memory items, newest-first
+let clipHistoryLoaded = false;
+let clipWatchTimer = null;
+let clipLastHash = null;       // SHA-1 of the last clipboard text we saw
+let clipOwnWrites = [];        // ring of { hash, at } for Restash-originated writes
+let clipWriteTimer = null;
+
+function sha1(text) {
+  return crypto.createHash('sha1').update(String(text), 'utf8').digest('hex');
+}
+
+function readClipHistory() {
+  try {
+    if (!fs.existsSync(CLIPBOARD_HISTORY_FILE)) return [];
+    const data = JSON.parse(fs.readFileSync(CLIPBOARD_HISTORY_FILE, 'utf8'));
+    return Array.isArray(data && data.items) ? data.items : [];
+  } catch {
+    return [];
+  }
+}
+
+function ensureClipHistoryLoaded() {
+  if (clipHistoryLoaded) return;
+  clipHistory = readClipHistory();
+  clipHistoryLoaded = true;
+}
+
+// Debounced write of the in-memory history to disk.
+function scheduleClipHistoryWrite() {
+  if (clipWriteTimer) clearTimeout(clipWriteTimer);
+  clipWriteTimer = setTimeout(() => {
+    clipWriteTimer = null;
+    try {
+      fs.mkdirSync(path.dirname(CLIPBOARD_HISTORY_FILE), { recursive: true });
+      fs.writeFileSync(
+        CLIPBOARD_HISTORY_FILE,
+        JSON.stringify({ version: CLIP_HISTORY_VERSION, items: clipHistory }, null, 2)
+      );
+    } catch {}
+  }, CLIP_WRITE_DEBOUNCE_MS);
+}
+
+function broadcastClipHistory() {
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('clipboard-history:updated', clipHistory);
+  }
+}
+
+// Every Restash-originated clipboard write must go through this so the watcher
+// doesn't capture our own paste/copy as a "recent" item (which would create a
+// loop). We record the hash BEFORE writing, then drop matching captures inside
+// CLIP_OWN_WRITE_WINDOW_MS.
+function restashWriteClipboard(text) {
+  const str = String(text ?? '');
+  clipOwnWrites.push({ hash: sha1(str), at: Date.now() });
+  if (clipOwnWrites.length > CLIP_OWN_WRITE_RING) {
+    clipOwnWrites = clipOwnWrites.slice(-CLIP_OWN_WRITE_RING);
+  }
+  clipboard.writeText(str);
+}
+
+function isOwnRecentWrite(hash) {
+  const now = Date.now();
+  // Prune expired entries while we're here.
+  clipOwnWrites = clipOwnWrites.filter((w) => now - w.at <= CLIP_OWN_WRITE_WINDOW_MS);
+  return clipOwnWrites.some((w) => w.hash === hash);
+}
+
+function trimClipHistory(max) {
+  if (clipHistory.length > max) clipHistory = clipHistory.slice(0, max);
+}
+
+// Read the clipboard and, if it changed to something new and capturable,
+// prepend it to the history. No-op when the feature is Off.
+function checkClipboard() {
+  const max = readSettings().clipboardHistoryMax || 0;
+  if (max <= 0) return;
+  let text = '';
+  try { text = clipboard.readText() || ''; } catch { return; }
+  if (!text) return;                                  // skip empty
+  const hash = sha1(text);
+  if (hash === clipLastHash) return;                  // unchanged since last poll
+  clipLastHash = hash;
+  if (isOwnRecentWrite(hash)) return;                 // our own paste/copy — ignore
+  if (Buffer.byteLength(text, 'utf8') > CLIP_MAX_BYTES) return; // too large
+  ensureClipHistoryLoaded();
+  if (clipHistory[0] && clipHistory[0].text === text) return;   // dup of top
+
+  clipHistory.unshift({
+    id: 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    text,
+    capturedAt: Date.now(),
+  });
+  trimClipHistory(max);
+  scheduleClipHistoryWrite();
+  broadcastClipHistory();
+}
+
+// Start/stop the polling watcher based on the current setting. Idempotent.
+function syncClipboardWatcher() {
+  const max = readSettings().clipboardHistoryMax || 0;
+  if (max > 0) {
+    if (!clipWatchTimer) {
+      // Seed clipLastHash with the current clipboard so we don't capture
+      // whatever happened to be there before the watcher started.
+      try { clipLastHash = sha1(clipboard.readText() || ''); } catch { clipLastHash = null; }
+      clipWatchTimer = setInterval(checkClipboard, CLIP_POLL_MS);
+    }
+  } else if (clipWatchTimer) {
+    clearInterval(clipWatchTimer);
+    clipWatchTimer = null;
+  }
 }
 
 // Stamp the trial start the first time the app runs. Idempotent.
@@ -1169,7 +1302,7 @@ app.whenReady().then(() => {
 
   // --- IPC: clipboard / external ---
   ipcMain.handle('clipboard:write', (_e, text) => {
-    clipboard.writeText(String(text ?? ''));
+    restashWriteClipboard(String(text ?? ''));
     return true;
   });
   ipcMain.handle('shell:open', (_e, url) => shell.openExternal(String(url)));
@@ -1598,7 +1731,7 @@ end if`;
           );
         } catch {}
       } else if (text) {
-        clipboard.writeText(text);
+        restashWriteClipboard(text);
       }
       systemPreferences.isTrustedAccessibilityClient(true);
       shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
@@ -1617,7 +1750,7 @@ end if`;
         return { ok: false, reason: 'clip-file-failed', error: err.message };
       }
     } else {
-      clipboard.writeText(text);
+      restashWriteClipboard(text);
     }
 
     // Hide our window, then explicitly reactivate the app that was frontmost
@@ -1641,9 +1774,12 @@ end if`;
       );
     });
 
-    // Restore the previous clipboard after the paste has time to land.
+    // Restore the previous clipboard after the paste has time to land. Goes
+    // through restashWriteClipboard so the watcher doesn't recapture the
+    // restored value as a brand-new copy (which would dup-log the user's
+    // pre-paste clipboard into Recent every time they paste).
     setTimeout(() => {
-      try { clipboard.writeText(prevClipboard); } catch {}
+      try { restashWriteClipboard(prevClipboard); } catch {}
     }, 350);
 
     return result;
@@ -1682,6 +1818,51 @@ end if`;
   }));
   // Renderer asks for a fresh entitlement read (e.g. after the billing modal).
   ipcMain.handle('entitlement:get', () => resolveEntitlement());
+
+  // ── Clipboard memory IPC (RES-11) ──────────────────────────────────────
+  ipcMain.handle('clipboardHistory:load', () => {
+    ensureClipHistoryLoaded();
+    return clipHistory;
+  });
+  ipcMain.handle('clipboardHistory:remove', (_e, id) => {
+    ensureClipHistoryLoaded();
+    clipHistory = clipHistory.filter((it) => it.id !== id);
+    scheduleClipHistoryWrite();
+    broadcastClipHistory();
+    return clipHistory;
+  });
+  ipcMain.handle('clipboardHistory:clear', () => {
+    ensureClipHistoryLoaded();
+    clipHistory = [];
+    // Wipe: remove the on-disk history entirely (also cancel any pending write
+    // so it can't recreate the file). This is the app's clipboard-data reset.
+    if (clipWriteTimer) { clearTimeout(clipWriteTimer); clipWriteTimer = null; }
+    try { fs.unlinkSync(CLIPBOARD_HISTORY_FILE); } catch {}
+    broadcastClipHistory();
+    return clipHistory;
+  });
+  ipcMain.handle('clipboardHistory:setMax', (_e, n) => {
+    let max = parseInt(n, 10);
+    if (!Number.isFinite(max) || max < 0) max = 0;
+    const s = readSettings();
+    s.clipboardHistoryMax = max;
+    writeSettings(s);
+    ensureClipHistoryLoaded();
+    if (max === 0) {
+      // Off — stop capturing. History on disk is left intact; the renderer
+      // simply hides the section. (Use "Clear history" to wipe it.)
+    } else {
+      trimClipHistory(max);
+      scheduleClipHistoryWrite();
+    }
+    syncClipboardWatcher();
+    broadcastClipHistory();
+    return { ok: true, max };
+  });
+
+  // Load history into memory and start the watcher per the saved setting.
+  ensureClipHistoryLoaded();
+  syncClipboardWatcher();
 
   // ── Lemon Squeezy license activation ──────────────────────────────────
   // Activate a license key on this device; on success the entitlement flips
