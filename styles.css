@@ -2273,26 +2273,46 @@ body.theme-dark .qr-safety.warn { background: rgba(255, 159, 10, 0.18); color: #
 }
 .recent-section .rs-clear:hover { color: var(--orange); }
 
-/* Recent row reuses the base .row look. Mono text + a relative time on the
-   right that swaps for the action cluster on hover/selected. */
+/* Recent row reuses the base .row look. Mono text on the left; a fixed-width
+   right slot reserves room for the action cluster so long captured text
+   truncates with an ellipsis instead of sliding UNDER the hover buttons. The
+   timestamp and the actions share the same slot and cross-fade on hover. */
+.row.recent-row .text { flex: 1 1 auto; min-width: 0; overflow: hidden; }
 .row.recent-row .label.mono {
+  display: block;
   font-weight: 400;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11.5px;
   color: var(--fg-dim);
-  flex: 1;
-  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Subtle fade right at the truncation edge so the ellipsis softens
+     visually toward the action cluster — pure decoration, no layout impact. */
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 8px), transparent);
+          mask-image: linear-gradient(to right, black calc(100% - 8px), transparent);
+}
+/* Right-anchor slot — width is reserved whether the time or the actions
+   are visible, so the row layout never shifts on hover and the text always
+   has the same room. 96px ≈ 4 buttons (22px) + 3 gaps (2px) + trailing pad. */
+.row.recent-row .recent-right {
+  flex: 0 0 96px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 22px;
 }
 .row.recent-row .recent-time {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 10px;
   color: var(--fg-muted);
-  flex: 0 0 auto;
+  padding-right: 4px;
   transition: opacity 110ms ease-out;
 }
 .row.recent-row .recent-actions {
   position: absolute;
-  right: 8px;
+  right: 0;
   top: 50%;
   transform: translate(4px, -50%);
   display: flex;

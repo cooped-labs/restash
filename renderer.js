@@ -1787,20 +1787,22 @@ function buildRecentRow(entry) {
       <div class="text">
         <span class="label mono">${escapeHtml(oneLine)}</span>
       </div>
-      <span class="recent-time">${timeAgo(entry.capturedAt)}</span>
-      <div class="recent-actions">
-        <button class="row-act" data-ract="paste" title="Paste" aria-label="Paste">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L19 7"/></svg>
-        </button>
-        <button class="row-act" data-ract="save" title="Save to Restash" aria-label="Save to Restash">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-        </button>
-        <button class="row-act" data-ract="share" title="Share…" aria-label="Share">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>
-        </button>
-        <button class="row-act" data-ract="qr" title="Show QR code" aria-label="Show QR code">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v3M14 21h3M21 17v4h-4"/></svg>
-        </button>
+      <div class="recent-right">
+        <span class="recent-time">${timeAgo(entry.capturedAt)}</span>
+        <div class="recent-actions">
+          <button class="row-act" data-ract="paste" title="Paste" aria-label="Paste">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L19 7"/></svg>
+          </button>
+          <button class="row-act" data-ract="save" title="Save to Restash" aria-label="Save to Restash">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+          <button class="row-act" data-ract="share" title="Share…" aria-label="Share">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>
+          </button>
+          <button class="row-act" data-ract="qr" title="Show QR code" aria-label="Show QR code">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v3M14 21h3M21 17v4h-4"/></svg>
+          </button>
+        </div>
       </div>
     </div>
   `;
