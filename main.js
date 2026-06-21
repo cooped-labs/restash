@@ -146,7 +146,7 @@ function readSettings() {
     menuSize: null,    // {width,height} — user-resized list popover (null = default)
     gridSize: null,    // {width,height} — user-resized cursor numpad (null = default)
     clipboardHistoryMax: 3, // Clipboard memory: # of recent copies to auto-capture (0 = Off)
-    showNotchShelf: true,    // RES-13: notch drop / quick-add shelf (⌃⇧S)
+    showNotchShelf: true,    // RES-13: notch drop shelf (drag-to-reveal)
     lastUsedStashId: 'all',  // RES-13: shelf remembers last destination
   };
   try {
@@ -952,11 +952,11 @@ function createStashEditWindow(stashId) {
 
 // ============================================================
 // RES-13: Notch drop / quick-add shelf.
-// A transparent always-on-top BrowserWindow parked at top-center of the
-// active display, wrapping the notch on notch-bearing Macs. Summoned by
-// the global hotkey (default ⌃⇧S) or — Phase 2 — by a drag-near event.
-// The body renders three intake paths: drag-zone, quick-add input + Name
-// + stash dropdown + Pin toggle + Stash it button, in one continuous
+// A transparent always-on-top BrowserWindow parked over the notch. Idle
+// = just the cam strip; drag-enter expands the window (via shelf:expand
+// IPC) and the renderer animates the body unfolding. Drop pre-fills the
+// inputs from files / uri-list / plain text and the user adjusts
+// name / stash / pin before saving.
 // "nook" panel that visually flows from the camera strip.
 // ============================================================
 // v7: the shelf is ALWAYS present at the notch's bounds and expands on
