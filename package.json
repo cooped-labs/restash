@@ -42,8 +42,6 @@
       "stash-edit-preload.js",
       "qr-scan-overlay.html",
       "qr-scan-overlay-preload.js",
-      "notch-shelf.html",
-      "notch-shelf-preload.js",
       "tutorial-preload.js",
       "onboarding-fullscreen.html",
       "assets/**/*",
@@ -51,7 +49,6 @@
       "bin/restash-clip-file",
       "bin/restash-decode-qr",
       "bin/restash-windows",
-      "bin/restash-notch",
       "package.json"
     ],
     "mac": {
