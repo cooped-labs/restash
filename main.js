@@ -965,10 +965,35 @@ function createStashEditWindow(stashId) {
 // drag-to-reveal is the only entry path.
 let shelfWin = null;
 let shelfExpanded = false;
-const SHELF_IDLE_WIDTH  = 200;
-const SHELF_IDLE_HEIGHT = 30;
+// Collapsed = the catch-zone parked over the real notch. We size it to the
+// physical notch (read from NSScreen via bin/restash-notch) so the black sliver
+// disappears into the hardware notch. The constants are fallbacks only, used
+// when the helper can't report exact geometry.
+const SHELF_IDLE_WIDTH  = 200;   // fallback collapsed catch-zone width
+const SHELF_IDLE_HEIGHT = 30;    // fallback collapsed catch-zone height
 const SHELF_OPEN_WIDTH  = 380;
 const SHELF_OPEN_HEIGHT = 320;
+
+// RES-37: exact notch geometry from the built-in display. macOS does not expose
+// the notch x-range through Electron's Display API; bin/restash-notch reads it
+// from NSScreen auxiliaryTopLeft/RightArea + safeAreaInsets and returns it in
+// top-left point coordinates that line up with Electron's screen bounds. Cached
+// and invalidated whenever the display config changes.
+let notchGeometry = undefined; // undefined = not read yet; null = no notch
+function readNotchGeometry() {
+  if (notchGeometry !== undefined) return notchGeometry;
+  try {
+    const { execFileSync } = require('node:child_process');
+    const helper = path.join(__dirname, 'bin', 'restash-notch');
+    const out = execFileSync(helper, [], { timeout: 2000 }).toString().trim();
+    const g = JSON.parse(out);
+    notchGeometry = (g && g.hasNotch && g.notch) ? g : null;
+  } catch {
+    notchGeometry = null;
+  }
+  return notchGeometry;
+}
+function invalidateNotchGeometry() { notchGeometry = undefined; }
 
 function isNotchDisplay(display) {
   // Notch macs have a taller-than-standard menu-bar inset. The standard menu
@@ -978,27 +1003,55 @@ function isNotchDisplay(display) {
 }
 
 function activeShelfDisplay() {
-  // Prefer the display the user is currently looking at: the focused window's
-  // display; fall back to the cursor's display; final fallback is the primary.
+  // RES-37: the shelf must emerge from the *physical* notch, which only ever
+  // lives on the built-in display. Always prefer the built-in / notch display
+  // regardless of where the cursor or focused window is, so the shelf never
+  // gets centered on an external monitor.
   try {
-    const focused = BrowserWindow.getFocusedWindow();
-    if (focused && !focused.isDestroyed() && focused !== shelfWin) {
-      const b = focused.getBounds();
-      return screen.getDisplayMatching(b);
-    }
-  } catch {}
-  try {
-    return screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const displays = screen.getAllDisplays();
+    const notchDisp = displays.find((d) => d.internal && isNotchDisplay(d))
+                   || displays.find((d) => isNotchDisplay(d))
+                   || displays.find((d) => d.internal);
+    if (notchDisp) return notchDisp;
   } catch {}
   return screen.getPrimaryDisplay();
 }
 
 function shelfBoundsFor(display, expanded) {
-  const w = expanded ? SHELF_OPEN_WIDTH : SHELF_IDLE_WIDTH;
-  const h = expanded ? SHELF_OPEN_HEIGHT : SHELF_IDLE_HEIGHT;
-  const x = Math.round(display.bounds.x + (display.bounds.width - w) / 2);
+  // Center on the *notch* center. With exact notch geometry we anchor on the
+  // real notch's midpoint; otherwise we center on the display (the notch is
+  // horizontally centered on the built-in panel, so this is a safe baseline).
+  const g = readNotchGeometry();
+  let notchCenterX;
+  let collapsedW;
+  let collapsedH;
+  if (g && g.notch && g.display && g.display.x === display.bounds.x) {
+    notchCenterX = g.notch.x + g.notch.w / 2;
+    collapsedW = Math.round(g.notch.w);
+    collapsedH = Math.max(SHELF_IDLE_HEIGHT, Math.round(g.notch.h));
+  } else {
+    notchCenterX = display.bounds.x + display.bounds.width / 2;
+    collapsedW = SHELF_IDLE_WIDTH;
+    collapsedH = SHELF_IDLE_HEIGHT;
+  }
+  const w = expanded ? SHELF_OPEN_WIDTH : collapsedW;
+  const h = expanded ? SHELF_OPEN_HEIGHT : collapsedH;
+  // Flush to the true top of the display (y=0), NOT workArea.y (which starts
+  // below the menu bar). Re-center for the current width so collapsed and
+  // expanded both stay centered on the notch.
+  const x = Math.round(notchCenterX - w / 2);
   const y = display.bounds.y;
   return { x, y, width: w, height: h };
+}
+
+// RES-37: a borderless window can't legally cover the menu bar / notch unless
+// its window level sits above the system menu bar; at the default 'pop-up-menu'
+// level macOS shoves the frame down below the bar (the reported bug). Raise it
+// so the shelf renders flush at y=0 over the notch.
+function pinShelfAboveMenuBar() {
+  if (!shelfWin || shelfWin.isDestroyed()) return;
+  try { shelfWin.setAlwaysOnTop(true, 'screen-saver'); } catch {}
+  try { shelfWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false }); } catch {}
 }
 
 function positionShelfOnActiveDisplay() {
@@ -1009,7 +1062,8 @@ function positionShelfOnActiveDisplay() {
     if (shelfWin.isVisible()) shelfWin.hide();
     return;
   }
-  shelfWin.setBounds(shelfBoundsFor(d, shelfExpanded));
+  pinShelfAboveMenuBar();
+  shelfWin.setBounds(shelfBoundsFor(d, shelfExpanded), false);
   if (!shelfWin.isVisible()) shelfWin.showInactive();
 }
 
@@ -1034,6 +1088,12 @@ function createShelfWindow() {
     alwaysOnTop: true,
     focusable: true,
     show: false,
+    // RES-37 ROOT CAUSE FIX: without this, macOS constrains the window frame so
+    // it cannot overlap the menu bar — it shoves the frame down to y=workArea.y
+    // (~33pt below the top), which is exactly why the shelf rendered BELOW the
+    // menu bar instead of flush at the notch. enableLargerThanScreen lifts that
+    // constraint so the window sits at y=0 over the real notch.
+    enableLargerThanScreen: true,
     backgroundColor: '#00000000',
     webPreferences: {
       preload: path.join(__dirname, 'notch-shelf-preload.js'),
@@ -1042,9 +1102,10 @@ function createShelfWindow() {
       nodeIntegration: false,
     },
   });
-  // Above the menu bar; visible across spaces but hidden in fullscreen.
-  shelfWin.setAlwaysOnTop(true, 'pop-up-menu');
-  shelfWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
+  // RES-37: above the menu bar so the borderless window can sit flush at y=0
+  // over the real notch (a lower level gets clamped below the bar). Visible
+  // across spaces but hidden in fullscreen.
+  pinShelfAboveMenuBar();
   shelfWin.loadFile('notch-shelf.html');
   shelfWin.on('closed', () => { shelfWin = null; });
   return shelfWin;
@@ -1067,7 +1128,9 @@ function expandShelf() {
   const d = activeShelfDisplay();
   if (!isNotchDisplay(d)) return;
   shelfExpanded = true;
-  shelfWin.setBounds(shelfBoundsFor(d, true));
+  // Recompute x for the expanded width so the panel stays centered on the notch
+  // as it grows downward — it should read as the notch itself expanding.
+  shelfWin.setBounds(shelfBoundsFor(d, true), false);
   // Make the panel focusable so the quick-add inputs accept typing. We can't
   // grab focus during the in-flight drag (it would cancel the drop), so the
   // renderer focuses the field itself on `drop` via shelf.focusWindow().
@@ -1087,7 +1150,8 @@ function collapseShelf() {
   const d = activeShelfDisplay();
   if (!isNotchDisplay(d)) return;
   shelfExpanded = false;
-  shelfWin.setBounds(shelfBoundsFor(d, false));
+  // Recompute x for the collapsed width so it re-centers on the notch.
+  shelfWin.setBounds(shelfBoundsFor(d, false), false);
   try { shelfWin.setHasShadow(false); } catch {}
 }
 
@@ -1996,7 +2060,7 @@ end if`;
   // and expands on drag-enter. No hotkey trigger.
   ensureShelfAtIdle();
   try {
-    const refresh = () => ensureShelfAtIdle();
+    const refresh = () => { invalidateNotchGeometry(); ensureShelfAtIdle(); };
     screen.on('display-added', refresh);
     screen.on('display-removed', refresh);
     screen.on('display-metrics-changed', refresh);

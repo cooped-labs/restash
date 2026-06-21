@@ -23,7 +23,11 @@
      the shelf must look built into the real notch, not like its own pill. */
   .nook{
     position:absolute; top:0; left:50%; transform:translateX(-50%);
-    width:188px;
+    /* RES-37: collapsed, the BrowserWindow is sized to the exact physical notch,
+       so the sliver fills the window (100%) and lines up with the real notch.
+       Expanded, the window widens to 380px and .nook.open takes a fixed width
+       centered within it. */
+    width:100%;
     min-height:30px;     /* collapsed: a black notch-width sliver that blends
                             into the real notch (no camera strip to give it
                             height anymore) */

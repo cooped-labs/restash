@@ -51,6 +51,7 @@
       "bin/restash-clip-file",
       "bin/restash-decode-qr",
       "bin/restash-windows",
+      "bin/restash-notch",
       "package.json"
     ],
     "mac": {
