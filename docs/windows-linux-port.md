@@ -82,6 +82,20 @@ Everything else (`libei`, `libportal`, `libdbus-1`, `libglib-2.0`, `libgio-2.0`,
 `libmount`, `libblkid`, `libz`, `libselinux`, plus the `libxcb` family) **is**
 bundled.
 
+**AppImage vs `.deb` (deb caveat).** The `linux.extraResources` mapping
+(`vendor/linux-lib` → `lib`) is shared by **both** Linux targets, so the bundle
+layout is identical: helper at `resources/bin/restash-linux-helper`, libs at
+`resources/lib/*.so`. The AppImage mounts this read-only; the `.deb` installs the
+same tree under `/opt/Restash/resources/`. Because the **relative** `bin/ ↔ lib/`
+layout is preserved in both, the helper's RPATH `$ORIGIN/../lib` resolves the
+bundled libs in the `.deb` exactly as in the AppImage — the zero-install
+guarantee holds for both. The `.deb` does **not** declare libei/libportal as apt
+`Depends:` (it ships its own copies, preferred via RPATH + `LD_LIBRARY_PATH`),
+and it is **not** a single self-contained file (it unpacks to `/opt`). Auto-update
+differs only in mechanism (AppImage zsync vs `.deb` re-download/apt), not in
+bundling. The clean-`ubuntu:22.04` `ldd` gate in `ci.yml` reproduces this same
+`bin/ + lib/` parent layout, so it covers `.deb` resolution as well.
+
 **Bundling lint** (`scripts/lint-no-banned-tools.js`): if
 `bin/restash-linux-helper` exists as a real built artifact (size > 0),
 `vendor/linux-lib/` MUST contain at least one `.so*` file or the lint fails.
