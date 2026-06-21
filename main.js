@@ -661,6 +661,14 @@ function createWindow() {
   // to begin with (showInactive means we never had it). Also suppressed when
   // we explicitly delegated to a native helper (share sheet, etc.) so the
   // popover stays open after the helper takes focus.
+  //
+  // RES-42 PERMANENT FIX: focus moving to ANY of our own BrowserWindows
+  // (notch shelf, stash-edit, scan overlay, tutorial, etc.) must not hide
+  // the popover. macOS delivers blur on the losing window before focus
+  // lands on the winning window, so the focused-window check is deferred a
+  // tick to let it settle. After the delay, BrowserWindow.getFocusedWindow()
+  // returns non-null iff one of our own windows has focus; null means focus
+  // left for another app — the only case we hide on.
   win.on('blur', () => {
     if (!win || win.webContents.isDevToolsOpened()) return;
     if (suppressBlurHideUntil > Date.now()) return;
@@ -669,8 +677,17 @@ function createWindow() {
       weTriggeredHide = false;
       return;
     }
-    lastExternalHideAt = Date.now(); // user clicked outside — record for race fix
-    win.hide();
+    setTimeout(() => {
+      if (!win || win.isDestroyed() || !win.isVisible()) return;
+      if (suppressBlurHideUntil > Date.now()) return;
+      const focused = BrowserWindow.getFocusedWindow();
+      if (focused && !focused.isDestroyed()) {
+        // One of our own windows took focus — keep the popover open.
+        return;
+      }
+      lastExternalHideAt = Date.now(); // real click-out — record for tray-click race fix
+      win.hide();
+    }, 60);
   });
 
   // Each time the popover appears, tell the renderer. `activated` differentiates
