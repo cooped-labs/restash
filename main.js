@@ -773,6 +773,21 @@ let showWasActive = true;
 // and we'd hide our popover right after the user clicked Share.
 let suppressBlurHideUntil = 0;
 
+// RES-43: cold-open blur grace. The polling blur handler needs stable signals
+// (appIsActive, getFocusedWindow) to decide; at t≈0 after a fresh open those
+// haven't settled. Suppress blur-hide for this window so the first transient
+// blur (status-item handoff, Cocoa init, dock animation) is ignored.
+const POPOVER_OPEN_BLUR_GRACE_MS = 500;
+let popoverOpenedAt = 0;
+
+// RES-43: idempotent open. togglePopover() hides if already visible — wrong
+// for "bring forward" paths (dock click while open, second-instance launch).
+function openPopoverIfHidden() {
+  if (!win || win.isDestroyed()) return;
+  if (win.isVisible()) { win.focus(); return; }
+  togglePopover();
+}
+
 // True while Restash is the active (frontmost) application. Maintained by the
 // app's did-become-active / did-resign-active events. The popover blur handler
 // uses this to tell an internal own-window focus handoff (app stays active —
@@ -873,6 +888,11 @@ function togglePopover() {
     showWasActive = true;
     win.show();
     win.focus();
+    popoverOpenedAt = Date.now();
+    suppressBlurHideUntil = Math.max(
+      suppressBlurHideUntil,
+      popoverOpenedAt + POPOVER_OPEN_BLUR_GRACE_MS,
+    );
   }
 }
 
@@ -1019,6 +1039,11 @@ async function togglePopoverAtCursor() {
   showWasActive = true;
   win.show();
   win.focus();
+  popoverOpenedAt = Date.now();
+  suppressBlurHideUntil = Math.max(
+    suppressBlurHideUntil,
+    popoverOpenedAt + POPOVER_OPEN_BLUR_GRACE_MS,
+  );
 }
 
 // Track application active state for the popover blur handler. These fire when
@@ -1095,11 +1120,13 @@ app.whenReady().then(() => {
   }
 
   // Clicking the Dock icon opens/toggles the popover (same as tray click).
-  app.on('activate', () => togglePopover());
+  // RES-43: openPopoverIfHidden() is idempotent (no hide-if-visible), so a
+  // dock click while the popover is already open just brings focus, not close.
+  app.on('activate', () => openPopoverIfHidden());
 
   // A second launch (Spotlight, double-click, `npm start`) is bounced by the
   // single-instance lock above — when it happens, surface THIS instance instead.
-  app.on('second-instance', () => togglePopover());
+  app.on('second-instance', () => openPopoverIfHidden());
 
   // End-to-end QR flow: capture → decode → show in popover.
   // ============================================================
