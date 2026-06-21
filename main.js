@@ -669,8 +669,59 @@ function createWindow() {
       weTriggeredHide = false;
       return;
     }
-    lastExternalHideAt = Date.now(); // user clicked outside — record for race fix
-    win.hide();
+
+    // Distinguish "focus went to one of OUR OWN windows" (e.g. the always-on-top
+    // notch shelf, the stash editor, the QR/scan overlay, the tutorial) from a
+    // genuine click-out to another app. We must NOT hide in the former case —
+    // doing so is the classic "opens then instantly closes" bug, because an
+    // own-window focus steal (the always-on-top shelf re-asserting itself, a
+    // drop handing focus to the shelf inputs, etc.) fires this blur.
+    //
+    // The tricky part: during a focus handoff between two of OUR OWN windows,
+    // macOS briefly reports getFocusedWindow() === null for a frame or two. A
+    // single deferred check can land inside that transient gap and mis-read it
+    // as an external click-out. So we
+    // POLL for a short window: as soon as we observe focus on any own window (or
+    // the app still being the active app), we keep the popover open. Only if the
+    // whole poll window elapses with Restash genuinely not the active app do we
+    // treat it as a real click-out and hide.
+    const POLL_INTERVAL = 30;
+    const POLL_DEADLINE = Date.now() + 360; // ~12 samples
+    const decide = () => {
+      if (!win || win.isDestroyed()) return;
+      if (!win.isVisible()) return;           // already hidden by another path
+      if (win.isFocused()) return;            // focus came back to the popover
+      if (suppressBlurHideUntil > Date.now()) return;
+      if (weTriggeredHide) { weTriggeredHide = false; return; }
+
+      const focused = BrowserWindow.getFocusedWindow();
+      const ownFocused = focused && focused !== win && !focused.isDestroyed();
+      // appIsActive: true while Restash is the frontmost application — i.e.
+      // focus is still inside Restash even if it's momentarily between our own
+      // windows. This is the signal that survives the transient null gap during
+      // an own-window handoff. We track it via the app's
+      // did-become-active / did-resign-active events because Electron exposes no
+      // synchronous app.isActive() in this version.
+      const appActive = appIsActive;
+
+      if (ownFocused || appActive) {
+        // Focus is on (or returning to) one of our own windows — keep open.
+        return;
+      }
+
+      if (Date.now() < POLL_DEADLINE) {
+        // Still inside the grace window and we haven't seen an own-window claim
+        // yet — could be a transient null mid-handoff. Sample again shortly.
+        setTimeout(decide, POLL_INTERVAL);
+        return;
+      }
+
+      // Grace window elapsed with Restash NOT the active app and no own window
+      // focused: a genuine click-out to another application.
+      lastExternalHideAt = Date.now(); // user clicked outside — record for race fix
+      win.hide();
+    };
+    setTimeout(decide, POLL_INTERVAL);
   });
 
   // Each time the popover appears, tell the renderer. `activated` differentiates
@@ -688,6 +739,14 @@ let showWasActive = true;
 // native helper (share sheet, etc.). Without this, the helper steals focus
 // and we'd hide our popover right after the user clicked Share.
 let suppressBlurHideUntil = 0;
+
+// True while Restash is the active (frontmost) application. Maintained by the
+// app's did-become-active / did-resign-active events. The popover blur handler
+// uses this to tell an internal own-window focus handoff (app stays active —
+// keep the popover open) from a real click-out to another app (app resigns
+// active — hide). Electron exposes no synchronous app.isActive() here, so we
+// track it ourselves. Assume active at startup since the app launches frontmost.
+let appIsActive = true;
 
 // Two distinct UI modes share one BrowserWindow:
 //   'grid' — Option B numpad (3x3 of top 9 items), summoned at cursor by hotkey
@@ -1254,6 +1313,13 @@ async function togglePopoverAtCursor() {
   win.show();
   win.focus();
 }
+
+// Track application active state for the popover blur handler. These fire when
+// Restash as a whole gains/loses frontmost status (i.e. the user switches to or
+// away from ANOTHER app) — NOT for focus moving between our own windows. That
+// makes appIsActive the reliable "did focus leave Restash entirely" signal.
+app.on('did-become-active', () => { appIsActive = true; });
+app.on('did-resign-active',  () => { appIsActive = false; });
 
 app.whenReady().then(() => {
   // Show in the Dock like a normal app. Forced at runtime so it's reliable even
