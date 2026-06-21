@@ -1086,7 +1086,13 @@ function createShelfWindow() {
     fullscreenable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
-    focusable: true,
+    // RES-40: parked/collapsed the shelf must NOT be focusable. A focusable,
+    // screen-saver-level, visible-on-all-workspaces window steals key focus from
+    // the menu-bar popover the instant the popover shows — the popover's blur
+    // handler then hides it (menu "instant-close"). It also caused an infinite
+    // browser-window-focus → re-pin → focus loop. We flip focusable on only
+    // while the shelf is EXPANDED (quick-add inputs need to accept typing).
+    focusable: false,
     show: false,
     // RES-37 ROOT CAUSE FIX: without this, macOS constrains the window frame so
     // it cannot overlap the menu bar — it shoves the frame down to y=workArea.y
@@ -1128,6 +1134,8 @@ function expandShelf() {
   const d = activeShelfDisplay();
   if (!isNotchDisplay(d)) return;
   shelfExpanded = true;
+  // RES-40: only an EXPANDED shelf may take focus (for the quick-add inputs).
+  try { shelfWin.setFocusable(true); } catch {}
   // Recompute x for the expanded width so the panel stays centered on the notch
   // as it grows downward — it should read as the notch itself expanding.
   shelfWin.setBounds(shelfBoundsFor(d, true), false);
@@ -1142,6 +1150,9 @@ function expandShelf() {
 // Called from the renderer after a drop completes (not mid-drag).
 function focusShelf() {
   if (!shelfWin || shelfWin.isDestroyed() || !shelfExpanded) return;
+  // RES-40: focus() is a no-op on a non-focusable window; ensure it's focusable
+  // (expandShelf already does this, but a drop can race ahead of expand).
+  try { shelfWin.setFocusable(true); } catch {}
   try { shelfWin.show(); shelfWin.focus(); } catch {}
 }
 
@@ -1150,6 +1161,8 @@ function collapseShelf() {
   const d = activeShelfDisplay();
   if (!isNotchDisplay(d)) return;
   shelfExpanded = false;
+  // RES-40: collapsed shelf must not be focusable (see createShelfWindow).
+  try { shelfWin.setFocusable(false); } catch {}
   // Recompute x for the collapsed width so it re-centers on the notch.
   shelfWin.setBounds(shelfBoundsFor(d, false), false);
   try { shelfWin.setHasShadow(false); } catch {}
@@ -2064,10 +2077,20 @@ end if`;
     screen.on('display-added', refresh);
     screen.on('display-removed', refresh);
     screen.on('display-metrics-changed', refresh);
-    app.on('browser-window-focus', () => {
+    app.on('browser-window-focus', (_e, focusedWin) => {
       // Follow the active display so the shelf moves to wherever the user is
       // looking. No-op if that display has no notch.
-      if (shelfWin && !shelfWin.isDestroyed()) positionShelfOnActiveDisplay();
+      if (!shelfWin || shelfWin.isDestroyed()) return;
+      // RES-40: never re-pin/re-show the shelf in response to the shelf itself
+      // gaining focus — that re-asserts always-on-top + visible-on-all-workspaces,
+      // which re-fires browser-window-focus and spins an infinite focus loop.
+      if (focusedWin === shelfWin) return;
+      // RES-40: never re-pin while the menu-bar popover (or a modal sharing `win`)
+      // is on screen. Re-pinning a screen-saver-level shelf steals key focus from
+      // the popover, whose blur handler then hides it — the menu "instant-close"
+      // bug. The shelf is already parked; it doesn't need repositioning here.
+      if (win && win.isVisible()) return;
+      positionShelfOnActiveDisplay();
     });
   } catch {}
 
