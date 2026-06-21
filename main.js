@@ -1841,8 +1841,26 @@ end if`;
   });
   // --- Stubs for menu-bar dropdown actions ---
   ipcMain.handle('app:check-updates', async () => {
-    // TODO: wire to a real updater (electron-updater, GitHub releases, etc.)
-    return { ok: true, status: 'up-to-date', version: app.getVersion() };
+    // electron-updater: NSIS differential on Windows, AppImage zsync on Linux.
+    // macOS auto-update needs Squirrel.Mac signing+notarization (out of scope);
+    // mac just reports its version. The updater is loaded lazily so dev runs and
+    // unpackaged builds (where update metadata is absent) never throw.
+    if (process.platform === 'darwin' || !app.isPackaged) {
+      return { ok: true, status: 'up-to-date', version: app.getVersion() };
+    }
+    try {
+      // eslint-disable-next-line global-require
+      const { autoUpdater } = require('electron-updater');
+      autoUpdater.autoDownload = true;
+      const result = await autoUpdater.checkForUpdates();
+      const remote = result && result.updateInfo && result.updateInfo.version;
+      if (remote && remote !== app.getVersion()) {
+        return { ok: true, status: 'downloading', version: remote };
+      }
+      return { ok: true, status: 'up-to-date', version: app.getVersion() };
+    } catch (err) {
+      return { ok: false, status: 'error', error: err && err.message, version: app.getVersion() };
+    }
   });
 
   ipcMain.handle('app:open-billing', async () => {

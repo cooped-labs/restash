@@ -61,4 +61,50 @@ for (const size of [16, 32, 64, 128, 256, 512, 1024]) {
   console.log(`app/${size}.png            ${size}×${size}  ${bytes.toString().padStart(5)} B`);
 }
 
-console.log('\nDone. Tray icons are in assets/brand/, app icons in assets/brand/app/.');
+// --- CROSS-PLATFORM TRAY ICONS (no mac Template auto-invert) -------------
+// Windows wants a multi-res .ico + a 16px PNG; Linux wants 22/24px PNGs in
+// light + dark variants. We render explicit light/dark fills (dark icon for a
+// light tray, light icon for a dark tray) rather than relying on auto-invert.
+const TRAY_OUT = path.join(ASSETS, 'tray');
+const WIN_TRAY_OUT = path.join(TRAY_OUT, 'win');
+fs.mkdirSync(WIN_TRAY_OUT, { recursive: true });
+
+const TRAY_DARK_FILL = '#e8e8ea';   // shown on a dark tray
+const TRAY_LIGHT_FILL = '#1c1c1e';  // shown on a light tray
+
+for (const size of [16, 22, 24]) {
+  render({ size, color: TRAY_LIGHT_FILL, outPath: path.join(TRAY_OUT, `tray-light-${size}.png`) });
+  render({ size, color: TRAY_DARK_FILL, outPath: path.join(TRAY_OUT, `tray-dark-${size}.png`) });
+}
+console.log('tray/{light,dark}-{16,22,24}.png  rendered');
+
+// --- BUILD ICON SETS for electron-builder --------------------------------
+// Linux AppImage/deb need a PNG set under build/icons/; Windows needs build/icon.ico.
+const BUILD_ICONS = path.join(ROOT, 'build', 'icons');
+fs.mkdirSync(BUILD_ICONS, { recursive: true });
+const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];
+for (const size of [16, 24, 32, 48, 64, 128, 256, 512]) {
+  render({ size, color: '#1c1c1e', outPath: path.join(BUILD_ICONS, `${size}x${size}.png`) });
+}
+console.log('build/icons/{16..512}.png  rendered (Linux AppImage/deb)');
+
+// Windows .ico via png-to-ico (dev-only, pure JS). Optional: skip with a warning
+// if the dev dep isn't installed yet so the brand step still succeeds.
+(async () => {
+  try {
+    // eslint-disable-next-line global-require
+    const pngToIco = require('png-to-ico');
+    const pngs = ICO_SIZES.map((s) => path.join(BUILD_ICONS, `${s}x${s}.png`));
+    const icoBuf = await pngToIco(pngs);
+    fs.writeFileSync(path.join(ROOT, 'build', 'icon.ico'), icoBuf);
+    fs.writeFileSync(path.join(WIN_TRAY_OUT, 'tray.ico'), await pngToIco([
+      path.join(BUILD_ICONS, '16x16.png'),
+      path.join(BUILD_ICONS, '24x24.png'),
+      path.join(BUILD_ICONS, '32x32.png'),
+    ]));
+    console.log('build/icon.ico + tray/win/tray.ico  written (png-to-ico)');
+  } catch (e) {
+    console.warn('png-to-ico not installed — skipping .ico generation (run `npm i -D png-to-ico`).');
+  }
+  console.log('\nDone. Tray icons in assets/brand/ (+ tray/), app icons in assets/brand/app/, build icons in build/icons/.');
+})();

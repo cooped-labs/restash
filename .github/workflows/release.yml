@@ -1,0 +1,112 @@
+# Restash release matrix — 3 runners, one per OS.
+#
+# Each runner compiles ITS OWN native helper at build time and bundles every
+# native artifact so the published installer is fully self-contained (no
+# postinstall downloads, no runtime fetch of binaries):
+#   • macos-latest   — DMG (existing Swift helpers already committed).
+#   • windows-latest — compiles + (later) signs restash-win-helper.exe, builds
+#                      NSIS + portable. The Windows helper & signing REQUIRE a
+#                      Windows runner.
+#   • ubuntu-latest  — compiles restash-linux-helper, vendors libei/libportal
+#                      .so into vendor/linux-lib, builds AppImage + deb. The
+#                      Linux helper REQUIRES a Linux runner.
+#
+# Windows ships unsigned initially (documented SmartScreen "Run anyway") until an
+# OV/EV cert is procured. Linux AppImage/deb are not signed (checksums only).
+
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+          - os: windows-latest
+            platform: win
+          - os: ubuntu-latest
+            platform: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Zero-install policy lint
+        run: npm run lint:noinstall
+
+      - name: Generate brand/icon assets
+        run: npm run brand
+
+      # --- Windows: compile the bundled helper exe (MSVC) ---
+      - name: Build Windows helper
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          Import-Module (Join-Path $vs "Common7\Tools\Microsoft.VisualStudio.DevShell.dll")
+          Enter-VsDevShell -VsInstallPath $vs -DevCmdArguments '-arch=x64 -no_logo'
+          pwsh native/build-win-helper.ps1
+
+      # --- Linux: compile the bundled helper + vendor libei/libportal .so ---
+      - name: Build Linux helper + vendor libs
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb1-dev libxcb-xtest0-dev libxcb-util-dev \
+            libei-dev libportal-dev || sudo apt-get install -y libxcb1-dev libxcb-xtest0-dev
+          bash native/build-linux-helper.sh
+          mkdir -p vendor/linux-lib
+          # Copy the libei/libportal shared libs (+ deps) the helper links, so the
+          # AppImage bundles them and RPATH resolves from our copy, not the host.
+          for lib in libei libportal; do
+            for so in $(ldconfig -p | grep -oE "/[^ ]*${lib}[^ ]*\.so[^ ]*" | sort -u); do
+              cp -L "$so" vendor/linux-lib/ 2>/dev/null || true
+            done
+          done
+          ls -la vendor/linux-lib/ || true
+
+      - name: Build macOS
+        if: matrix.platform == 'mac'
+        run: npm run dist:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Windows
+        if: matrix.platform == 'win'
+        run: npm run dist:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # CSC_LINK / CSC_KEY_PASSWORD added here once an OV/EV cert exists.
+
+      - name: Build Linux
+        if: matrix.platform == 'linux'
+        run: npm run dist:linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: restash-${{ matrix.platform }}
+          path: |
+            dist/*.dmg
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.yml
+            dist/*.zsync
+          if-no-files-found: ignore

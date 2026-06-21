@@ -1,0 +1,24 @@
+name: ci
+
+on:
+  push:
+    branches: ['**']
+  pull_request: {}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # Zero-install policy: fail the build if main.js/platform/*.js spawn any
+      # banned user-installed tool (xdotool/ydotool/xclip/wl-copy/wmctrl/...).
+      - name: Zero-install policy lint
+        run: node scripts/lint-no-banned-tools.js
+      - name: Syntax check changed JS
+        run: |
+          node --check main.js
+          node --check preload.js
+          for f in platform/*.js; do node --check "$f"; done

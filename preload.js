@@ -57,6 +57,13 @@ contextBridge.exposeInMainWorld('restash', {
   checkAccessibility: (prompt = false) => ipcRenderer.invoke('accessibility:check', prompt),
   openAccessibilitySettings: () => ipcRenderer.invoke('accessibility:open'),
 
+  // Platform capabilities — the UI relabels (Paste vs Copy), hides native Share
+  // on Win/Linux, shows the one-time OS-permission explainer where a portal
+  // consent is required, and renders Ctrl/Alt/Shift vs ⌘/⌃/⇧ labels per OS.
+  // permission != install: see docs/windows-linux-port.md.
+  platformCapabilities: () => ipcRenderer.invoke('platform:capabilities'),
+  formatAccelerator: (accel) => ipcRenderer.invoke('platform:formatAccel', accel),
+
   rowMenu: (item) => ipcRenderer.invoke('row:menu', item),
 
   // Mode switching (grid vs list) — main tells renderer which UI to show.
