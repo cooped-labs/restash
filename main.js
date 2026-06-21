@@ -4,6 +4,10 @@ const fs = require('node:fs');
 const { execFile } = require('node:child_process');
 const os = require('node:os');
 const QRCode = require('qrcode');
+// Platform-abstraction layer — every native call routes through this so main.js
+// is OS-agnostic and the zero-install bundling policy is enforced in one place.
+// See platform/interface.md and docs/windows-linux-port.md.
+const platform = require('./platform');
 
 // Single-instance lock — Restash is a menu-bar singleton. A second launch must
 // NOT spin up a rival instance: duplicates race on settings.json (theme flips)
@@ -37,8 +41,28 @@ const LS_VARIANT_TIERS = {
 function tierForVariant(variantId) {
   return LS_VARIANT_TIERS[String(variantId)] || 'lifetime';
 }
+// Cross-platform stable machine id for the Lemon Squeezy activation instance.
+// os.hostname() + a persisted random UUID (generated once, stored in userData)
+// so the 3-device activation limit counts consistently on every OS and survives
+// reinstalls within the same userData. No new dependency (crypto + os built-in).
+const MACHINE_ID_FILE = path.join(app.getPath('userData'), 'machineId');
+function getMachineId() {
+  try {
+    if (fs.existsSync(MACHINE_ID_FILE)) {
+      const id = fs.readFileSync(MACHINE_ID_FILE, 'utf8').trim();
+      if (id) return id;
+    }
+  } catch {}
+  const id = require('node:crypto').randomUUID();
+  try {
+    fs.mkdirSync(path.dirname(MACHINE_ID_FILE), { recursive: true });
+    fs.writeFileSync(MACHINE_ID_FILE, id);
+  } catch {}
+  return id;
+}
 function licenseInstanceName() {
-  try { return `Restash · ${os.hostname()}`; } catch { return 'Restash'; }
+  try { return `Restash · ${os.hostname()} · ${getMachineId().slice(0, 8)}`; }
+  catch { return `Restash · ${getMachineId().slice(0, 8)}`; }
 }
 function maskKey(key) {
   const k = String(key || '');
@@ -112,8 +136,11 @@ function isOwnerBuild() {
   try { return fs.existsSync(OWNER_MARKER); } catch { return false; }
 }
 
-const DEFAULT_HOTKEY    = 'Command+Shift+V';
-const DEFAULT_QR_HOTKEY = 'Control+Shift+F';
+// Per-OS safe defaults via the platform layer: macOS keeps ⌘⇧V / ⌃⇧F; Win/Linux
+// move OFF Ctrl+Shift+V (universal paste-as-plain-text) to non-colliding
+// Ctrl+Alt+V / Ctrl+Alt+F. Customization UI + tryRegisterHotkey rollback intact.
+const DEFAULT_HOTKEY    = platform.defaultHotkeys.summon;
+const DEFAULT_QR_HOTKEY = platform.defaultHotkeys.qr;
 
 function readStore() {
   try {
@@ -470,10 +497,17 @@ async function fetchSiteMeta(rawUrl) {
 // The "-Template" suffix tells AppKit this is a template image, so it'll
 // auto-invert for dark menu bars and apply selection tinting.
 function createTrayIcon() {
-  const p = path.join(__dirname, 'assets', 'brand', 'tray-Template.png');
-  const img = nativeImage.createFromPath(p);
-  img.setTemplateImage(true);
-  return img;
+  // Per-OS asset selection lives in the platform layer (mac Template auto-invert;
+  // Windows .ico/16px PNG; Linux 22/24px light/dark PNG).
+  try {
+    const theme = readSettings().theme;
+    return platform.trayIcon(theme);
+  } catch {
+    const p = path.join(__dirname, 'assets', 'brand', 'tray-Template.png');
+    const img = nativeImage.createFromPath(p);
+    if (process.platform === 'darwin') img.setTemplateImage(true);
+    return img;
+  }
 }
 
 // Transparent gutter (logical px) around the visible card on every side.
@@ -495,6 +529,9 @@ function createWindow() {
     hasShadow: false,
     roundedCorners: false,
     skipTaskbar: true,
+    // On Win/Linux mark the popover/numpad as a utility window so it doesn't
+    // show in the taskbar/window list (mac ignores 'type').
+    ...(process.platform !== 'darwin' ? { type: 'toolbar' } : {}),
     fullscreenable: false,
     movable: false,
     minimizable: false,
@@ -604,52 +641,22 @@ function setMode(mode) {
 // dismissed.
 let previousAppPid = null;
 
+// Capture the foreground window/app before the popover steals focus. On mac
+// this is a PID (AppleEvents); on Win an HWND; on X11 a window id; on Wayland
+// null (no API). The opaque handle is passed back to platform.paste().
 function captureFrontmostApp() {
-  return new Promise((resolve) => {
-    execFile(
-      'osascript',
-      ['-e', 'tell application "System Events" to get unix id of first application process whose frontmost is true'],
-      (err, stdout) => {
-        if (err) { resolve(null); return; }
-        const pid = parseInt(stdout.trim(), 10);
-        resolve(Number.isFinite(pid) ? pid : null);
-      }
-    );
-  });
+  return platform.captureForegroundWindow();
 }
 
+// macOS-only helper kept for the mac paste flow inside platform.darwin; on other
+// OSes focus restore happens inside platform.paste() via the saved handle.
 function activateAppByPid(pid) {
-  if (!pid) return Promise.resolve();
-  return new Promise((resolve) => {
-    execFile(
-      'osascript',
-      ['-e', `tell application "System Events" to set frontmost of (first application process whose unix id is ${pid}) to true`],
-      () => resolve()
-    );
-  });
+  if (platform.activateAppByPid) return platform.activateAppByPid(pid);
+  return Promise.resolve();
 }
 
 function positionUnderTray() {
-  if (!tray || !win) return;
-  const trayBounds = tray.getBounds();
-  const winBounds = win.getBounds();
-  const display = screen.getDisplayNearestPoint({ x: trayBounds.x, y: trayBounds.y });
-
-  // Window is centered on the tray (card is centered inside the window, so
-  // the card lands centered too). y subtracts SHADOW_PAD so the visible card
-  // — not the transparent window edge — sits flush against the menu bar with
-  // no gap.
-  let x = Math.round(trayBounds.x + trayBounds.width / 2 - winBounds.width / 2);
-  let y = Math.round(trayBounds.y + trayBounds.height - SHADOW_PAD);
-
-  // Clamp X to the work area. For Y, allow the window to rise SHADOW_PAD above
-  // the work-area top — that band is just the transparent shadow gutter, so
-  // the visible card still sits flush under the menu bar.
-  const wa = display.workArea;
-  x = Math.max(wa.x + 6, Math.min(x, wa.x + wa.width - winBounds.width - 6));
-  y = Math.max(wa.y - SHADOW_PAD, y);
-
-  win.setPosition(x, y, false);
+  platform.positionPopover(win, { anchor: 'tray', tray });
 }
 
 function togglePopover() {
@@ -684,21 +691,9 @@ let weTriggeredHide = false;
 let lastExternalHideAt = 0;
 
 function positionAtCursor() {
-  if (!win) return;
-  const cursor = screen.getCursorScreenPoint();
-  const display = screen.getDisplayNearestPoint(cursor);
-  const winBounds = win.getBounds();
-  const wa = display.workArea;
-
-  // Anchor the popover so the visible CARD's top-left is just under-right of
-  // the cursor. Subtract SHADOW_PAD because the card is inset that far inside
-  // the (larger, transparent-gutter) window. Then clamp on-screen.
-  let x = Math.round(cursor.x + 8 - SHADOW_PAD);
-  let y = Math.round(cursor.y + 8 - SHADOW_PAD);
-  x = Math.max(wa.x + 6, Math.min(x, wa.x + wa.width - winBounds.width - 6));
-  y = Math.max(wa.y + 6, Math.min(y, wa.y + wa.height - winBounds.height - 6));
-
-  win.setPosition(x, y, false);
+  // Per-OS work-area math + Wayland no-op (compositor positions) in the platform
+  // layer. X11/Windows anchor to cursor; Wayland centers via compositor.
+  platform.positionPopover(win, { anchor: 'cursor', tray });
 }
 
 // ============================================================
@@ -853,10 +848,51 @@ app.whenReady().then(() => {
   // Open the tutorial on first launch only.
   if (!readSettings().onboarded) setTimeout(() => createTutorialWindow(), 600);
 
+  const isMac = process.platform === 'darwin';
+
+  // Build the tray/app context menu. Reused by the tray right-click AND the
+  // app menu (so a missing tray on GNOME-without-tray never blocks any feature).
+  const buildContextMenu = () => Menu.buildFromTemplate([
+    { label: 'Open Restash', click: togglePopover },
+    { type: 'separator' },
+    { label: 'Decode QR…', click: () => decodeQRAndShowPreview() },
+    { type: 'separator' },
+    { label: 'Settings…', accelerator: isMac ? 'Cmd+,' : undefined, click: () => { togglePopover(); setTimeout(() => win?.webContents.send('open:settings'), 120); } },
+    { label: 'Check for Updates…', click: () => win?.webContents.send('open:updates') },
+    { label: 'Billing & Account…', click: () => win?.webContents.send('open:billing') },
+    { type: 'separator' },
+    { label: 'Quit Restash', accelerator: 'CommandOrControl+Q', click: () => app.quit() },
+  ]);
+
   tray = new Tray(createTrayIcon());
   tray.setToolTip('Restash');
-  tray.setTitle(' Restash');
+  if (isMac) tray.setTitle(' Restash');
+  // Left-click toggles the popover on every OS; right-click opens the context
+  // menu on Win/Linux (mac uses left-click for the popover, menu via the icon).
   tray.on('click', togglePopover);
+  tray.on('right-click', () => tray.popUpContextMenu(buildContextMenu()));
+
+  // No-tray fallback (e.g. GNOME without AppIndicator): never tell the user to
+  // install an extension. Instead the global-hotkey numpad is the primary
+  // surface, and the same actions are always reachable from the app menu.
+  if (!isMac) {
+    const appMenu = Menu.buildFromTemplate([
+      {
+        label: 'Restash',
+        submenu: [
+          { label: 'Open Restash', click: togglePopover },
+          { label: 'Decode QR…', click: () => decodeQRAndShowPreview() },
+          { type: 'separator' },
+          { label: 'Settings…', click: () => { togglePopover(); setTimeout(() => win?.webContents.send('open:settings'), 120); } },
+          { label: 'Check for Updates…', click: () => win?.webContents.send('open:updates') },
+          { label: 'Billing & Account…', click: () => win?.webContents.send('open:billing') },
+          { type: 'separator' },
+          { role: 'quit' },
+        ],
+      },
+    ]);
+    try { Menu.setApplicationMenu(appMenu); } catch {}
+  }
 
   // Clicking the Dock icon opens/toggles the popover (same as tray click).
   app.on('activate', () => togglePopover());
@@ -864,24 +900,6 @@ app.whenReady().then(() => {
   // A second launch (Spotlight, double-click, `npm start`) is bounced by the
   // single-instance lock above — when it happens, surface THIS instance instead.
   app.on('second-instance', () => togglePopover());
-
-  tray.on('right-click', () => {
-    const menu = Menu.buildFromTemplate([
-      { label: 'Open Restash', click: togglePopover },
-      { type: 'separator' },
-      // QR decoder entry point — captures a screen region, decodes, then
-      // opens the popover under the tray in 'qr' mode with the result.
-      // (Will move to a global hotkey in Phase 4.)
-      { label: '🔍 Decode QR…', click: () => decodeQRAndShowPreview() },
-      { type: 'separator' },
-      { label: 'Settings…', accelerator: 'Cmd+,', click: () => { togglePopover(); setTimeout(() => win?.webContents.send('open:settings'), 120); } },
-      { label: 'Check for Updates…', click: () => win?.webContents.send('open:updates') },
-      { label: 'Billing & Account…', click: () => win?.webContents.send('open:billing') },
-      { type: 'separator' },
-      { label: 'Quit Restash', accelerator: 'Cmd+Q', click: () => app.quit() },
-    ]);
-    tray.popUpContextMenu(menu);
-  });
 
   // End-to-end QR flow: capture → decode → show in popover.
   // ============================================================
@@ -961,16 +979,34 @@ app.whenReady().then(() => {
     const rectY = Math.round(bounds.y + (y || 0) - half);
     const rect  = `${rectX},${rectY},${Math.round(size)},${Math.round(size)}`;
 
-    // Close the overlay BEFORE screencapture so the dim mask isn't in the image.
+    // Close the overlay BEFORE capture so the dim mask isn't in the image.
     closeScanOverlay();
-    // Tiny delay so macOS finishes hiding the overlay window before capture.
     await new Promise((r) => setTimeout(r, 80));
+
+    // Non-macOS: use the bundled cross-platform path (desktopCapturer region
+    // grab + zxing-wasm/jsQR decode) — no native helper, no screencapture.
+    if (process.platform !== 'darwin') {
+      const display = screen.getDisplayNearestPoint({ x: rectX, y: rectY });
+      const cap = await platform.captureRegion({
+        rect: { x: rectX, y: rectY, width: Math.round(size), height: Math.round(size) },
+        displayId: display.id,
+      });
+      if (!cap.ok || !cap.pngBuffer) {
+        showQRPreview({ ok: false, reason: 'capture-failed', message: 'Could not capture that area.' });
+        return { ok: false };
+      }
+      const dec = await platform.decodeQR(cap.pngBuffer);
+      if (!dec.ok || !dec.payload) {
+        showQRPreview({ ok: false, reason: dec.reason === 'no-decoder' ? 'decode-failed' : 'no-qr', message: dec.reason === 'no-decoder' ? undefined : 'No QR code in that area. Try centring the lens directly over it.' });
+        return { ok: false };
+      }
+      showQRPreview({ ok: true, ...detectQRType(dec.payload) });
+      return { ok: true };
+    }
 
     const { spawnSync } = require('node:child_process');
     const tmpPath = path.join(app.getPath('temp'), `restash-qr-${Date.now()}.png`);
-    // -R<rect>  region capture, no UI
-    // -x        silent (no shutter sound)
-    // -o        no shadow
+    // macOS: -R<rect> region capture, -x silent, -o no shadow → Swift Vision decode.
     const cap = spawnSync('/usr/sbin/screencapture', ['-x', '-R' + rect, '-o', tmpPath]);
     if (cap.status !== 0 || !fs.existsSync(tmpPath)) {
       showQRPreview({ ok: false, reason: 'capture-failed', message: 'Could not capture that area.' });
@@ -1200,8 +1236,14 @@ app.whenReady().then(() => {
     return apps;
   }
 
-  // --- IPC: installed apps ---
-  ipcMain.handle('apps:list', () => scanInstalledApps());
+  // --- IPC: installed / running apps ---
+  // mac scans /Applications (scanInstalledApps); other OSes return the running
+  // process / window-owner list via the platform layer (we don't crawl the
+  // Windows registry or rely on PATH tools).
+  ipcMain.handle('apps:list', () => {
+    if (process.platform === 'darwin') return scanInstalledApps();
+    try { return platform.listRunningApps(); } catch { return []; }
+  });
 
   // Run an AppleScript via osascript, async (never blocks the main process).
   // Resolves the stdout string, or null on any error / timeout / denial.
@@ -1270,18 +1312,12 @@ end if`;
     if (!x || !y) return false;
     return x === y || x.includes(y) || y.includes(x);
   };
-  // Windows on the CURRENT macOS Desktop (Space), via the Swift helper.
-  const currentDesktopWindows = () => new Promise((resolve) => {
-    try {
-      execFile(path.join(__dirname, 'bin', 'restash-windows'), [], { timeout: 5000 }, (err, stdout) => {
-        if (err) return resolve([]);
-        try {
-          const arr = JSON.parse(String(stdout || '[]'));
-          resolve(Array.isArray(arr) ? arr : []);
-        } catch { resolve([]); }
-      });
-    } catch { resolve([]); }
-  });
+  // Windows on the current desktop, via the platform layer (mac Swift helper /
+  // Windows EnumWindows / X11 _NET_CLIENT_LIST). Wayland returns [] (hard OS
+  // restriction — capabilities().canListWindows is false there).
+  const currentDesktopWindows = () => {
+    try { return platform.listWindows('desktop'); } catch { return Promise.resolve([]); }
+  };
 
   // --- IPC: capture the workspace (open browser tabs + running apps) ---
   // scope 'desktop' = only what's on the current Desktop/Space (via the window
@@ -1356,38 +1392,13 @@ end if`;
   // Sites: 'window' mode = one `open` call with every URL → tabs in one browser
   // window; 'separate' = `open -n` per URL → a new window each. Apps: launched
   // by bundle path (or by name as a fallback).
-  // Chrome's main binary — used to open URLs in a SPECIFIC profile via
-  // --profile-directory (the only reliable way to target a profile).
-  const CHROME_BIN = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-
-  // --- IPC: list the user's Chrome profiles (dir → display name + account) ---
-  // Read from Chrome's Local State so Environment sites can be assigned a
-  // profile to reopen in. Empty array when Chrome isn't installed.
-  ipcMain.handle('chrome:profiles', () => {
-    try {
-      const lp = path.join(app.getPath('appData'), 'Google', 'Chrome', 'Local State');
-      const d = JSON.parse(fs.readFileSync(lp, 'utf8'));
-      const cache = (d && d.profile && d.profile.info_cache) || {};
-      const out = Object.entries(cache).map(([dir, info]) => ({
-        dir,
-        name: (info && info.name) || dir,
-        account: (info && info.user_name) || '',
-      }));
-      out.sort((a, b) => a.name.localeCompare(b.name));
-      return out;
-    } catch { return []; }
-  });
-
   ipcMain.handle('env:open', (_e, env) => {
-    const OPEN = '/usr/bin/open';
     const targets = Array.isArray(env?.targets) ? env.targets : [];
     const urlMode = env?.urlMode === 'separate' ? 'separate' : 'window';
-    const hasChrome = fs.existsSync(CHROME_BIN);
 
     const normalizeUrl = (u) => {
       const s = String(u || '').trim();
       if (!s) return '';
-      // Already has a scheme (http://, https://, mailto:, etc.) — leave it.
       if (/^[a-z][a-z0-9+.-]*:/i.test(s)) return s;
       return 'https://' + s;
     };
@@ -1395,45 +1406,22 @@ end if`;
     const apps  = targets.filter((t) => t && t.type === 'app');
     const sites = targets.filter((t) => t && t.type === 'site' && (t.value || '').trim());
 
-    // Launch apps first (so browsers aren't stealing focus mid-launch).
-    for (const a of apps) {
-      const args = a.path ? [a.path] : ['-a', String(a.value || '')];
-      if (!args[0]) continue;
-      try { execFile(OPEN, args, () => {}); } catch {}
-    }
+    // Launch apps first (so browsers aren't stealing focus mid-launch) via the
+    // per-OS launcher (open -a / shell.openPath / .desktop Exec — never gtk-launch).
+    for (const a of apps) { try { platform.launchApp(a); } catch {} }
 
     // Group sites by Chrome profile dir; '' = default browser / last profile.
+    // The platform layer decides whether to use the per-OS Chrome binary or
+    // fall back to the default browser via shell.openExternal.
     const byProfile = new Map();
     for (const t of sites) {
       const url = normalizeUrl(t.value);
       if (!url) continue;
-      const prof = hasChrome ? String(t.profile || '').trim() : '';
+      const prof = String(t.profile || '').trim();
       if (!byProfile.has(prof)) byProfile.set(prof, []);
       byProfile.get(prof).push(url);
     }
-
-    // Open each profile's group, staggered so windows spawn reliably.
-    let delay = 0;
-    for (const [prof, urls] of byProfile) {
-      const launch = (us, sep) => {
-        if (prof && hasChrome) {
-          // Target a specific Chrome profile. --new-window groups the set.
-          if (sep) {
-            us.forEach((u) => { setTimeout(() => { try { execFile(CHROME_BIN, [`--profile-directory=${prof}`, '--new-window', u], () => {}); } catch {} }, delay); delay += 280; });
-          } else {
-            setTimeout(() => { try { execFile(CHROME_BIN, [`--profile-directory=${prof}`, '--new-window', ...us], () => {}); } catch {} }, delay); delay += 220;
-          }
-        } else {
-          // Default browser / profile via `open`.
-          if (sep) {
-            us.forEach((u) => { setTimeout(() => { try { execFile(OPEN, ['-n', u], () => {}); } catch {} }, delay); delay += 280; });
-          } else {
-            setTimeout(() => { try { execFile(OPEN, us, () => {}); } catch {} }, delay); delay += 220;
-          }
-        }
-      };
-      launch(urls, urlMode === 'separate');
-    }
+    try { platform.openSites(byProfile, { separate: urlMode === 'separate' }); } catch {}
     return { ok: true };
   });
   ipcMain.handle('qr:dataurl', (_e, text) => QRCode.toDataURL(String(text ?? ''), {
@@ -1443,56 +1431,27 @@ end if`;
     color: { dark: '#000000', light: '#ffffff' },
   }));
 
-  // --- IPC: native macOS share sheet ---
-  // Spawns a small Swift helper that calls NSSharingServicePicker. Electron's
-  // built-in shareMenu role only gives a nested NSMenu — this gives the real
-  // share popover with AirDrop targets and full app icons.
+  // --- IPC: share an item ---
+  // macOS shows the native NSSharingServicePicker (via the committed Swift
+  // helper, routed through platform.share). On Win/Linux there is no native
+  // share sheet, so platform.share returns { fallback: true } and the renderer
+  // shows an in-app Copy / Open URL / Reveal file / Email action set (all via
+  // already-cross-platform Electron shell APIs — zero new native deps).
   ipcMain.handle('share:item', (e, { text, url, filePath, label, iconPath } = {}) => {
-    const helper = path.join(__dirname, 'bin', 'restash-share');
-    const args = [];
-    if (label) args.push(`--title=${String(label)}`);
-    if (iconPath) {
-      const abs = path.isAbsolute(iconPath) ? iconPath : path.join(__dirname, iconPath);
-      args.push(`--icon=${abs}`);
-    }
-    // File-first: pass the file path so the Swift helper treats it as an
-    // NSURL fileURL (real attachment in Mail/Messages/AirDrop). Skip text
-    // for file items unless explicitly provided.
-    if (filePath) args.push(String(filePath));
-    if (text)     args.push(String(text));
-    if (url)      args.push(String(url));
-    if (!args.length || (args.length === 1 && args[0].startsWith('--'))) {
-      return { ok: false, reason: 'no-content' };
-    }
-
-    try {
-      // Suppress blur-hide so the popover stays visible while the share sheet
-      // is open and the user interacts with it.
-      suppressBlurHideUntil = Date.now() + 60_000;
-
-      // Temporarily drop Restash to normal window level so the system
-      // NSSharingServicePicker (which runs at pop-up-menu level) floats above it.
-      if (win) win.setAlwaysOnTop(false);
-
-      const child = require('node:child_process').spawn(helper, args, {
-        detached: false,  // keep reference so we know when the sheet is gone
-        stdio: 'ignore',
-      });
-
-      // Restore pop-up-menu level and blur-hide once the share sheet closes.
-      const restore = () => {
-        suppressBlurHideUntil = 0;
-        if (win) win.setAlwaysOnTop(true, 'pop-up-menu');
-      };
-      child.once('exit', restore);
-      // Safety: restore after 65 s even if the process somehow never exits.
-      setTimeout(restore, 65_000);
-      child.unref();
-
-      return { ok: true };
-    } catch (err) {
-      return { ok: false, reason: 'spawn-failed', error: err.message };
-    }
+    return platform.share(
+      { text, url, filePath, label, iconPath },
+      {
+        beforeShare: () => {
+          // Suppress blur-hide + drop window level so the system picker floats above.
+          suppressBlurHideUntil = Date.now() + 60_000;
+          if (win) win.setAlwaysOnTop(false);
+        },
+        afterShare: () => {
+          suppressBlurHideUntil = 0;
+          if (win) win.setAlwaysOnTop(true, 'pop-up-menu');
+        },
+      }
+    );
   });
 
   // --- IPC: window control ---
@@ -1516,12 +1475,28 @@ end if`;
     menu.popup({ window: win, callback: () => resolve(null) });
   }));
 
-  // --- IPC: accessibility (required for synthetic keystrokes) ---
-  ipcMain.handle('accessibility:check', (_e, prompt = false) =>
-    systemPreferences.isTrustedAccessibilityClient(!!prompt)
-  );
+  // --- IPC: accessibility (mac TCC; on Win/Linux there is no TCC — return true
+  // so the renderer's mac-only banner never blocks. Win/Linux use capability
+  // checks + the one-time OS-permission explainer instead). ---
+  ipcMain.handle('accessibility:check', (_e, prompt = false) => {
+    if (process.platform !== 'darwin') return true;
+    return systemPreferences.isTrustedAccessibilityClient(!!prompt);
+  });
   ipcMain.handle('accessibility:open', () => {
-    shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+    if (process.platform === 'darwin') {
+      shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+    }
+  });
+
+  // --- IPC: platform capabilities — drives renderer UI degradation
+  // (Paste vs Copy, hide native Share, one-time OS-permission explainer,
+  // "use the tray/launcher" banner). Permission != install. ---
+  ipcMain.handle('platform:capabilities', () => {
+    try { return platform.capabilities(); } catch { return null; }
+  });
+  // Accelerator → human label, per OS (Ctrl/Alt/Shift vs ⌘/⌃/⇧).
+  ipcMain.handle('platform:formatAccel', (_e, accel) => {
+    try { return platform.formatAccelerator(accel); } catch { return String(accel || ''); }
   });
 
   // --- IPC: paste value into whichever app had focus before the popover opened ---
@@ -1541,17 +1516,26 @@ end if`;
   });
 
   ipcMain.handle('qr:capture-and-decode', async () => {
+    // Non-macOS: bundled cross-platform full-display grab + zxing-wasm/jsQR
+    // decode (no screencapture, no Swift Vision). The lens overlay drives the
+    // precise region path (scan:capture); this whole-screen variant is a
+    // fallback used by the tray "Decode QR" entry.
+    if (process.platform !== 'darwin') {
+      const cap = await platform.captureRegion({});
+      if (!cap.ok || !cap.pngBuffer) return { ok: false, reason: 'capture-failed' };
+      const dec = await platform.decodeQR(cap.pngBuffer);
+      if (!dec.ok || !dec.payload) return { ok: false, reason: dec.reason === 'no-decoder' ? 'decode-failed' : 'no-qr' };
+      return { ok: true, ...detectQRType(dec.payload) };
+    }
+
     const tmpPath = path.join(app.getPath('temp'), `restash-qr-${Date.now()}.png`);
     const { spawnSync } = require('node:child_process');
 
-    // 1) Region selection screenshot. `-i` interactive, `-s` rect-only,
-    //    `-o` no shadow. Returns immediately with exit 0 even on Esc, but
-    //    won't have written a file in that case.
+    // macOS: region selection screenshot then Swift Vision decode.
     const cap = spawnSync('/usr/sbin/screencapture', ['-i', '-s', '-o', tmpPath]);
     if (cap.status !== 0) return { ok: false, reason: 'capture-failed' };
     if (!fs.existsSync(tmpPath)) return { ok: false, reason: 'cancelled' };
 
-    // 2) Decode via the Swift helper.
     const helper = path.join(__dirname, 'bin', 'restash-decode-qr');
     const decode = spawnSync(helper, [tmpPath]);
     try { fs.unlinkSync(tmpPath); } catch {}
@@ -1583,70 +1567,20 @@ end if`;
     }
     if (!text && !filePaths.length) return { ok: false, reason: 'bad-input' };
 
-    // Check accessibility FIRST, before any destructive action. This way if
-    // it's denied we keep the popover visible so the banner is reachable and
-    // we can trigger the macOS native prompt.
-    const trusted = systemPreferences.isTrustedAccessibilityClient(false);
-    if (!trusted) {
-      // Still copy so the user can ⌘V manually as a fallback. For file items
-      // we put all file URLs on the pasteboard via the Swift helper.
-      if (filePaths.length) {
-        try {
-          require('node:child_process').execFileSync(
-            path.join(__dirname, 'bin', 'restash-clip-file'),
-            filePaths
-          );
-        } catch {}
-      } else if (text) {
-        clipboard.writeText(text);
+    // Route through the platform layer. Each OS handles clipboard write
+    // (text or multi-file), foreground restore, and paste synthesis via its
+    // bundled mechanism (osascript / win-helper / xcb / libei-portal / uinput),
+    // and falls back to copy-only when synthesis isn't available. hooks let the
+    // platform hide our windows so focus can return.
+    return platform.paste(
+      { text, filePaths, targetWindow: previousAppPid },
+      {
+        hideApp: () => {
+          if (win && win.isVisible()) win.hide();
+          if (process.platform === 'darwin') app.hide();
+        },
       }
-      systemPreferences.isTrustedAccessibilityClient(true);
-      shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
-      return { ok: false, reason: 'no-accessibility' };
-    }
-
-    // Preserve the user's previous clipboard text so we can restore it afterwards.
-    const prevClipboard = clipboard.readText();
-    if (filePaths.length) {
-      try {
-        require('node:child_process').execFileSync(
-          path.join(__dirname, 'bin', 'restash-clip-file'),
-          filePaths
-        );
-      } catch (err) {
-        return { ok: false, reason: 'clip-file-failed', error: err.message };
-      }
-    } else {
-      clipboard.writeText(text);
-    }
-
-    // Hide our window, then explicitly reactivate the app that was frontmost
-    // when the hotkey was pressed. This is more reliable than relying on
-    // macOS to "naturally" return focus.
-    if (win && win.isVisible()) win.hide();
-    if (process.platform === 'darwin') app.hide();
-
-    await activateAppByPid(previousAppPid);
-
-    // Let focus settle on the previous app, then post ⌘V via System Events.
-    await new Promise((r) => setTimeout(r, 120));
-    const result = await new Promise((resolve) => {
-      execFile(
-        'osascript',
-        ['-e', 'tell application "System Events" to keystroke "v" using command down'],
-        (err) => {
-          if (err) resolve({ ok: false, reason: 'osascript-error', error: err.message });
-          else resolve({ ok: true });
-        }
-      );
-    });
-
-    // Restore the previous clipboard after the paste has time to land.
-    setTimeout(() => {
-      try { clipboard.writeText(prevClipboard); } catch {}
-    }, 350);
-
-    return result;
+    );
   });
 
   // Stamp the trial clock on first run.
@@ -1907,8 +1841,26 @@ end if`;
   });
   // --- Stubs for menu-bar dropdown actions ---
   ipcMain.handle('app:check-updates', async () => {
-    // TODO: wire to a real updater (electron-updater, GitHub releases, etc.)
-    return { ok: true, status: 'up-to-date', version: app.getVersion() };
+    // electron-updater: NSIS differential on Windows, AppImage zsync on Linux.
+    // macOS auto-update needs Squirrel.Mac signing+notarization (out of scope);
+    // mac just reports its version. The updater is loaded lazily so dev runs and
+    // unpackaged builds (where update metadata is absent) never throw.
+    if (process.platform === 'darwin' || !app.isPackaged) {
+      return { ok: true, status: 'up-to-date', version: app.getVersion() };
+    }
+    try {
+      // eslint-disable-next-line global-require
+      const { autoUpdater } = require('electron-updater');
+      autoUpdater.autoDownload = true;
+      const result = await autoUpdater.checkForUpdates();
+      const remote = result && result.updateInfo && result.updateInfo.version;
+      if (remote && remote !== app.getVersion()) {
+        return { ok: true, status: 'downloading', version: remote };
+      }
+      return { ok: true, status: 'up-to-date', version: app.getVersion() };
+    } catch (err) {
+      return { ok: false, status: 'error', error: err && err.message, version: app.getVersion() };
+    }
   });
 
   ipcMain.handle('app:open-billing', async () => {

@@ -7,3 +7,11 @@ npm-debug.log*
 .env
 .env.local
 release/
+
+# CI-built native helpers (compiled on their target OS in CI, never committed).
+# The mac restash-* Swift helpers IN bin/ are intentionally tracked.
+bin/restash-linux-helper
+bin/restash-win-helper.exe
+# Bundled .so closure of restash-linux-helper, vendored at release time by
+# scripts/bundle-linux-libs.sh — large per-arch artifacts, not committed.
+vendor/linux-lib/*.so*
