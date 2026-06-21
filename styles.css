@@ -2277,9 +2277,19 @@ body.theme-dark .qr-safety.warn { background: rgba(255, 159, 10, 0.18); color: #
    right slot reserves room for the action cluster so long captured text
    truncates with an ellipsis instead of sliding UNDER the hover buttons. The
    timestamp and the actions share the same slot and cross-fade on hover. */
-.row.recent-row .text { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+/* Text container hard-truncates: it only ever occupies the space left over
+   after the reserved right-hand slot, so long captured text can never slide
+   under the hover buttons. min-width:0 is required for the ellipsis to engage
+   inside a flex item; text-overflow on the container backs up the inner span. */
+.row.recent-row .text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .row.recent-row .label.mono {
   display: block;
+  max-width: 100%;
   font-weight: 400;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11.5px;
@@ -2289,14 +2299,18 @@ body.theme-dark .qr-safety.warn { background: rgba(255, 159, 10, 0.18); color: #
   text-overflow: ellipsis;
   /* Subtle fade right at the truncation edge so the ellipsis softens
      visually toward the action cluster — pure decoration, no layout impact. */
-  -webkit-mask-image: linear-gradient(to right, black calc(100% - 8px), transparent);
-          mask-image: linear-gradient(to right, black calc(100% - 8px), transparent);
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 10px), transparent);
+          mask-image: linear-gradient(to right, black calc(100% - 10px), transparent);
 }
-/* Right-anchor slot — width is reserved whether the time or the actions
-   are visible, so the row layout never shifts on hover and the text always
-   has the same room. 96px ≈ 4 buttons (22px) + 3 gaps (2px) + trailing pad. */
+/* Right-anchor slot — a NON-SHRINKING reserved column. Its width is held
+   constant whether the timestamp or the action cluster is showing, so the
+   text always has the same room and the row never reflows on hover. 100px ≈
+   4 buttons (22px) + 3 gaps (2px) + trailing pad, with headroom so the
+   absolutely-positioned action cluster can never sit over the text. */
 .row.recent-row .recent-right {
-  flex: 0 0 96px;
+  flex: 0 0 100px;
+  flex-shrink: 0;
+  margin-left: auto;
   position: relative;
   display: flex;
   align-items: center;
