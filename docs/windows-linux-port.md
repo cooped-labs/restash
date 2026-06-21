@@ -24,6 +24,14 @@ This is enforced by CI: **`scripts/lint-no-banned-tools.js`** scans `main.js`
 and `platform/*.js` and **fails the build** if any banned tool name appears as a
 spawned command. Wired into `ci.yml` and the release matrix.
 
+CI also compiles the Linux native helper on every push/PR (`ci.yml` →
+`linux-build`), installing `libei-dev` + `libportal-dev` so the libei branch in
+`native/build-linux-helper.sh` is exercised — a missing source file or broken
+extern fails the build immediately, instead of being caught only on a tagged
+release. This closes the RES-30 regression where the helper's
+`extern int restash_libei_ctrl_v(void)` referred to a file that didn't exist
+(`native/linux/wayland_ei.c`, now committed).
+
 ### REQUIRED — every native capability ships via one of three bundling lanes
 1. **Committed/CI-built prebuilt helper binary in `bin/`** (mirrors the existing
    Swift `restash-*` pattern):

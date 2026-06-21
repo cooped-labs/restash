@@ -61,23 +61,29 @@ jobs:
           Enter-VsDevShell -VsInstallPath $vs -DevCmdArguments '-arch=x64 -no_logo'
           pwsh native/build-win-helper.ps1
 
-      # --- Linux: compile the bundled helper + vendor libei/libportal .so ---
-      - name: Build Linux helper + vendor libs
+      # --- Linux: compile the bundled helper + vendor full .so closure ---
+      - name: Build Linux helper + bundle .so closure
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxcb1-dev libxcb-xtest0-dev libxcb-util-dev \
-            libei-dev libportal-dev || sudo apt-get install -y libxcb1-dev libxcb-xtest0-dev
+          # libei-dev + libportal-dev enable the Wayland RemoteDesktop path.
+          # patchelf is required by scripts/bundle-linux-libs.sh to rewrite RPATH
+          # on each copied .so so transitive deps resolve from the bundle.
+          sudo apt-get install -y \
+            libxcb1-dev libxcb-xtest0-dev libxcb-util-dev \
+            libei-dev libportal-dev patchelf \
+            || sudo apt-get install -y libxcb1-dev libxcb-xtest0-dev patchelf
+          # build-linux-helper.sh now invokes scripts/bundle-linux-libs.sh
+          # internally so the .so closure is populated as part of the build.
           bash native/build-linux-helper.sh
-          mkdir -p vendor/linux-lib
-          # Copy the libei/libportal shared libs (+ deps) the helper links, so the
-          # AppImage bundles them and RPATH resolves from our copy, not the host.
-          for lib in libei libportal; do
-            for so in $(ldconfig -p | grep -oE "/[^ ]*${lib}[^ ]*\.so[^ ]*" | sort -u); do
-              cp -L "$so" vendor/linux-lib/ 2>/dev/null || true
-            done
-          done
-          ls -la vendor/linux-lib/ || true
+          # Zero-install verification: log helper NEEDED + RPATH for the release
+          # build log. The bundler already exits non-zero on unresolved deps.
+          echo "--- helper NEEDED / RPATH ---"
+          (readelf -d bin/restash-linux-helper | grep -E 'NEEDED|RPATH|RUNPATH') || true
+          # Re-run the zero-install lint now that bin/restash-linux-helper
+          # exists — this enforces the "helper present => vendor/linux-lib
+          # non-empty" rule (see scripts/lint-no-banned-tools.js).
+          npm run lint:noinstall
 
       - name: Build macOS
         if: matrix.platform == 'mac'

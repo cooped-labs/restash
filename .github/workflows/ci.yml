@@ -22,3 +22,28 @@ jobs:
           node --check main.js
           node --check preload.js
           for f in platform/*.js; do node --check "$f"; done
+
+  # Compile the Linux native helper on every push/PR so a missing source or
+  # broken extern (the regression class that motivated RES-30) fails the build
+  # immediately, not only on a tagged release. Installs libei + libportal dev
+  # so the -DHAVE_LIBEI branch in native/build-linux-helper.sh is exercised —
+  # that's the path that links wayland_ei.c and would silently rot otherwise.
+  linux-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          # patchelf is invoked by scripts/bundle-linux-libs.sh (called from
+          # build-linux-helper.sh) to rewrite RPATH on each vendored .so.
+          sudo apt-get install -y \
+            libxcb1-dev libxcb-xtest0-dev libxcb-util-dev \
+            libei-dev libportal-dev patchelf
+      - name: Build restash-linux-helper
+        run: bash native/build-linux-helper.sh
+      - name: Verify binary + bundle
+        run: |
+          test -x bin/restash-linux-helper
+          file bin/restash-linux-helper
+          ls -la vendor/linux-lib/
