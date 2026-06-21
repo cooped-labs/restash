@@ -53,6 +53,43 @@ AppImage `extraResources` (`resources/lib`), and the helper's `RPATH`
 (`$ORIGIN/../lib`) + `LD_LIBRARY_PATH` point at the bundled copies so nothing is
 resolved from the host.
 
+**Dep-walk — `scripts/bundle-linux-libs.sh`.** After
+`native/build-linux-helper.sh` compiles the helper, it invokes the bundler,
+which (1) walks the **transitive** `ldd` closure recursively, deduping through
+SONAME symlinks; (2) copies every non-ABI `.so` into `vendor/linux-lib/`, named
+by SONAME so `DT_NEEDED` resolves to the bundled copy; (3) `patchelf
+--set-rpath '$ORIGIN'` on each bundled `.so` so inter-library deps (a bundled
+`libportal` finding the bundled `libglib`) resolve from the bundle, not from
+`/usr`; (4) `patchelf --set-rpath '$ORIGIN/../lib'` on the helper itself as a
+belt-and-suspenders re-stamp of the gcc `-Wl,-rpath` flag; and (5) **fails the
+build on `=> not found`** in any `ldd` line — silently shipping a helper with
+missing deps is worse than failing the release.
+
+**ABI allow-list (NOT bundled — must come from the host glibc).** These libs
+are part of glibc / libgcc / libstdc++ and are ABI-stable across distros;
+bundling them risks dynamic-loader rejection or subtle ABI drift between the
+bundled copy and the kernel/glibc on the runtime host. Encoded in
+`scripts/bundle-linux-libs.sh::abi_skip()`:
+
+```
+libc       libm       libpthread   libdl       librt
+libresolv  libutil    libnsl       libcrypt
+libgcc_s   libstdc++  ld-linux*    linux-vdso
+```
+
+Everything else (`libei`, `libportal`, `libdbus-1`, `libglib-2.0`, `libgio-2.0`,
+`libgobject-2.0`, `libffi`, `libpcre*`, `libsystemd`/`libelogind`, `libcap`,
+`libmount`, `libblkid`, `libz`, `libselinux`, plus the `libxcb` family) **is**
+bundled.
+
+**Bundling lint** (`scripts/lint-no-banned-tools.js`): if
+`bin/restash-linux-helper` exists as a real built artifact (size > 0),
+`vendor/linux-lib/` MUST contain at least one `.so*` file or the lint fails.
+This runs once before the Linux build (rule no-ops — helper absent) and again
+after the build in `release.yml` (rule fires — must pass). A zero-byte
+placeholder is treated as not-built so the rule doesn't false-positive on
+non-Linux runners.
+
 ### Permission ≠ install
 The ONLY user ask is a one-time **OS permission** via a native dialog already on
 the OS:
@@ -74,8 +111,13 @@ the UI shows a one-time explainer. There is **never** a download or install.
 - [x] Every native capability uses lane (a) committed helper, (b) vendored
       prebuilt `.node`, or (c) pure-JS/WASM.
 - [x] No postinstall download of binaries; no runtime fetch of binaries.
-- [x] Linux libei/libportal bundled in the AppImage with RPATH to the bundled
-      copy (CI `ubuntu-latest` job vendors them into `vendor/linux-lib`).
+- [x] Linux helper's **full transitive `ldd` closure** (libei/libportal +
+      libdbus/libglib/libsystemd/libxcb/... — everything outside the ABI
+      allow-list) is bundled in the AppImage by `scripts/bundle-linux-libs.sh`,
+      with RPATH `$ORIGIN/../lib` on the helper and RPATH `$ORIGIN` on every
+      bundled `.so`. Enforced post-build by the bundling lint in
+      `scripts/lint-no-banned-tools.js` (helper present ⇒ `vendor/linux-lib/`
+      non-empty).
 - [x] The Windows helper is compiled (and, later, signed) on `windows-latest`;
       the Linux helper on `ubuntu-latest`.
 - [x] The only user-facing ask is an OS permission (TCC / portal / polkit),
