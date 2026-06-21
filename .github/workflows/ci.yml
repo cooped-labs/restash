@@ -47,3 +47,40 @@ jobs:
           test -x bin/restash-linux-helper
           file bin/restash-linux-helper
           ls -la vendor/linux-lib/
+
+      # RES-30 AC1: on a CLEAN ubuntu:22.04 (no -dev packages installed), the
+      # helper's ldd output must resolve every non-ABI dep to the bundled lib —
+      # never to /usr or /lib on the host. Reproduces the layout the AppImage
+      # uses (bin/ + lib/ at the same parent, so $ORIGIN/../lib resolves) and
+      # uses the ubuntu-runner's Docker to host it.
+      - name: AC1 — ldd resolution on clean ubuntu:22.04
+        run: |
+          # Lay out the same structure electron-builder ships in <Resources>/.
+          rm -rf /tmp/restash-bundle
+          mkdir -p /tmp/restash-bundle/bin /tmp/restash-bundle/lib
+          cp bin/restash-linux-helper /tmp/restash-bundle/bin/
+          # vendor/linux-lib -> lib (matches package.json linux.extraResources).
+          cp -a vendor/linux-lib/*.so* /tmp/restash-bundle/lib/ 2>/dev/null || true
+          # ubuntu:22.04 base image is intentionally bare — NO apt-get install.
+          # Every non-ABI dep must resolve from /bundle/lib via the helper's
+          # RPATH ($ORIGIN/../lib). Glibc satellites (libc/libm/libpthread/...)
+          # are part of the base image and may resolve to /usr or /lib.
+          docker run --rm -v /tmp/restash-bundle:/bundle:ro ubuntu:22.04 bash -eu -c '
+            ldd /bundle/bin/restash-linux-helper > /tmp/ldd.txt || true
+            echo "--- ldd output ---"
+            cat /tmp/ldd.txt
+            # Hard fail on any "not found" — means the bundler missed a dep.
+            if grep -F "not found" /tmp/ldd.txt; then
+              echo "ERROR: unresolved deps in clean ubuntu:22.04 (bundler missed them)" >&2
+              exit 1
+            fi
+            # ABI allow-list — these are part of glibc/libgcc/libstdc++ and
+            # legitimately resolve to host /usr or /lib paths.
+            ALLOW="libc\\.so|libm\\.so|libpthread\\.so|libdl\\.so|librt\\.so|libresolv\\.so|libutil\\.so|libnsl\\.so|libcrypt\\.so|libgcc_s\\.so|libstdc\\+\\+\\.so|ld-linux|linux-vdso"
+            if grep -E "=> /(usr|lib)/" /tmp/ldd.txt | grep -vE "$ALLOW" > /tmp/leaks.txt; then
+              echo "ERROR: non-ABI deps resolve to host paths (zero-install regression):" >&2
+              cat /tmp/leaks.txt >&2
+              exit 1
+            fi
+            echo "OK: every non-ABI dep resolves to /bundle; ABI deps come from host glibc."
+          '
