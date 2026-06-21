@@ -17,33 +17,26 @@
   body{ padding:0; }
 
   /* THE NOTCH — sits at the top of the screen, always present.
-     Idle: notch-width cam strip. Expanded: widens AND grows downward into the
-     save shelf. The cam strip stays put at the top; the body unfolds below. */
+     Idle: invisible behind the real hardware notch. Expanded: grows downward
+     into the save shelf. No painted notch graphics, no border — the panel
+     emerges as a seamless black extension of the real hardware notch. */
   .nook{
     position:absolute; top:0; left:50%; transform:translateX(-50%);
     width:188px;
     background:var(--black);
     border-radius:0 0 16px 16px;
     overflow:hidden;
-    /* No shadow while collapsed — it must read as the physical notch, not a
-       floating pill. The shadow only appears once the panel opens. */
-    box-shadow:none;
-    transition:width .34s cubic-bezier(.22,1,.36,1), border-radius .34s, box-shadow .34s;
+    transition:width .34s cubic-bezier(.22,1,.36,1), border-radius .34s;
   }
   .nook.open{
     width:362px;
     border-radius:0 0 26px 26px;
-    box-shadow:0 50px 100px -26px rgba(0,0,0,.95);
-  }
-  .nook.hot{
-    box-shadow:0 50px 100px -26px rgba(201,122,0,.35), 0 0 0 1px rgba(201,122,0,.5);
   }
 
-  /* Cam strip — the visually-permanent part. Two dots + Restash tag. */
-  .camrow{ height:28px; display:flex; align-items:center; justify-content:center; gap:9px; }
-  .camrow .cam{ width:6px; height:6px; border-radius:50%; background:#16161a; box-shadow:inset 0 0 0 1px #2a2a30; }
-  .camrow .tag{ font-family:'ui-monospace',SFMono-Regular,Menlo,monospace; font-size:9px; letter-spacing:1.4px; text-transform:uppercase; color:var(--mute); transition:color .2s; }
-  .nook.hot .camrow .tag{ color:var(--accent); }
+  /* Notch spacer — pure-black strip occupying the real hardware notch's
+     vertical space so the visible body content begins at the notch bottom.
+     Drawn under the hardware notch; never has decoration. */
+  .notch-spacer{ height:32px; background:var(--black); }
 
   /* Body unfolds via max-height / opacity. Lives at zero height while idle. */
   .body{ max-height:0; opacity:0; overflow:hidden; transition:max-height .34s cubic-bezier(.22,1,.36,1), opacity .26s; }
@@ -105,11 +98,7 @@
 </svg>
 
 <div class="nook" id="nook">
-  <div class="camrow" id="camrow">
-    <span class="cam"></span>
-    <span class="tag">Restash</span>
-    <span class="cam"></span>
-  </div>
+  <div class="notch-spacer"></div>
   <div class="body">
     <div class="pad">
       <div class="lead"><svg class="logo"><use href="#rs"/></svg><b>Add to stash</b></div>

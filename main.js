@@ -1071,7 +1071,8 @@ function expandShelf() {
   // Make the panel focusable so the quick-add inputs accept typing. We can't
   // grab focus during the in-flight drag (it would cancel the drop), so the
   // renderer focuses the field itself on `drop` via shelf.focusWindow().
-  try { shelfWin.setHasShadow(true); } catch {}
+  // No native window shadow — the panel reads as a seamless black extension
+  // of the real hardware notch, not a floating box.
   try { shelfWin.webContents.send('shelf:expanded'); } catch {}
 }
 
@@ -1088,7 +1089,6 @@ function collapseShelf() {
   if (!isNotchDisplay(d)) return;
   shelfExpanded = false;
   shelfWin.setBounds(shelfBoundsFor(d, false));
-  try { shelfWin.setHasShadow(false); } catch {}
 }
 
 // Push stash-list changes to the shelf so its dropdown stays fresh.
