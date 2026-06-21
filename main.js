@@ -1068,6 +1068,18 @@ function expandShelf() {
   if (!isNotchDisplay(d)) return;
   shelfExpanded = true;
   shelfWin.setBounds(shelfBoundsFor(d, true));
+  // Make the panel focusable so the quick-add inputs accept typing. We can't
+  // grab focus during the in-flight drag (it would cancel the drop), so the
+  // renderer focuses the field itself on `drop` via shelf.focusWindow().
+  try { shelfWin.setHasShadow(true); } catch {}
+  try { shelfWin.webContents.send('shelf:expanded'); } catch {}
+}
+
+// Bring the expanded shelf to the foreground so its inputs receive keystrokes.
+// Called from the renderer after a drop completes (not mid-drag).
+function focusShelf() {
+  if (!shelfWin || shelfWin.isDestroyed() || !shelfExpanded) return;
+  try { shelfWin.show(); shelfWin.focus(); } catch {}
 }
 
 function collapseShelf() {
@@ -1076,6 +1088,7 @@ function collapseShelf() {
   if (!isNotchDisplay(d)) return;
   shelfExpanded = false;
   shelfWin.setBounds(shelfBoundsFor(d, false));
+  try { shelfWin.setHasShadow(false); } catch {}
 }
 
 // Push stash-list changes to the shelf so its dropdown stays fresh.
@@ -2446,6 +2459,9 @@ end if`;
   // 400ms grace) or after a save.
   ipcMain.handle('shelf:expand',   () => { expandShelf();   return { ok: true }; });
   ipcMain.handle('shelf:collapse', () => { collapseShelf(); return { ok: true }; });
+  // After a drop, the renderer asks main to bring the panel forward so the
+  // quick-add fields take keystrokes (focusing mid-drag would cancel the drop).
+  ipcMain.handle('shelf:focus',    () => { focusShelf();    return { ok: true }; });
 
   ipcMain.handle('shelf:set-enabled', (_e, enabled) => {
     const s = readSettings();

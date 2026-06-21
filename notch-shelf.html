@@ -25,8 +25,10 @@
     background:var(--black);
     border-radius:0 0 16px 16px;
     overflow:hidden;
-    box-shadow:0 30px 70px -22px rgba(0,0,0,.9);
-    transition:width .34s cubic-bezier(.22,1,.36,1), border-radius .34s;
+    /* No shadow while collapsed — it must read as the physical notch, not a
+       floating pill. The shadow only appears once the panel opens. */
+    box-shadow:none;
+    transition:width .34s cubic-bezier(.22,1,.36,1), border-radius .34s, box-shadow .34s;
   }
   .nook.open{
     width:362px;
@@ -216,6 +218,15 @@
     }, 400);
   });
 
+  // After a drop the panel must take keystrokes so the user can edit the name
+  // and hit Enter / "Stash it". Focusing the field during the in-flight drag is
+  // not possible, so we ask main to foreground the window once the drop lands,
+  // then move caret focus to the most useful field.
+  async function focusAfterDrop(field){
+    try { await window.shelf.focusWindow(); } catch {}
+    setTimeout(() => { try { field.focus(); field.select?.(); } catch {} }, 20);
+  }
+
   nook.addEventListener('drop', async (e) => {
     e.preventDefault();
     nook.classList.remove('hot');
@@ -230,6 +241,7 @@
       nameI.value = first.replace(/\.[^.]+$/, '');
       dropcue.textContent = paths.length === 1 ? `${first} — ready to stash` : `${paths.length} files — ready to stash`;
       updateKindBadge();
+      focusAfterDrop(nameI);
       return;
     }
     const uri = (dt.getData('text/uri-list') || '').trim();
@@ -239,6 +251,7 @@
     q.value = payload;
     nameI.value = '';
     updateKindBadge();
+    focusAfterDrop(nameI);
   });
 
   // ---------- Stash dropdown + "New stash…" inline ----------

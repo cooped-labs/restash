@@ -23,6 +23,9 @@ contextBridge.exposeInMainWorld('shelf', {
   // BrowserWindow as the user enters / leaves the notch.
   expand:   () => ipcRenderer.invoke('shelf:expand'),
   collapse: () => ipcRenderer.invoke('shelf:collapse'),
+  // Pull the expanded panel to the foreground so its inputs receive keystrokes.
+  // Called after a drop completes (focusing mid-drag would cancel the drop).
+  focusWindow: () => ipcRenderer.invoke('shelf:focus'),
   // Esc / post-save collapse — alias for collapse(), kept for the existing
   // renderer keybinding code.
   hide: () => ipcRenderer.invoke('shelf:hide'),
