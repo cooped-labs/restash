@@ -23,14 +23,16 @@
      the shelf must look built into the real notch, not like its own pill. */
   .nook{
     position:absolute; top:0; left:50%; transform:translateX(-50%);
-    /* RES-37: collapsed, the BrowserWindow is sized to the exact physical notch,
-       so the sliver fills the window (100%) and lines up with the real notch.
-       Expanded, the window widens to 380px and .nook.open takes a fixed width
-       centered within it. */
-    width:100%;
-    min-height:30px;     /* collapsed: a black notch-width sliver that blends
-                            into the real notch (no camera strip to give it
-                            height anymore) */
+    /* RES-41: the BrowserWindow (catch-zone) is now LARGER than the physical
+       notch — wider and taller — so a drag toward the top-center reliably
+       hovers it. Collapsed, the .nook paints only a notch-SIZED black sliver
+       (--notch-w × --notch-h, set from the helper's exact geometry) centered at
+       the very top, so visually it still reads as the hardware notch; the rest
+       of the window is transparent and catches the drag. Expanded, the .nook
+       widens to 362px and grows downward into the save shelf. */
+    width:var(--notch-w, 185px);
+    min-height:var(--notch-h, 32px);  /* collapsed: a notch-sized black sliver
+                            that blends into the real notch */
     background:var(--black);
     border:0;
     border-radius:0 0 16px 16px;
@@ -38,10 +40,11 @@
     /* No shadow while collapsed — it must read as the physical notch, not a
        floating pill. The shadow only appears once the panel opens. */
     box-shadow:none;
-    transition:width .34s cubic-bezier(.22,1,.36,1), border-radius .34s, box-shadow .34s;
+    transition:width .34s cubic-bezier(.22,1,.36,1), min-height .34s cubic-bezier(.22,1,.36,1), border-radius .34s, box-shadow .34s;
   }
   .nook.open{
     width:362px;
+    min-height:0;   /* expanded: height is driven by .body unfolding */
     border-radius:0 0 26px 26px;
     box-shadow:0 50px 100px -26px rgba(0,0,0,.95);
   }
@@ -204,16 +207,24 @@
     try { window.shelf.collapse(); } catch {}
   }
 
+  // RES-41: listen on the whole document, not just the small notch sliver.
+  // The collapsed BrowserWindow is a generous transparent catch-zone (wider +
+  // taller than the visible notch), so a drag toward the top-center reliably
+  // fires dragenter/dragover ANYWHERE in the window — which then expands the
+  // shelf via the shelf:expand IPC path.
   ;['dragenter','dragover'].forEach((ev) => {
-    nook.addEventListener(ev, (e) => {
+    document.addEventListener(ev, (e) => {
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
       openNook();
       nook.classList.add('hot');
     });
   });
-  nook.addEventListener('dragleave', (e) => {
-    if (e.relatedTarget && nook.contains(e.relatedTarget)) return;
+  document.addEventListener('dragleave', (e) => {
+    // Only treat as a real leave when the pointer exits the window entirely
+    // (relatedTarget is null when leaving the document). Internal moves between
+    // child elements keep the catch-zone hot.
+    if (e.relatedTarget) return;
     nook.classList.remove('hot');
     collapseTimer = setTimeout(() => {
       if (!saved.classList.contains('show') && !pendingFiles.length && !q.value.trim()) collapse();
@@ -229,7 +240,7 @@
     setTimeout(() => { try { field.focus(); field.select?.(); } catch {} }, 20);
   }
 
-  nook.addEventListener('drop', async (e) => {
+  document.addEventListener('drop', async (e) => {
     e.preventDefault();
     nook.classList.remove('hot');
     openNook();
@@ -352,6 +363,15 @@
     else stashSel.value = 'all';
   }
   window.shelf?.onStashesChanged?.(refreshStashes);
+
+  // RES-41: paint the collapsed black sliver to match the real hardware notch
+  // (its exact width × height from the helper), while the BrowserWindow around
+  // it stays the larger transparent drag catch-zone.
+  window.shelf?.onNotchSize?.((size) => {
+    if (!size) return;
+    if (size.w) document.documentElement.style.setProperty('--notch-w', size.w + 'px');
+    if (size.h) document.documentElement.style.setProperty('--notch-h', size.h + 'px');
+  });
 
   refreshStashes();
   updateKindBadge();

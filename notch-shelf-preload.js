@@ -30,6 +30,9 @@ contextBridge.exposeInMainWorld('shelf', {
   // renderer keybinding code.
   hide: () => ipcRenderer.invoke('shelf:hide'),
 
+  // RES-41: physical notch sliver size { w, h } so the renderer paints the
+  // black sliver to match the real hardware notch inside the larger catch-zone.
+  onNotchSize:       (cb) => ipcRenderer.on('shelf:notch-size', (_e, size) => cb(size)),
   onShown:           (cb) => ipcRenderer.on('shelf:shown', () => cb()),
   onHidden:          (cb) => ipcRenderer.on('shelf:hidden', () => cb()),
   onStashesChanged:  (cb) => ipcRenderer.on('shelf:stashes-changed', () => cb()),

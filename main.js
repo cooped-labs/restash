@@ -965,12 +965,25 @@ function createStashEditWindow(stashId) {
 // drag-to-reveal is the only entry path.
 let shelfWin = null;
 let shelfExpanded = false;
-// Collapsed = the catch-zone parked over the real notch. We size it to the
-// physical notch (read from NSScreen via bin/restash-notch) so the black sliver
-// disappears into the hardware notch. The constants are fallbacks only, used
-// when the helper can't report exact geometry.
-const SHELF_IDLE_WIDTH  = 200;   // fallback collapsed catch-zone width
-const SHELF_IDLE_HEIGHT = 30;    // fallback collapsed catch-zone height
+// Collapsed = the catch-zone parked over the real notch. The catch-zone WINDOW
+// is deliberately BIGGER than the visible notch sliver (RES-41): RES-37 had
+// sized the window to the exact physical notch (~185x32) flush at y=0, a tiny
+// sliver at the very top screen edge that a drag toward the top-center almost
+// never landed on, so the shelf rarely revealed. The window is transparent, so
+// we can make it a generous, reliably-hittable drag target while only drawing
+// the notch-sized black sliver at its top-center (in notch-shelf.html). The
+// drag-hover region therefore extends well beyond the visible notch, but
+// visually it still reads as just the hardware notch.
+//
+//   catch-zone width  = notch width + SHELF_CATCH_PAD_X*2  (≈ notch + 100px)
+//   catch-zone height = SHELF_CATCH_HEIGHT                  (≈ 72px)
+//
+// The fallback constants are used only when the notch helper can't report exact
+// geometry (non-notch display path centers on the display instead).
+const SHELF_CATCH_PAD_X = 50;    // RES-41: px added to EACH side of the notch
+const SHELF_CATCH_HEIGHT = 72;   // RES-41: collapsed catch-zone window height
+const SHELF_IDLE_WIDTH  = 285;   // fallback collapsed catch-zone width (≈185+100)
+const SHELF_IDLE_HEIGHT = SHELF_CATCH_HEIGHT; // fallback collapsed catch-zone height
 const SHELF_OPEN_WIDTH  = 380;
 const SHELF_OPEN_HEIGHT = 320;
 
@@ -1021,14 +1034,20 @@ function shelfBoundsFor(display, expanded) {
   // Center on the *notch* center. With exact notch geometry we anchor on the
   // real notch's midpoint; otherwise we center on the display (the notch is
   // horizontally centered on the built-in panel, so this is a safe baseline).
+  //
+  // RES-41: the COLLAPSED window is a generous drag catch-zone, decoupled from
+  // the exact notch size. It is wider (notch + padding) and taller than the
+  // physical notch so a drag toward the top-center reliably hovers it. The
+  // window is transparent; the renderer only paints a notch-sized black sliver
+  // at the top-center, so visually it still reads as the hardware notch.
   const g = readNotchGeometry();
   let notchCenterX;
   let collapsedW;
   let collapsedH;
   if (g && g.notch && g.display && g.display.x === display.bounds.x) {
     notchCenterX = g.notch.x + g.notch.w / 2;
-    collapsedW = Math.round(g.notch.w);
-    collapsedH = Math.max(SHELF_IDLE_HEIGHT, Math.round(g.notch.h));
+    collapsedW = Math.round(g.notch.w) + SHELF_CATCH_PAD_X * 2;
+    collapsedH = SHELF_CATCH_HEIGHT;
   } else {
     notchCenterX = display.bounds.x + display.bounds.width / 2;
     collapsedW = SHELF_IDLE_WIDTH;
@@ -1042,6 +1061,22 @@ function shelfBoundsFor(display, expanded) {
   const x = Math.round(notchCenterX - w / 2);
   const y = display.bounds.y;
   return { x, y, width: w, height: h };
+}
+
+// RES-41: the renderer needs the *physical* notch sliver size (width × height)
+// so it can paint the black sliver to match the real hardware notch within the
+// larger transparent catch-zone window. Falls back to the visible sliver
+// defaults when exact geometry is unavailable.
+function notchSliverSize() {
+  const g = readNotchGeometry();
+  if (g && g.notch) {
+    return { w: Math.round(g.notch.w), h: Math.max(28, Math.round(g.notch.h)) };
+  }
+  return { w: 185, h: 32 };
+}
+function sendNotchSliverSize() {
+  if (!shelfWin || shelfWin.isDestroyed()) return;
+  try { shelfWin.webContents.send('shelf:notch-size', notchSliverSize()); } catch {}
 }
 
 // RES-37: a borderless window can't legally cover the menu bar / notch unless
@@ -1087,6 +1122,10 @@ function createShelfWindow() {
     skipTaskbar: true,
     alwaysOnTop: true,
     focusable: true,
+    // RES-41: accept the drag/hover even though the window is non-activating
+    // (never focused at idle), so the collapsed catch-zone reliably receives
+    // dragenter/dragover without first needing a click to activate it.
+    acceptFirstMouse: true,
     show: false,
     // RES-37 ROOT CAUSE FIX: without this, macOS constrains the window frame so
     // it cannot overlap the menu bar — it shoves the frame down to y=workArea.y
@@ -1107,6 +1146,9 @@ function createShelfWindow() {
   // across spaces but hidden in fullscreen.
   pinShelfAboveMenuBar();
   shelfWin.loadFile('notch-shelf.html');
+  // RES-41: tell the renderer the physical notch sliver size so it paints the
+  // black sliver to match the real hardware notch inside the larger catch-zone.
+  shelfWin.webContents.on('did-finish-load', () => sendNotchSliverSize());
   shelfWin.on('closed', () => { shelfWin = null; });
   return shelfWin;
 }
