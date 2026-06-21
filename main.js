@@ -116,6 +116,7 @@ function isOwnerBuild() {
 
 const DEFAULT_HOTKEY    = 'Command+Shift+V';
 const DEFAULT_QR_HOTKEY = 'Control+Shift+F';
+const DEFAULT_STASH_HOTKEY = 'Control+Shift+S';
 
 function readStore() {
   try {
@@ -137,7 +138,7 @@ const FREE_LIMITS = { stashes: 1, pins: 9, items: 15, fileBytes: 100 * 1024 * 10
 
 function readSettings() {
   const defaults = {
-    hotkey: DEFAULT_HOTKEY, qrHotkey: DEFAULT_QR_HOTKEY, theme: 'light',
+    hotkey: DEFAULT_HOTKEY, qrHotkey: DEFAULT_QR_HOTKEY, stashHotkey: DEFAULT_STASH_HOTKEY, theme: 'light',
     onboarded: false, stashes: [], tier: 'free',
     license: null,     // { key, instanceId, variantId, tier, status, expiresAt } once activated
     trialStartedAt: 0, // 0 = not yet stamped; ensureTrialStamp() sets it on first run
@@ -145,6 +146,8 @@ function readSettings() {
     menuSize: null,    // {width,height} — user-resized list popover (null = default)
     gridSize: null,    // {width,height} — user-resized cursor numpad (null = default)
     clipboardHistoryMax: 3, // Clipboard memory: # of recent copies to auto-capture (0 = Off)
+    showNotchShelf: true,    // RES-13: notch drop / quick-add shelf (⌃⇧S)
+    lastUsedStashId: 'all',  // RES-13: shelf remembers last destination
   };
   try {
     if (!fs.existsSync(SETTINGS_FILE)) return defaults;
@@ -345,24 +348,29 @@ function resolveEntitlement() {
 
 let currentHotkey   = DEFAULT_HOTKEY;      // popover summon
 let currentQRHotkey = DEFAULT_QR_HOTKEY;   // QR decoder
+let currentStashHotkey = DEFAULT_STASH_HOTKEY; // RES-13 notch shelf summon
 
 // Forward references — these get assigned inside app.whenReady() once the
 // real implementations are defined. registerHotkeySlot is called before then
 // (at module load), so we wrap them in a thunk that resolves at call time.
 let qrTrigger = null;
+let stashShelfTrigger = null; // RES-13: summons the notch quick-add shelf
 
-// Generic per-slot registration. Each slot ('summon' | 'qr') has its own
-// accelerator + handler. Re-registering a slot unregisters the previous one,
-// preserves the other slot, and rolls back if the new combo is in use.
+// Generic per-slot registration. Each slot ('summon' | 'qr' | 'stash') has its
+// own accelerator + handler. Re-registering a slot unregisters the previous
+// one, preserves the other slots, and rolls back if the new combo is in use.
 function registerHotkeySlot(slot, accel) {
-  const handler = slot === 'qr'
-    ? () => { if (typeof qrTrigger === 'function') qrTrigger(); }
-    : togglePopoverAtCursor;
-  const prev = slot === 'qr' ? currentQRHotkey : currentHotkey;
+  let handler;
+  if (slot === 'qr') handler = () => { if (typeof qrTrigger === 'function') qrTrigger(); };
+  else if (slot === 'stash') handler = () => { if (typeof stashShelfTrigger === 'function') stashShelfTrigger(); };
+  else handler = togglePopoverAtCursor;
+  const prev = slot === 'qr' ? currentQRHotkey : slot === 'stash' ? currentStashHotkey : currentHotkey;
   if (prev) globalShortcut.unregister(prev);
   const ok = accel ? globalShortcut.register(accel, handler) : false;
   if (ok) {
-    if (slot === 'qr') currentQRHotkey = accel; else currentHotkey = accel;
+    if (slot === 'qr') currentQRHotkey = accel;
+    else if (slot === 'stash') currentStashHotkey = accel;
+    else currentHotkey = accel;
     return { ok: true, hotkey: accel };
   }
   // Rollback to the prior accel for this slot so we don't lose it entirely.
@@ -892,6 +900,7 @@ function createTutorialWindow() {
     const s = readSettings();
     registerHotkeySlot('summon', s.hotkey || DEFAULT_HOTKEY);
     registerHotkeySlot('qr', s.qrHotkey || DEFAULT_QR_HOTKEY);
+    registerHotkeySlot('stash', s.stashHotkey || DEFAULT_STASH_HOTKEY);
   });
   return tutorialWin;
 }
@@ -943,6 +952,151 @@ function createStashEditWindow(stashId) {
     }
   });
   return stashEditWin;
+}
+
+// ============================================================
+// RES-13: Notch drop / quick-add shelf.
+// A transparent always-on-top BrowserWindow parked at top-center of the
+// active display, wrapping the notch on notch-bearing Macs. Summoned by
+// the global hotkey (default ⌃⇧S) or — Phase 2 — by a drag-near event.
+// The body renders three intake paths: drag-zone, quick-add input + Name
+// + stash dropdown + Pin toggle + Stash it button, in one continuous
+// "nook" panel that visually flows from the camera strip.
+// ============================================================
+let shelfWin = null;
+const SHELF_WIDTH  = 340;
+const SHELF_HEIGHT = 280;
+
+function isNotchDisplay(display) {
+  // Notch macs have a taller-than-standard menu-bar inset. The standard menu
+  // bar is ~24pt; on notch displays it's ~37pt+. workArea.y is offset by that
+  // inset, so `(workArea.y - bounds.y) > 30` reliably tags a notch.
+  return (display.workArea.y - display.bounds.y) > 30;
+}
+
+function activeShelfDisplay() {
+  // Prefer the display the user is currently looking at: the focused window's
+  // display; fall back to the cursor's display; final fallback is the primary.
+  try {
+    const focused = BrowserWindow.getFocusedWindow();
+    if (focused && !focused.isDestroyed() && focused !== shelfWin) {
+      const b = focused.getBounds();
+      return screen.getDisplayMatching(b);
+    }
+  } catch {}
+  try {
+    return screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  } catch {}
+  return screen.getPrimaryDisplay();
+}
+
+function positionShelfOnActiveDisplay() {
+  if (!shelfWin || shelfWin.isDestroyed()) return;
+  const d = activeShelfDisplay();
+  // Center horizontally on the display; pin to the top so the panel wraps the
+  // notch (the camera strip overlays the menu-bar y-band on notch Macs).
+  const x = Math.round(d.bounds.x + (d.bounds.width - SHELF_WIDTH) / 2);
+  const y = isNotchDisplay(d)
+    ? d.bounds.y                       // wraparound: top edge at display top
+    : d.workArea.y + 6;                // non-notch: just below standard menu bar
+  shelfWin.setBounds({ x, y, width: SHELF_WIDTH, height: SHELF_HEIGHT });
+}
+
+function createShelfWindow() {
+  if (shelfWin && !shelfWin.isDestroyed()) return shelfWin;
+  shelfWin = new BrowserWindow({
+    width: SHELF_WIDTH,
+    height: SHELF_HEIGHT,
+    x: 0, y: 0,
+    transparent: true,
+    frame: false,
+    hasShadow: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: true,
+    show: false,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'notch-shelf-preload.js'),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+    },
+  });
+  // Above the menu bar; visible across spaces but not inside fullscreen apps
+  // (the notch is hidden in fullscreen by the OS anyway).
+  shelfWin.setAlwaysOnTop(true, 'pop-up-menu');
+  shelfWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
+  shelfWin.loadFile('notch-shelf.html');
+  shelfWin.on('blur', () => {
+    // Click-anywhere-else dismisses the shelf, matching the popover.
+    if (shelfWin && shelfWin.isVisible()) shelfWin.hide();
+  });
+  shelfWin.on('hide', () => {
+    try { shelfWin.webContents.send('shelf:hidden'); } catch {}
+  });
+  shelfWin.on('closed', () => { shelfWin = null; });
+  return shelfWin;
+}
+
+function summonShelf({ withFocus = true } = {}) {
+  if (!readSettings().showNotchShelf) return;
+  if (!shelfWin || shelfWin.isDestroyed()) createShelfWindow();
+  positionShelfOnActiveDisplay();
+  if (shelfWin.isVisible()) {
+    if (withFocus) shelfWin.focus();
+    try { shelfWin.webContents.send('shelf:shown'); } catch {}
+    return;
+  }
+  if (withFocus) shelfWin.show();
+  else shelfWin.showInactive();
+  try { shelfWin.webContents.send('shelf:shown'); } catch {}
+}
+
+function dismissShelf() {
+  if (shelfWin && shelfWin.isVisible()) shelfWin.hide();
+}
+
+// Push stash-list changes to the shelf so its dropdown stays fresh.
+function notifyShelfStashesChanged() {
+  if (shelfWin && !shelfWin.isDestroyed()) {
+    try { shelfWin.webContents.send('shelf:stashes-changed'); } catch {}
+  }
+}
+
+// Sort + shape stashes for the shelf dropdown. The synthetic "All" pseudo-
+// stash is always first. The rest are user stashes, sorted by lastUsedAt
+// desc when present (falling back to createdAt).
+function shelfStashList() {
+  const s = readSettings();
+  const all = { id: 'all', name: 'All' };
+  const user = (s.stashes || []).slice().sort((a, b) => {
+    const av = a.lastUsedAt || a.createdAt || 0;
+    const bv = b.lastUsedAt || b.createdAt || 0;
+    return bv - av;
+  }).map((x) => ({ id: x.id, name: x.name }));
+  return [all, ...user];
+}
+
+function newItemId() {
+  return 'i_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
+
+// Compute the next free pin slot for a given stash id. Matches renderer
+// semantics (`nextPinOrder`): max existing order + 1, or 0 if none. Returns
+// -1 when all 9 slots are taken.
+function shelfNextPinSlot(items, stashId) {
+  const used = items
+    .filter((it) => it && it.pins && Object.prototype.hasOwnProperty.call(it.pins, stashId))
+    .map((it) => it.pins[stashId])
+    .filter((v) => typeof v === 'number');
+  const next = used.length ? Math.max(...used) + 1 : 0;
+  return next > 8 ? -1 : next;
 }
 
 async function togglePopoverAtCursor() {
@@ -1809,6 +1963,27 @@ end if`;
     console.warn(`[Restash] QR hotkey couldn't be registered. Use the tray menu's "Decode QR…" item.`);
   }
 
+  // RES-13: Notch drop / quick-add shelf hotkey (default ⌃⇧S).
+  stashShelfTrigger = () => summonShelf({ withFocus: true });
+  let shelfAttempt = registerHotkeySlot('stash', settings.stashHotkey || DEFAULT_STASH_HOTKEY);
+  if (!shelfAttempt.ok && settings.stashHotkey !== DEFAULT_STASH_HOTKEY) {
+    console.warn(`[Restash] Saved stash hotkey ${settings.stashHotkey} unavailable — falling back to ${DEFAULT_STASH_HOTKEY}.`);
+    shelfAttempt = registerHotkeySlot('stash', DEFAULT_STASH_HOTKEY);
+  }
+  if (!shelfAttempt.ok) {
+    console.warn(`[Restash] Notch shelf hotkey couldn't be registered. Change it in Settings to free up the combo.`);
+  }
+  // Follow the user's active display as windows move / displays change.
+  try {
+    screen.on('display-added', positionShelfOnActiveDisplay);
+    screen.on('display-removed', positionShelfOnActiveDisplay);
+    screen.on('display-metrics-changed', positionShelfOnActiveDisplay);
+    app.on('browser-window-focus', () => {
+      // Only reposition while the shelf is visible — no point otherwise.
+      if (shelfWin && shelfWin.isVisible()) positionShelfOnActiveDisplay();
+    });
+  } catch {}
+
   // Settings IPC
   ipcMain.handle('settings:load', () => ({
     ...readSettings(),
@@ -2023,6 +2198,7 @@ end if`;
     const stash = { id, name: clean, createdAt: Date.now(), pinnedItemIds: [] };
     s.stashes.push(stash);
     writeSettings(s);
+    notifyShelfStashesChanged();
     return { ok: true, stash };
   });
   ipcMain.handle('stash:rename', (_e, { id, name }) => {
@@ -2034,6 +2210,7 @@ end if`;
     if (!target) return { ok: false, reason: 'not-found' };
     target.name = clean;
     writeSettings(s);
+    notifyShelfStashesChanged();
     return { ok: true };
   });
   ipcMain.handle('stash:delete', (_e, id) => {
@@ -2041,6 +2218,7 @@ end if`;
     s.stashes = (s.stashes || []).filter((x) => x.id !== id);
     writeSettings(s);
     // NOTE: items still reference the deleted id; renderer cleans up on save.
+    notifyShelfStashesChanged();
     return { ok: true };
   });
   ipcMain.handle('stashEdit:open', (_e, stashId) => {
@@ -2085,6 +2263,204 @@ end if`;
       writeSettings(s);
     }
     return result;
+  });
+
+  // ── RES-13: Notch shelf IPC ─────────────────────────────────────────────
+  ipcMain.handle('shelf:list-stashes', () => shelfStashList());
+
+  ipcMain.handle('shelf:get-last-used-stash', () => {
+    const s = readSettings();
+    return s.lastUsedStashId || 'all';
+  });
+
+  ipcMain.handle('shelf:create-stash', (_e, name) => {
+    const clean = String(name || '').trim();
+    if (!clean) return { ok: false, reason: 'empty-name' };
+    const s = readSettings();
+    s.stashes = s.stashes || [];
+    if (s.stashes.some((x) => x.name.toLowerCase() === clean.toLowerCase())) {
+      return { ok: false, reason: 'duplicate-name' };
+    }
+    const id = 's_' + Math.random().toString(36).slice(2, 10);
+    const stash = { id, name: clean, createdAt: Date.now(), pinnedItemIds: [] };
+    s.stashes.push(stash);
+    writeSettings(s);
+    // Both surfaces stay in sync.
+    if (win && !win.isDestroyed()) win.webContents.send('stashes:changed');
+    notifyShelfStashesChanged();
+    return { ok: true, stash: { id: stash.id, name: stash.name } };
+  });
+
+  ipcMain.handle('shelf:hide', () => { dismissShelf(); return { ok: true }; });
+
+  // Create an item from the quick-add path. Honors the Pin toggle by
+  // computing the next free pin slot for the destination stash; if full,
+  // saves the item un-pinned and reports it back so the saved card can
+  // adjust its copy.
+  ipcMain.handle('shelf:add-from-quick', (_e, payload = {}) => {
+    const kind  = String(payload.kind || 'text');
+    const value = String(payload.value || '').trim();
+    if (!value) return { ok: false, reason: 'empty-value' };
+    const label = String(payload.label || value).slice(0, 200);
+    const tag   = payload.tag ? String(payload.tag) : undefined;
+    const rawStash = String(payload.stashId || 'all');
+    const wantPin = !!payload.pinned;
+
+    const settings = readSettings();
+    const validStashIds = new Set(['all', ...(settings.stashes || []).map((x) => x.id)]);
+    const stashId = validStashIds.has(rawStash) ? rawStash : 'all';
+    const stashIds = stashId === 'all' ? [] : [stashId];
+
+    const items = readStore();
+    let pinIndex = -1;
+    if (wantPin) {
+      pinIndex = shelfNextPinSlot(items, stashId);
+    }
+    const pins = (wantPin && pinIndex >= 0) ? { [stashId]: pinIndex } : {};
+
+    const item = {
+      id: newItemId(),
+      kind, label, value,
+      ...(tag ? { tag } : {}),
+      stashIds,
+      createdAt: Date.now(),
+      lastUsedAt: null,
+      pins,
+    };
+    items.push(item);
+    writeStore(items);
+
+    // Remember last-used stash so the next summon defaults sensibly.
+    settings.lastUsedStashId = stashId;
+    // Bump stash recency too (so the dropdown sort matches user intent).
+    if (stashId !== 'all') {
+      const st = (settings.stashes || []).find((x) => x.id === stashId);
+      if (st) st.lastUsedAt = Date.now();
+    }
+    writeSettings(settings);
+
+    if (win && !win.isDestroyed()) {
+      // Refresh the popover so the new item is visible if it's open.
+      try { win.webContents.send('stashes:changed'); } catch {}
+    }
+
+    return { ok: true, id: item.id, pinned: pinIndex >= 0, pinSlotFull: wantPin && pinIndex < 0 };
+  });
+
+  // Undo the most recent shelf add. Cleanly drops both the item and its pin.
+  ipcMain.handle('shelf:undo-add', (_e, itemId) => {
+    const id = String(itemId || '');
+    if (!id) return { ok: false };
+    const items = readStore();
+    const idx = items.findIndex((it) => it.id === id);
+    if (idx < 0) return { ok: false };
+    items.splice(idx, 1);
+    writeStore(items);
+    if (win && !win.isDestroyed()) {
+      try { win.webContents.send('stashes:changed'); } catch {}
+    }
+    return { ok: true };
+  });
+
+  // Drop-zone ingest: copy each path into the data dir and create file items.
+  // Reuses the same per-file size/copy logic as the main file:add handler.
+  ipcMain.handle('shelf:ingest-files', (_e, { paths, stashId, pinned } = {}) => {
+    const list = Array.isArray(paths) ? paths.filter((p) => typeof p === 'string' && p) : [];
+    if (!list.length) return { ok: false, reason: 'empty' };
+    const settings = readSettings();
+    const validStashIds = new Set(['all', ...(settings.stashes || []).map((x) => x.id)]);
+    const dest = validStashIds.has(String(stashId || '')) ? String(stashId) : 'all';
+    const stashIds = dest === 'all' ? [] : [dest];
+
+    const items = readStore();
+    const results = [];
+
+    // Local copy of the file:add logic so we don't need to round-trip the
+    // existing handler per file. (Shelf ingest happens in batch.)
+    const FILES_DIR = path.join(app.getPath('userData'), 'files');
+    const MAX_FILE_BYTES = 100 * 1024 * 1024;
+    if (!fs.existsSync(FILES_DIR)) fs.mkdirSync(FILES_DIR, { recursive: true });
+
+    for (const srcPath of list) {
+      try {
+        const stat = fs.statSync(srcPath);
+        if (stat.size > MAX_FILE_BYTES) {
+          results.push({ ok: false, reason: 'too-large', originalName: path.basename(srcPath), size: stat.size, limit: MAX_FILE_BYTES });
+          continue;
+        }
+        const ext = path.extname(srcPath);
+        const base = path.basename(srcPath, ext);
+        const safeBase = base.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 60);
+        const storedName = `${Date.now().toString(36)}_${safeBase}${ext}`;
+        const destPath = path.join(FILES_DIR, storedName);
+        fs.copyFileSync(srcPath, destPath);
+        const wantPin = !!pinned;
+        const pinIndex = wantPin ? shelfNextPinSlot(items, dest) : -1;
+        const pins = (wantPin && pinIndex >= 0) ? { [dest]: pinIndex } : {};
+        const fileMeta = { storedPath: destPath, storedName, originalName: path.basename(srcPath), size: stat.size };
+        const item = {
+          id: newItemId(),
+          kind: 'file',
+          label: base.slice(0, 80) || path.basename(srcPath),
+          value: destPath,
+          stashIds,
+          files: [fileMeta],
+          createdAt: Date.now(),
+          lastUsedAt: null,
+          pins,
+        };
+        items.push(item);
+        results.push({ ok: true, id: item.id, originalName: path.basename(srcPath), pinned: pinIndex >= 0 });
+      } catch (err) {
+        results.push({ ok: false, reason: 'copy-failed', originalName: path.basename(srcPath || ''), error: err && err.message });
+      }
+    }
+
+    writeStore(items);
+    settings.lastUsedStashId = dest;
+    if (dest !== 'all') {
+      const st = (settings.stashes || []).find((x) => x.id === dest);
+      if (st) st.lastUsedAt = Date.now();
+    }
+    writeSettings(settings);
+    if (win && !win.isDestroyed()) {
+      try { win.webContents.send('stashes:changed'); } catch {}
+    }
+    return { ok: true, results };
+  });
+
+  // Notch shelf hotkey rebind (mirrors hotkey:set / qrHotkey:set patterns).
+  ipcMain.handle('stashHotkey:set', (_e, accel) => {
+    const result = registerHotkeySlot('stash', String(accel || '').trim());
+    if (result.ok) {
+      const s = readSettings();
+      s.stashHotkey = result.hotkey;
+      writeSettings(s);
+      if (shelfWin && !shelfWin.isDestroyed()) {
+        try { shelfWin.webContents.send('shelf:hotkey-changed', result.hotkey); } catch {}
+      }
+    }
+    return result;
+  });
+  ipcMain.handle('stashHotkey:reset', () => {
+    const result = registerHotkeySlot('stash', DEFAULT_STASH_HOTKEY);
+    if (result.ok) {
+      const s = readSettings();
+      s.stashHotkey = DEFAULT_STASH_HOTKEY;
+      writeSettings(s);
+      if (shelfWin && !shelfWin.isDestroyed()) {
+        try { shelfWin.webContents.send('shelf:hotkey-changed', DEFAULT_STASH_HOTKEY); } catch {}
+      }
+    }
+    return result;
+  });
+
+  ipcMain.handle('shelf:set-enabled', (_e, enabled) => {
+    const s = readSettings();
+    s.showNotchShelf = !!enabled;
+    writeSettings(s);
+    if (!s.showNotchShelf && shelfWin && shelfWin.isVisible()) shelfWin.hide();
+    return { ok: true, showNotchShelf: s.showNotchShelf };
   });
   // --- Stubs for menu-bar dropdown actions ---
   ipcMain.handle('app:check-updates', async () => {
