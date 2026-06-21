@@ -197,7 +197,14 @@ positioning, share, and accessibility/capabilities.
   - **PRIMARY** — `org.freedesktop.portal.RemoteDesktop` + bundled libei. First
     paste opens a RemoteDesktop session; the compositor shows its OWN one-time
     consent dialog (a PERMISSION). The `restore_token` is persisted to reconnect
-    without re-prompting.
+    without re-prompting **when** libportal exposes the persist-mode session
+    API (`xdp_portal_create_remote_desktop_session_full`, libportal >= 0.8).
+    The build script feature-detects this with `pkg-config --atleast-version=0.8
+    libportal` and gates the persist path behind `-DHAVE_PORTAL_PERSIST`. On
+    older libportal (e.g. 0.7.1 on the current ubuntu-latest CI runner) the
+    base `xdp_portal_create_remote_desktop_session` is used instead — Ctrl+V
+    works identically, the only difference is the consent dialog re-prompts
+    each launch.
   - **FALLBACK** — `/dev/uinput` directly (the helper IS the daemon, spawned on
     demand — no `ydotoold`). `/dev/uinput` access is the one-time OS permission
     (a udev rule via the OS's pkexec/polkit dialog). `--check-uinput` detects

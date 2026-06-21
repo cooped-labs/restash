@@ -165,11 +165,13 @@ static int x11_paste(uint32_t target) {
         struct timespec ts = { 0, 80 * 1000 * 1000 };
         nanosleep(&ts, NULL);
     }
-    /* press ctrl, press v, release v, release ctrl */
-    xcb_test_fake_input(c, XCB_KEY_PRESS,   37, XCB_CURRENT_TIME, XCB_NONE, 0, 0);
-    xcb_test_fake_input(c, XCB_KEY_PRESS,   55, XCB_CURRENT_TIME, XCB_NONE, 0, 0);
-    xcb_test_fake_input(c, XCB_KEY_RELEASE, 55, XCB_CURRENT_TIME, XCB_NONE, 0, 0);
-    xcb_test_fake_input(c, XCB_KEY_RELEASE, 37, XCB_CURRENT_TIME, XCB_NONE, 0, 0);
+    /* press ctrl, press v, release v, release ctrl.
+     * 8th arg is deviceid (0 == XCB core keyboard); current xcb-xtest header
+     * requires it — CI on ubuntu-latest failed without it. See RES-31. */
+    xcb_test_fake_input(c, XCB_KEY_PRESS,   37, XCB_CURRENT_TIME, XCB_NONE, 0, 0, 0);
+    xcb_test_fake_input(c, XCB_KEY_PRESS,   55, XCB_CURRENT_TIME, XCB_NONE, 0, 0, 0);
+    xcb_test_fake_input(c, XCB_KEY_RELEASE, 55, XCB_CURRENT_TIME, XCB_NONE, 0, 0, 0);
+    xcb_test_fake_input(c, XCB_KEY_RELEASE, 37, XCB_CURRENT_TIME, XCB_NONE, 0, 0, 0);
     xcb_flush(c);
     struct timespec ts2 = { 0, 50 * 1000 * 1000 };
     nanosleep(&ts2, NULL);

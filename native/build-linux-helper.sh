@@ -31,6 +31,18 @@ if pkg-config --exists libei-1.0 2>/dev/null && pkg-config --exists libportal 2>
   CFLAGS="$CFLAGS -DHAVE_LIBEI $(pkg-config --cflags libei-1.0 libportal)"
   LIBS="$LIBS $(pkg-config --libs libei-1.0 libportal)"
   SRCS+=("$SRC_EI")
+  # libportal >= 0.8 exports xdp_portal_create_remote_desktop_session_full and
+  # the XDP_PERSIST_MODE_* enum — the persist path in wayland_ei.c is gated on
+  # -DHAVE_PORTAL_PERSIST. On older libportal (e.g. 0.7.1 on ubuntu-latest CI)
+  # those symbols are absent, so we leave the define off and fall back to the
+  # base xdp_portal_create_remote_desktop_session() call. Same Ctrl+V behavior,
+  # the only difference is the compositor consent dialog re-prompts each launch.
+  if pkg-config --atleast-version=0.8 libportal 2>/dev/null; then
+    echo "libportal >= 0.8 — enabling persist path with -DHAVE_PORTAL_PERSIST"
+    CFLAGS="$CFLAGS -DHAVE_PORTAL_PERSIST"
+  else
+    echo "libportal < 0.8 — persist path disabled (consent dialog will re-prompt)"
+  fi
 else
   echo "libei or libportal missing — X11 + uinput-only build (portal path disabled)"
 fi

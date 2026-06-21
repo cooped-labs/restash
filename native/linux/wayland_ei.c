@@ -14,9 +14,18 @@
  * inside the AppImage. RPATH ($ORIGIN/../lib) + LD_LIBRARY_PATH from
  * platform/linux.js resolve them from the bundled copy, never the host.
  *
- * Persistence: the portal's restore_token is written to
- * $XDG_CONFIG_HOME/restash/wayland-portal-token (or ~/.config/restash/...) so
- * the compositor's one-time consent dialog is NOT shown again on the next run.
+ * Persistence (consent re-prompt avoidance):
+ *   The portal's restore_token is written to
+ *   $XDG_CONFIG_HOME/restash/wayland-portal-token (or ~/.config/restash/...) so
+ *   the compositor's one-time consent dialog is NOT shown again on the next run.
+ *   This needs libportal's persist-mode variant
+ *   xdp_portal_create_remote_desktop_session_full(), which only exists in
+ *   libportal >= 0.8. On older libportal (e.g. 0.7.1, shipped on the current
+ *   ubuntu-latest CI runner) that symbol is ABSENT, so the build gates the
+ *   persist path behind -DHAVE_PORTAL_PERSIST (set by build-linux-helper.sh when
+ *   `pkg-config --atleast-version=0.8 libportal` succeeds). Without it we use the
+ *   base xdp_portal_create_remote_desktop_session() and the consent dialog
+ *   re-prompts each launch — still zero-install (a PERMISSION, not a download).
  *
  * Return value contract (matches the extern in restash-linux-helper.c):
  *   0  — Ctrl+V successfully injected via libei
@@ -39,7 +48,10 @@
 #include <libportal/portal.h>
 #include <libei.h>
 
-/* ---- restore-token persistence ------------------------------------------ */
+/* ---- restore-token persistence ------------------------------------------
+ * Only compiled when libportal >= 0.8 exposes the persist-mode session API
+ * (xdp_portal_create_remote_desktop_session_full). See header note above. */
+#ifdef HAVE_PORTAL_PERSIST
 
 /* Build the on-disk path for the portal restore token. Returns malloc'd. */
 static char *token_path(void) {
@@ -86,13 +98,15 @@ static void save_token(const char *tok) {
     free(p);
 }
 
+#endif /* HAVE_PORTAL_PERSIST */
+
 /* ---- async portal plumbing ---------------------------------------------- */
 
 typedef struct {
     GMainLoop  *loop;
     XdpPortal  *portal;
     XdpSession *session;
-    char       *restore_in;   /* may be NULL on first run */
+    char       *restore_in;   /* may be NULL on first run / when persist absent */
     int         eis_fd;       /* -1 until obtained */
     int         err_code;     /* 0 == ok */
 } ctx_t;
@@ -110,9 +124,14 @@ static void on_session_started(GObject *src, GAsyncResult *res, gpointer ud) {
         return;
     }
 
-    /* Save the (possibly refreshed) restore token for next time. */
-    const char *tok = xdp_session_get_restore_token(c->session);
+#ifdef HAVE_PORTAL_PERSIST
+    /* Save the (possibly refreshed) restore token for next time. The token is a
+     * newly-allocated, caller-owned string (xdp_session_get_restore_token
+     * returns char*, NOT const char*), so free it after persisting. */
+    char *tok = xdp_session_get_restore_token(c->session);
     if (tok && *tok) save_token(tok);
+    g_free(tok);
+#endif
 
     c->eis_fd = xdp_session_connect_to_eis(c->session, &err);
     if (c->eis_fd < 0) {
@@ -167,15 +186,16 @@ static struct ei_device *await_keyboard(struct ei *ei, int timeout_ms) {
                 case EI_EVENT_CONNECT:
                     break;
                 case EI_EVENT_SEAT_ADDED: {
-                    /* libei 1.x uses interface-name strings, not the older
-                     * EI_DEVICE_CAP_* enum. NULL-terminated variadic list. */
+                    /* The libei C API takes enum ei_device_capability values
+                     * (EI_DEVICE_CAP_*), NOT the wire interface-name strings.
+                     * Variadic list is sentinel(NULL)-terminated; keyboard only. */
                     struct ei_seat *s = ei_event_get_seat(e);
-                    if (s) ei_seat_bind_capabilities(s, "ei_keyboard", NULL);
+                    if (s) ei_seat_bind_capabilities(s, EI_DEVICE_CAP_KEYBOARD, NULL);
                     break;
                 }
                 case EI_EVENT_DEVICE_ADDED: {
                     struct ei_device *d = ei_event_get_device(e);
-                    if (d && !kbd && ei_device_has_capability(d, "ei_keyboard")) {
+                    if (d && !kbd && ei_device_has_capability(d, EI_DEVICE_CAP_KEYBOARD)) {
                         kbd = ei_device_ref(d);
                     }
                     break;
@@ -214,6 +234,16 @@ static int ei_send_ctrl_v(int fd) {
     struct ei_device *kbd = await_keyboard(ei, 2500);
     if (!kbd) { ei_unref(ei); return 12; }
 
+    /* libei REQUIRES the emulation transaction to be opened before any input
+     * events: ei_device_start_emulating() ... events ... ei_device_stop_emulating().
+     * Emitting key events outside this bracket is a client bug and the EIS
+     * server will not deliver them. `sequence` is a per-device counter that must
+     * strictly increase across transactions; we only do one transaction here.
+     * Keycodes are evdev scan codes (linux/input-event-codes.h) — NOT XKB
+     * keycodes, so no +8 offset: KEY_LEFTCTRL / KEY_V are passed directly. */
+    static uint32_t sequence = 0;
+    ei_device_start_emulating(kbd, ++sequence);
+
     /* Ctrl down, V down, V up, Ctrl up — frame each with monotonic-us stamps. */
     uint64_t t = monotonic_us();
     ei_device_keyboard_key(kbd, KEY_LEFTCTRL, 1);
@@ -224,6 +254,8 @@ static int ei_send_ctrl_v(int fd) {
     ei_device_frame(kbd, t + 6000);
     ei_device_keyboard_key(kbd, KEY_LEFTCTRL, 0);
     ei_device_frame(kbd, t + 7500);
+
+    ei_device_stop_emulating(kbd);
 
     /* Drain a beat so the compositor consumes the keystrokes before we tear
      * the session down — otherwise the target app may miss the V keypress. */
@@ -252,8 +284,11 @@ int restash_libei_ctrl_v(void) {
     if (!c.portal) return 1;
     c.loop = g_main_loop_new(NULL, FALSE);
     if (!c.loop) { g_object_unref(c.portal); return 2; }
-    c.restore_in = load_token();
 
+#ifdef HAVE_PORTAL_PERSIST
+    /* libportal >= 0.8: request a PERSISTENT session and feed back a saved
+     * restore token so the compositor's consent dialog is shown only once. */
+    c.restore_in = load_token();
     xdp_portal_create_remote_desktop_session_full(
         c.portal,
         XDP_DEVICE_KEYBOARD,
@@ -266,6 +301,22 @@ int restash_libei_ctrl_v(void) {
         on_session_created,
         &c
     );
+#else
+    /* libportal < 0.8 (e.g. 0.7.1 on the current ubuntu-latest runner): the
+     * persist-mode variant is not exported, so use the base API. Functionally
+     * identical for injecting Ctrl+V; the only difference is the consent dialog
+     * re-prompts each launch (still a PERMISSION, never a download). */
+    xdp_portal_create_remote_desktop_session(
+        c.portal,
+        XDP_DEVICE_KEYBOARD,
+        XDP_OUTPUT_NONE,
+        XDP_REMOTE_DESKTOP_FLAG_NONE,
+        XDP_CURSOR_MODE_HIDDEN,
+        NULL,
+        on_session_created,
+        &c
+    );
+#endif
 
     g_main_loop_run(c.loop);
 
