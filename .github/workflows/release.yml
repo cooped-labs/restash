@@ -1,0 +1,118 @@
+# Restash release matrix — 3 runners, one per OS.
+#
+# Each runner compiles ITS OWN native helper at build time and bundles every
+# native artifact so the published installer is fully self-contained (no
+# postinstall downloads, no runtime fetch of binaries):
+#   • macos-latest   — DMG (existing Swift helpers already committed).
+#   • windows-latest — compiles + (later) signs restash-win-helper.exe, builds
+#                      NSIS + portable. The Windows helper & signing REQUIRE a
+#                      Windows runner.
+#   • ubuntu-22.04   — compiles restash-linux-helper, vendors libei/libportal
+#                      .so into vendor/linux-lib, builds AppImage + deb. The
+#                      Linux helper REQUIRES a Linux runner.
+#
+# Windows ships unsigned initially (documented SmartScreen "Run anyway") until an
+# OV/EV cert is procured. Linux AppImage/deb are not signed (checksums only).
+
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+          - os: windows-latest
+            platform: win
+          - os: ubuntu-22.04
+            platform: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Zero-install policy lint
+        run: npm run lint:noinstall
+
+      - name: Generate brand/icon assets
+        run: npm run brand
+
+      # --- Windows: compile the bundled helper exe (MSVC) ---
+      - name: Build Windows helper
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          Import-Module (Join-Path $vs "Common7\Tools\Microsoft.VisualStudio.DevShell.dll")
+          Enter-VsDevShell -VsInstallPath $vs -DevCmdArguments '-arch=x64 -no_logo'
+          pwsh native/build-win-helper.ps1
+
+      # --- Linux: compile the bundled helper + vendor full .so closure ---
+      - name: Build Linux helper + bundle .so closure
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          # libei-dev + libportal-dev enable the Wayland RemoteDesktop path.
+          # patchelf is required by scripts/bundle-linux-libs.sh to rewrite RPATH
+          # on each copied .so so transitive deps resolve from the bundle.
+          sudo apt-get install -y \
+            libxcb1-dev libxcb-xtest0-dev libxcb-util-dev \
+            libei-dev libportal-dev patchelf \
+            || sudo apt-get install -y libxcb1-dev libxcb-xtest0-dev patchelf
+          # build-linux-helper.sh now invokes scripts/bundle-linux-libs.sh
+          # internally so the .so closure is populated as part of the build.
+          bash native/build-linux-helper.sh
+          # Zero-install verification: log helper NEEDED + RPATH for the release
+          # build log. The bundler already exits non-zero on unresolved deps.
+          echo "--- helper NEEDED / RPATH ---"
+          (readelf -d bin/restash-linux-helper | grep -E 'NEEDED|RPATH|RUNPATH') || true
+          # Re-run the zero-install lint now that bin/restash-linux-helper
+          # exists — this enforces the "helper present => vendor/linux-lib
+          # non-empty" rule (see scripts/lint-no-banned-tools.js).
+          npm run lint:noinstall
+
+      - name: Build macOS
+        if: matrix.platform == 'mac'
+        run: npm run dist:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Windows
+        if: matrix.platform == 'win'
+        run: npm run dist:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # CSC_LINK / CSC_KEY_PASSWORD added here once an OV/EV cert exists.
+
+      - name: Build Linux
+        if: matrix.platform == 'linux'
+        run: npm run dist:linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: restash-${{ matrix.platform }}
+          path: |
+            dist/*.dmg
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.yml
+            dist/*.zsync
+          if-no-files-found: ignore

@@ -3,6 +3,18 @@
 **Restash is a finished macOS app. You build it from this source *once*, then
 install and use the built app.** There's no prebuilt download to fetch.
 
+> ## Cross-platform (Windows + Linux)
+> Restash also targets Windows 10/11 and Linux (X11 + Wayland) with a strict
+> **zero-install** policy: no feature depends on a user-installed binary,
+> package, daemon, or extension — every native capability ships inside the app.
+> The only user ask is a one-time OS permission (a native dialog already on the
+> OS), never a download. Architecture, the policy checklist, and the CI lint
+> that enforces it live in **`docs/windows-linux-port.md`**. Per-OS native
+> helpers (`bin/restash-win-helper.exe`, `bin/restash-linux-helper`) are built
+> from `native/` by the GitHub Actions release matrix — they cannot be compiled
+> on macOS. Build with `npm run dist:win` / `npm run dist:linux` on their
+> respective OS / CI.
+
 If you are an AI agent (or a person) setting this up for the first time:
 
 > ## ✅ Do this
