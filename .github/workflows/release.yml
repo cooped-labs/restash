@@ -7,7 +7,7 @@
 #   • windows-latest — compiles + (later) signs restash-win-helper.exe, builds
 #                      NSIS + portable. The Windows helper & signing REQUIRE a
 #                      Windows runner.
-#   • ubuntu-latest  — compiles restash-linux-helper, vendors libei/libportal
+#   • ubuntu-22.04   — compiles restash-linux-helper, vendors libei/libportal
 #                      .so into vendor/linux-lib, builds AppImage + deb. The
 #                      Linux helper REQUIRES a Linux runner.
 #
@@ -31,7 +31,7 @@ jobs:
             platform: mac
           - os: windows-latest
             platform: win
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             platform: linux
     runs-on: ${{ matrix.os }}
     steps:

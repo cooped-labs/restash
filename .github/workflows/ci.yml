@@ -29,7 +29,7 @@ jobs:
   # so the -DHAVE_LIBEI branch in native/build-linux-helper.sh is exercised —
   # that's the path that links wayland_ei.c and would silently rot otherwise.
   linux-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - name: Install build deps
