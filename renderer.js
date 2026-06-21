@@ -20,7 +20,26 @@ const ICONS = {
   agent: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 2.5l1.85 5.15L18 9.5l-5.15 1.85L11 16.5l-1.85-5.15L4 9.5l5.15-1.85z"/><path d="M17.5 14l.95 2.55L21 17.5l-2.55.95L17.5 21l-.95-2.55L14 17.5l2.55-.95z"/></svg>`,
   // 2×2 launchpad grid — Environment kind (a set of sites/apps)
   environment: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg>`,
+  // Neutral clip glyph — a raw recent copy that isn't a URL or crypto address.
+  clip: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3.5" width="12" height="17" rx="2.2"/><path d="M9 7.5h6M9 11h6M9 14.5h3.5"/></svg>`,
 };
+
+// ---------- raw-clip auto-detection (cursor-modal Recent page, RES-33) ----------
+// A recent is just literal copied text. At render time we sniff whether it
+// looks like a URL or a crypto address so we can show a subtle leading glyph
+// (link / wallet / neutral clip). Mirrors the approved prototype's detect().
+const RE_RECENT_URL = /^(https?:\/\/|www\.)|^[a-z0-9-]+(\.[a-z0-9-]+)+(\/|$)/i;
+const RE_RECENT_BTC = /^(bc1|[13])[a-km-zA-HJ-NP-Z0-9]{25,62}$/;
+const RE_RECENT_ETH = /^0x[0-9a-fA-F]{40}$/;
+const RE_RECENT_SOL = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+function detectRecentKind(text) {
+  const t = String(text || '').trim();
+  if (!t) return 'clip';
+  if (RE_RECENT_URL.test(t)) return 'url';
+  if (RE_RECENT_ETH.test(t) || RE_RECENT_BTC.test(t) || RE_RECENT_SOL.test(t)) return 'crypto';
+  return 'clip';
+}
+const RECENT_GLYPH = { url: ICONS.url, crypto: ICONS.cryptoWallet, clip: ICONS.clip };
 
 // Monochrome SVG glyphs per file kind. All use currentColor so they pick up
 // the icon-tile foreground (light in dark mode, dark in light mode) — same
@@ -324,6 +343,17 @@ const state = {
   // Clipboard memory (RES-11)
   clipHistory: [],          // auto-captured recent copies, newest-first
   clipHistoryMax: 3,        // 0 = Off
+  // Cursor-modal page cycle (RES-33). The numpad popup is now a unified cycle:
+  // page 0 = Recent (a vertical LIST of raw recent copies, replacing the old
+  // "All" grid), pages 1+ = saved stashes as 3×3 numpad grids. The cursor
+  // modal tracks its own page index so the menu-dropdown chip bar (which still
+  // shows "All") is left untouched.
+  gridPageIdx: 0,
+  // Recents are FROZEN per summon: the 1–9 mapping is captured when the modal
+  // opens and stays stable while it's open; it re-ranks on the next open.
+  recentSnapshot: [],
+  // Keyboard selection within the Recent list (page 0 only).
+  recentSelIdx: 0,
 };
 
 let accessGranted = false;
@@ -562,9 +592,11 @@ function clampStashIdx(idx, length) {
 // List mode uses the chip bar selection; grid mode uses the active page.
 function activeStashId() {
   if (state.mode === 'grid') {
-    const stashes = computeStashes();
-    const idx = clampStashIdx(state.stashIdx ?? 0, stashes.length);
-    return stashes[idx]?.id || 'all';
+    // Cursor modal: page 0 is Recent (raw clips — no stash context, so pin/unpin
+    // actions fall back to "All"); pages 1+ are real stashes.
+    const pages = gridPages();
+    const page = pages[clampGridPageIdx()];
+    return (page && !page.recent && page.id) ? page.id : 'all';
   }
   const stashes = listStashes();
   const idx = clampStashIdx(state.stashIdx ?? 0, stashes.length);
@@ -1450,27 +1482,153 @@ function buildGridPage(stash) {
   return page;
 }
 
-function renderStashHeader(stashes, activeIdx, previousIdx) {
+// ---------- cursor-modal unified page cycle (RES-33) ----------
+// Page 0 is "Recent" (a vertical list of raw recent copies, replacing the old
+// "All" grid). Pages 1+ are the saved/auto stashes EXCEPT "All" (its role is
+// taken over by Recent), rendered as the familiar 3×3 numpad grids. The cycle
+// wraps. This is the SINGLE source of truth for the cursor numpad's pages.
+function gridPages() {
+  const pages = [{ id: 'recent', name: 'Recent', recent: true }];
+  for (const s of computeStashes()) {
+    if (s.id === 'all') continue; // Recent has taken over the first-page slot
+    pages.push(s);
+  }
+  return pages;
+}
+
+function clampGridPageIdx() {
+  const n = gridPages().length;
+  if (!n) return 0;
+  state.gridPageIdx = ((state.gridPageIdx % n) + n) % n;
+  return state.gridPageIdx;
+}
+
+// The frozen recents for THIS summon (capped at clipHistoryMax, newest-first).
+// Captured once when the popover is shown so the 1–9 mapping never shifts while
+// the modal is open. Empty when memory is Off or history is empty. Main already
+// trims stored history to clipHistoryMax, so the cap here is belt-and-braces.
+function recentsForModal() {
+  if (state.clipHistoryMax <= 0) return [];
+  return state.recentSnapshot.slice(0, state.clipHistoryMax);
+}
+
+// Build the Recent list page — same footprint as a grid page (it IS a
+// .grid-page so the slide transition reuses the existing machinery), but its
+// content is a vertically scrolling list rather than a 3×3 grid.
+function buildRecentPage() {
+  const page = document.createElement('div');
+  page.className = 'grid-page recent-grid-page';
+  page.dataset.stash = 'recent';
+
+  const recents = recentsForModal();
+  if (!recents.length) {
+    const empty = document.createElement('div');
+    empty.className = 'rlist-empty';
+    const off = state.clipHistoryMax <= 0;
+    empty.innerHTML = `
+      <div class="rlist-empty-glyph">${ICONS.clip}</div>
+      <div class="rlist-empty-title">${off ? 'Clipboard memory is off' : 'No recent copies yet'}</div>
+      <div class="rlist-empty-hint">${off
+        ? 'Turn on Recent history in Settings to see copies here.'
+        : 'Copy something and it shows up here.'}</div>`;
+    page.appendChild(empty);
+    return page;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'rlist';
+  recents.forEach((entry, i) => {
+    list.appendChild(buildModalRecentRow(entry, i));
+  });
+  page.appendChild(list);
+  return page;
+}
+
+// One Recent row in the cursor modal: subtle leading auto-detect glyph +
+// one truncated single line of the copied text + a 1–9 quick-key on the right.
+// No tag chips, no badges, no timestamps.
+function buildModalRecentRow(entry, i) {
+  const row = document.createElement('div');
+  const hasKey = i < 9;
+  row.className = 'rrow' + (i === state.recentSelIdx ? ' selected' : '') + (hasKey ? '' : ' nokey');
+  row.dataset.ridx = String(i);
+  const oneLine = String(entry.text || '').replace(/\s+/g, ' ').trim();
+  const kind = detectRecentKind(oneLine);
+  row.innerHTML = `
+    <span class="glyph" title="${kind}">${RECENT_GLYPH[kind]}</span>
+    <span class="clip">${escapeHtml(oneLine)}</span>
+    <span class="qkey">${hasKey ? (i + 1) : '·'}</span>`;
+  row.addEventListener('mouseenter', () => { state.recentSelIdx = i; refreshRecentSel(); });
+  row.addEventListener('click', () => pasteRecentEntry(entry));
+  return row;
+}
+
+// Keep the selected Recent row highlighted + scrolled into view.
+function refreshRecentSel() {
+  const rows = Array.from(gridEl.querySelectorAll('.rrow'));
+  rows.forEach((r, i) => r.classList.toggle('selected', i === state.recentSelIdx));
+  if (rows[state.recentSelIdx]) rows[state.recentSelIdx].scrollIntoView({ block: 'nearest' });
+}
+
+// Paste a raw recent clip — reuses the RES-11 paste path (restores the prior
+// clipboard) so muscle memory and behavior match the menu-dropdown Recent rows.
+function pasteRecentEntry(entry) {
+  if (!entry) return;
+  window.restash.pasteActive(entry.text);
+}
+
+function buildPage(page) {
+  return page.recent ? buildRecentPage() : buildGridPage(page);
+}
+
+// Header: ‹ name › arrows + animated stash name. Arrows + the name cluster
+// drive the same unified cycle as the hotkey and the pager dots.
+function renderStashHeader(pages, activeIdx, previousIdx) {
+  const headerEl = document.querySelector('#gridWrap .stash-header');
   const nameEl = document.getElementById('stashName');
   if (!nameEl) return;
 
-  if (previousIdx === undefined || previousIdx === activeIdx) {
-    nameEl.innerHTML = `<span class="label">${escapeHtml(stashes[activeIdx].name)}</span>`;
-    return;
+  // Wire up the ‹ › arrows once (they live in the markup; idempotent).
+  if (headerEl && !headerEl.dataset.wired) {
+    headerEl.dataset.wired = '1';
+    headerEl.querySelector('.stash-arrow.prev')?.addEventListener('click', () => cycleStash(-1));
+    headerEl.querySelector('.stash-arrow.next')?.addEventListener('click', () => cycleStash(1));
   }
-  // Rapid cycling can leave multiple labels in flight. Animate them ALL out
-  // (not just the first) so names never pile up on top of each other.
-  nameEl.querySelectorAll('.label').forEach((old) => {
-    old.classList.remove('entering', 'in');
-    old.classList.add('exiting');
-    requestAnimationFrame(() => old.classList.add('out'));
-    setTimeout(() => { if (old.parentNode) old.remove(); }, 280);
-  });
-  const newLabel = document.createElement('span');
-  newLabel.className = 'label entering';
-  newLabel.textContent = stashes[activeIdx].name;
-  nameEl.appendChild(newLabel);
-  requestAnimationFrame(() => newLabel.classList.add('in'));
+
+  const setName = () => {
+    if (previousIdx === undefined || previousIdx === activeIdx) {
+      nameEl.innerHTML = `<span class="label">${escapeHtml(pages[activeIdx].name)}</span>`;
+      return;
+    }
+    nameEl.querySelectorAll('.label').forEach((old) => {
+      old.classList.remove('entering', 'in');
+      old.classList.add('exiting');
+      requestAnimationFrame(() => old.classList.add('out'));
+      setTimeout(() => { if (old.parentNode) old.remove(); }, 280);
+    });
+    const newLabel = document.createElement('span');
+    newLabel.className = 'label entering';
+    newLabel.textContent = pages[activeIdx].name;
+    nameEl.appendChild(newLabel);
+    requestAnimationFrame(() => newLabel.classList.add('in'));
+  };
+  setName();
+
+  // Pager dots — one per page, current page filled. Clicking jumps directly.
+  const dots = document.getElementById('stashDots');
+  if (dots) {
+    dots.innerHTML = '';
+    pages.forEach((p, i) => {
+      const d = document.createElement('i');
+      if (i === activeIdx) d.className = 'on';
+      d.title = p.name;
+      d.addEventListener('click', () => {
+        if (i !== state.gridPageIdx) cycleStash(i - state.gridPageIdx);
+      });
+      dots.appendChild(d);
+    });
+    dots.classList.toggle('hidden', pages.length < 2);
+  }
 }
 
 function renderGrid() {
@@ -1479,19 +1637,17 @@ function renderGrid() {
   const wrap = document.getElementById('gridWrap');
   if (wrap) wrap.classList.remove('hidden');
 
-  const stashes = computeStashes();
-  if (state.stashIdx == null || state.stashIdx >= stashes.length) {
-    state.stashIdx = 0;
-  }
-  renderStashHeader(stashes, state.stashIdx);
+  const pages = gridPages();
+  const activeIdx = clampGridPageIdx();
+  renderStashHeader(pages, activeIdx);
 
-  // Cycle hint — only meaningful when there's more than one stash. Built from
+  // Cycle hint — only meaningful when there's more than one page. Built from
   // the user's *current* hotkey so it tracks whatever they've set in Settings:
-  // hold the modifiers, tap the same combo again to advance the stash.
+  // hold the modifiers, tap the same combo again to advance the page.
   const cycleHint = document.getElementById('gridCycleHint');
   const cycleKey  = document.getElementById('gridCycleKey');
   if (cycleHint && cycleKey) {
-    if (stashes.length > 1) {
+    if (pages.length > 1) {
       cycleKey.textContent = prettyHotkey(state.hotkey);
       cycleHint.classList.remove('hidden');
     } else {
@@ -1499,29 +1655,33 @@ function renderGrid() {
     }
   }
 
-  const page = buildGridPage(stashes[state.stashIdx]);
+  const page = buildPage(pages[activeIdx]);
   page.classList.add('center');
   gridEl.innerHTML = '';
   gridEl.appendChild(page);
+  if (pages[activeIdx].recent) refreshRecentSel();
 }
 
 // Called when the user presses the hotkey again while the cursor numpad is
-// already open. Slides in the next stash's grid.
+// already open (also driven by the ‹ › arrows, the pager dots and ←/→).
+// Slides in the next page's content. Wraps across Recent + every stash.
 function cycleStash(direction = 1) {
-  const stashes = computeStashes();
-  if (stashes.length < 2) return; // nothing to cycle through
-  const fromIdx = state.stashIdx ?? 0;
-  const toIdx = ((fromIdx + direction) % stashes.length + stashes.length) % stashes.length;
+  const pages = gridPages();
+  if (pages.length < 2) return; // nothing to cycle through
+  const fromIdx = clampGridPageIdx();
+  const toIdx = ((fromIdx + direction) % pages.length + pages.length) % pages.length;
   if (fromIdx === toIdx) return;
-  state.stashIdx = toIdx;
+  state.gridPageIdx = toIdx;
+  // Reset Recent selection when arriving on the Recent page.
+  if (pages[toIdx].recent) state.recentSelIdx = 0;
 
   // Header + dots update
-  renderStashHeader(stashes, toIdx, fromIdx);
+  renderStashHeader(pages, toIdx, fromIdx);
 
   // Build the new page positioned off-screen, then transition both pages.
   // Use querySelectorAll so rapid cycling doesn't leave stragglers behind.
   const oldPages = Array.from(gridEl.querySelectorAll('.grid-page'));
-  const newPage = buildGridPage(stashes[toIdx]);
+  const newPage = buildPage(pages[toIdx]);
   newPage.classList.add(direction > 0 ? 'enter-right' : 'enter-left');
   gridEl.appendChild(newPage);
   // Force reflow so the transition actually runs from the off-screen state.
@@ -1534,6 +1694,7 @@ function cycleStash(direction = 1) {
   });
   newPage.classList.remove('enter-right', 'enter-left');
   newPage.classList.add('center');
+  if (pages[toIdx].recent) requestAnimationFrame(refreshRecentSel);
 }
 
 // Drag-reorder state for the stash chip bar.
@@ -3383,14 +3544,20 @@ function wire() {
       openEditor(null);
       return;
     }
-    // Grid mode: bare digit keys paste the numpad slot of the active stash.
+    // Grid mode: bare digit keys paste the numpad slot of the active page.
+    // On the Recent page (RES-33), 1–9 paste the FROZEN top-9 recent clips.
     if (state.mode === 'grid' && /^[1-9]$/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault();
-      const stashes = computeStashes();
-      const stash = stashes[clampStashIdx(state.stashIdx ?? 0, stashes.length)];
-      const items = stash ? itemsForStash(stash) : [];
       const idx = parseInt(e.key, 10) - 1;
-      if (items[idx]) pasteItem(items[idx]);
+      const pages = gridPages();
+      const page = pages[clampGridPageIdx()];
+      if (page && page.recent) {
+        const recents = recentsForModal();
+        if (recents[idx]) pasteRecentEntry(recents[idx]);
+      } else if (page) {
+        const items = itemsForStash(page);
+        if (items[idx]) pasteItem(items[idx]);
+      }
       return;
     }
     // List mode: ⌘1-9 paste.
@@ -3399,6 +3566,28 @@ function wire() {
       const items = filtered();
       const idx = parseInt(e.key, 10) - 1;
       if (items[idx]) pasteItem(items[idx]);
+      return;
+    }
+    // Grid mode: ←/→ cycle pages (Recent ↔ stashes), wrapping.
+    if (state.mode === 'grid' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      e.preventDefault();
+      cycleStash(e.key === 'ArrowRight' ? 1 : -1);
+      return;
+    }
+    // Grid mode + Recent page: ↑/↓ move the selection within the list.
+    if (state.mode === 'grid' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      const pages = gridPages();
+      if (pages[clampGridPageIdx()]?.recent) {
+        e.preventDefault();
+        const n = recentsForModal().length;
+        if (n) {
+          state.recentSelIdx = Math.max(0, Math.min(n - 1, state.recentSelIdx + (e.key === 'ArrowDown' ? 1 : -1)));
+          refreshRecentSel();
+        }
+        return;
+      }
+      // Other grid pages don't use a row selection — swallow to avoid list moves.
+      e.preventDefault();
       return;
     }
     if (e.key === 'ArrowDown') {
@@ -3412,6 +3601,16 @@ function wire() {
       return;
     }
     if (e.key === 'Enter') {
+      // Grid mode + Recent page: Enter pastes the selected recent clip.
+      if (state.mode === 'grid') {
+        const pages = gridPages();
+        if (pages[clampGridPageIdx()]?.recent) {
+          const recents = recentsForModal();
+          const entry = recents[state.recentSelIdx];
+          if (entry) { e.preventDefault(); pasteRecentEntry(entry); }
+        }
+        return;
+      }
       const item = selectedItem();
       if (item) {
         e.preventDefault();
@@ -3429,6 +3628,13 @@ function wire() {
     state.search = '';
     searchEl.value = '';
     state.selectedId = null;
+    // RES-33: freeze the Recent page's 1–9 mapping for THIS summon. Snapshot
+    // the current clipboard history now; it stays stable while the modal is
+    // open and re-ranks on the next summon.
+    state.recentSnapshot = Array.isArray(state.clipHistory) ? state.clipHistory.slice() : [];
+    state.recentSelIdx = 0;
+    // Every summon of the cursor modal lands on page 0 (Recent).
+    state.gridPageIdx = 0;
     refreshAccessUI();
     render();
     focusSearch();
