@@ -1913,7 +1913,11 @@ body.theme-dark .file-zone-picked .file-row.error .thumb {
 /* ---------- Recent page (page 0 of the cursor-modal cycle, RES-33) ----------
    A raw-clip list that lives inside a .grid-page so it slides like the grids,
    but renders as a vertical list capped to the grid footprint + scrolls. */
-.recent-grid-page {
+/* Chained with .grid-page so this beats the later `.grid-page { display:grid }`
+   rule (equal specificity → source order would otherwise win) — without this
+   the Recent list is squeezed into a single 1fr grid column (~1/3 width),
+   which truncated rows absurdly short ("http…") with empty space to the right. */
+.grid-page.recent-grid-page {
   display: block;       /* override the 3×3 grid layout */
   padding: 0;           /* the inner .rlist owns the padding */
   overflow: hidden;
@@ -1933,9 +1937,10 @@ body.theme-dark .file-zone-picked .file-row.error .thumb {
 
 .rrow {
   display: flex; align-items: center; gap: 8px;
+  width: auto; box-sizing: border-box;
   margin: 0 2px; padding: 6px 9px;
   border-radius: 7px; cursor: pointer; position: relative;
-  flex: 0 0 auto;
+  flex: 0 0 auto;       /* fixed height in the column; stretches full width */
 }
 .rrow:hover { background: var(--hover); }
 .rrow.selected { background: var(--tint-strong); color: var(--tint-fg); }
@@ -1959,9 +1964,10 @@ body.theme-dark .file-zone-picked .file-row.error .thumb {
 }
 .rrow.selected .clip { color: var(--tint-fg); }
 
-/* the 1–9 quick key */
+/* the 1–9 quick key — pinned to the far right edge of the row */
 .rrow .qkey {
   width: 17px; height: 17px; flex: 0 0 17px;
+  margin-left: auto;
   display: grid; place-items: center;
   font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600;
   color: var(--fg-dim);

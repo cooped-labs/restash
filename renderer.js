@@ -1884,7 +1884,10 @@ function renderRecent() {
   const prior = document.getElementById('recentBlock');
   if (prior) prior.remove();
 
+  // Only show RECENT when the active stash/section is "All" — an individual
+  // stash view never renders the menu-bar Recent block.
   const visible = state.mode === 'list'
+    && activeStashId() === 'all'
     && state.clipHistoryMax > 0
     && state.clipHistory.length > 0
     && !state.search;
@@ -1936,14 +1939,14 @@ function buildRecentRow(entry) {
   row.dataset.cid = entry.id;
 
   const oneLine = String(entry.text || '').replace(/\s+/g, ' ').trim();
+  // Same auto-detect leading glyph as the RES-33 cursor-modal recents: link
+  // icon for URLs, wallet icon for crypto addresses, neutral clip otherwise.
+  const kind = detectRecentKind(oneLine);
 
   row.innerHTML = `
     <div class="row-main">
-      <div class="icon recent-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-          <rect x="6" y="4" width="12" height="17" rx="2"/>
-          <rect x="9" y="2.5" width="6" height="3.2" rx="1.2" fill="currentColor" stroke="none"/>
-        </svg>
+      <div class="icon recent-icon" title="${kind}">
+        ${RECENT_GLYPH[kind]}
       </div>
       <div class="text">
         <span class="label mono">${escapeHtml(oneLine)}</span>
@@ -1997,7 +2000,7 @@ function renderList() {
   // The Recent (clipboard memory) block can stand on its own even when the
   // user has no saved items yet — so only show the empty state when BOTH the
   // saved items AND the visible Recent block are empty.
-  const hasRecent = state.clipHistoryMax > 0 && state.clipHistory.length > 0 && !state.search;
+  const hasRecent = activeStashId() === 'all' && state.clipHistoryMax > 0 && state.clipHistory.length > 0 && !state.search;
   if (state.items.length === 0 && !hasRecent) {
     emptyEl.classList.remove('hidden');
     listEl.classList.add('hidden');

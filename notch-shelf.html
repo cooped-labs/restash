@@ -16,13 +16,19 @@
   html,body{ background:transparent; color:var(--ink); font-family:'Inter',-apple-system,sans-serif; font-size:13px; -webkit-font-smoothing:antialiased; overflow:hidden; }
   body{ padding:0; }
 
-  /* THE NOTCH — sits at the top of the screen, always present.
-     Idle: notch-width cam strip. Expanded: widens AND grows downward into the
-     save shelf. The cam strip stays put at the top; the body unfolds below. */
+  /* THE NOTCH — pure-black panel pinned to the very top of the screen so it
+     blends into and extends the real hardware notch. Idle: a notch-width black
+     sliver that disappears into the physical notch. Expanded: widens AND grows
+     downward into the save shelf. We draw NO fake camera strip and NO border —
+     the shelf must look built into the real notch, not like its own pill. */
   .nook{
     position:absolute; top:0; left:50%; transform:translateX(-50%);
     width:188px;
+    min-height:30px;     /* collapsed: a black notch-width sliver that blends
+                            into the real notch (no camera strip to give it
+                            height anymore) */
     background:var(--black);
+    border:0;
     border-radius:0 0 16px 16px;
     overflow:hidden;
     /* No shadow while collapsed — it must read as the physical notch, not a
@@ -35,20 +41,17 @@
     border-radius:0 0 26px 26px;
     box-shadow:0 50px 100px -26px rgba(0,0,0,.95);
   }
+  /* Drag-hot state: warm the drop shadow only — NO ring/outline border. */
   .nook.hot{
-    box-shadow:0 50px 100px -26px rgba(201,122,0,.35), 0 0 0 1px rgba(201,122,0,.5);
+    box-shadow:0 50px 100px -26px rgba(201,122,0,.35);
   }
 
-  /* Cam strip — the visually-permanent part. Two dots + Restash tag. */
-  .camrow{ height:28px; display:flex; align-items:center; justify-content:center; gap:9px; }
-  .camrow .cam{ width:6px; height:6px; border-radius:50%; background:#16161a; box-shadow:inset 0 0 0 1px #2a2a30; }
-  .camrow .tag{ font-family:'ui-monospace',SFMono-Regular,Menlo,monospace; font-size:9px; letter-spacing:1.4px; text-transform:uppercase; color:var(--mute); transition:color .2s; }
-  .nook.hot .camrow .tag{ color:var(--accent); }
-
-  /* Body unfolds via max-height / opacity. Lives at zero height while idle. */
+  /* Body unfolds via max-height / opacity. Lives at zero height while idle.
+     The .pad's top padding clears the physical notch so "Add to stash" content
+     starts just below the real notch line. */
   .body{ max-height:0; opacity:0; overflow:hidden; transition:max-height .34s cubic-bezier(.22,1,.36,1), opacity .26s; }
   .nook.open .body{ max-height:560px; opacity:1; }
-  .pad{ padding:6px 13px 14px; }
+  .pad{ padding:38px 13px 14px; }
 
   .lead{ display:flex; align-items:center; gap:7px; margin-bottom:10px; }
   .lead .logo{ width:15px; height:15px; color:#fff; }
@@ -105,11 +108,6 @@
 </svg>
 
 <div class="nook" id="nook">
-  <div class="camrow" id="camrow">
-    <span class="cam"></span>
-    <span class="tag">Restash</span>
-    <span class="cam"></span>
-  </div>
   <div class="body">
     <div class="pad">
       <div class="lead"><svg class="logo"><use href="#rs"/></svg><b>Add to stash</b></div>
