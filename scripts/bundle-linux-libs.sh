@@ -22,7 +22,7 @@
 #   scripts/bundle-linux-libs.sh                  # uses ./bin/restash-linux-helper
 #   scripts/bundle-linux-libs.sh /path/to/binary
 #
-# Requires: ldd, patchelf, install. patchelf is apt-installable on Ubuntu.
+# Requires: ldd, patchelf, cp. patchelf is apt-installable on Ubuntu.
 
 set -euo pipefail
 
@@ -108,9 +108,11 @@ fi
 echo "Bundling ${#TO_COPY[@]} libs into $OUT (closure of $BIN)"
 for src in "${TO_COPY[@]}"; do
   base="$(basename "$src")"
-  # -L follows the SONAME symlink so we copy the real file, but name it after
-  # the SONAME the loader will look for.
-  install -m 0644 -L "$src" "$OUT/$base"
+  # cp -L follows the SONAME symlink so we copy the real ELF, then name the
+  # file after the SONAME the loader will look for. GNU coreutils `install`
+  # has no -L flag (that's BSD), so cp -L is the portable spelling.
+  cp -L "$src" "$OUT/$base"
+  chmod 0644 "$OUT/$base"
 done
 
 # patchelf — two passes:
@@ -119,7 +121,7 @@ done
 #   2. The helper binary itself gets RPATH '$ORIGIN/../lib' re-stamped, matching
 #      the electron-builder extraResources mapping (vendor/linux-lib -> lib).
 #      Belt-and-suspenders against future gcc -Wl,-rpath drift.
-# Files were copied with `install -L`, so each entry is a real ELF (no symlinks).
+# Files were copied with `cp -L`, so each entry is a real ELF (no symlinks).
 if command -v patchelf >/dev/null 2>&1; then
   for f in "$OUT"/*.so*; do
     [ -f "$f" ] || continue
