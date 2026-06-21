@@ -47,7 +47,6 @@ module.exports = {
   // --- tray / windows ---
   trayIcon(theme),                      // → nativeImage (ico/png per OS/theme)
   positionPopover(win, { anchor }),     // tray|cursor|center, work-area aware
-  positionShelf(win),                   // notch (mac) | top-center (win/x11) | center (wayland)
 
   // --- share ---
   share(item),                          // native sheet (mac) | { ok:false, fallback:true } (win/linux)

@@ -2,7 +2,7 @@
 //
 // Defaults use CommandOrControl so config maps ⌘ on mac / Ctrl elsewhere.
 // Win/Linux summon moves OFF Ctrl+Shift+V (universal paste-as-plain-text) to a
-// non-colliding Ctrl+Alt+V; QR Ctrl+Alt+F; shelf Ctrl+Alt+S.
+// non-colliding Ctrl+Alt+V; QR Ctrl+Alt+F.
 
 'use strict';
 
@@ -10,8 +10,8 @@ const isMac = process.platform === 'darwin';
 
 // macOS keeps its historical glyph defaults; Win/Linux get safe Ctrl+Alt combos.
 const DEFAULTS = isMac
-  ? { summon: 'Command+Shift+V', qr: 'Control+Shift+F', shelf: 'Control+Shift+S' }
-  : { summon: 'Control+Alt+V', qr: 'Control+Alt+F', shelf: 'Control+Alt+S' };
+  ? { summon: 'Command+Shift+V', qr: 'Control+Shift+F' }
+  : { summon: 'Control+Alt+V', qr: 'Control+Alt+F' };
 
 /**
  * Render an accelerator as a human label. On mac use ⌘/⌃/⌥/⇧ glyphs; on

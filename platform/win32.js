@@ -239,14 +239,6 @@ function positionPopover(win, { anchor, tray } = {}) {
   );
 }
 
-function positionShelf(win) {
-  if (!win) return;
-  const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-  const wa = d.workArea;
-  const b = win.getBounds();
-  win.setPosition(Math.round(wa.x + wa.width / 2 - b.width / 2), wa.y + 6, false);
-}
-
 // No native share sheet — renderer shows in-app Copy/Open/Reveal/Email.
 function share() { return { ok: false, fallback: true, reason: 'no-native-share' }; }
 
@@ -264,7 +256,6 @@ module.exports = {
   openSites,
   trayIcon,
   positionPopover,
-  positionShelf,
   share,
   SHADOW_PAD,
 };

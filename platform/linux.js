@@ -299,14 +299,6 @@ function positionPopover(win, { anchor } = {}) {
   );
 }
 
-function positionShelf(win) {
-  if (!win || session() === 'wayland') return; // Wayland centers via compositor
-  const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-  const wa = d.workArea;
-  const b = win.getBounds();
-  win.setPosition(Math.round(wa.x + wa.width / 2 - b.width / 2), wa.y + 6, false);
-}
-
 function share() { return { ok: false, fallback: true, reason: 'no-native-share' }; }
 
 module.exports = {
@@ -323,7 +315,6 @@ module.exports = {
   openSites,
   trayIcon,
   positionPopover,
-  positionShelf,
   share,
   SHADOW_PAD,
 };
