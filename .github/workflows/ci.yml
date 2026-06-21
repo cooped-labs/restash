@@ -39,7 +39,10 @@ jobs:
           # build-linux-helper.sh) to rewrite RPATH on each vendored .so.
           sudo apt-get install -y \
             libxcb1-dev libxcb-xtest0-dev libxcb-util-dev \
-            libei-dev libportal-dev patchelf
+            libportal-dev patchelf
+          # libei-dev is only available on ubuntu-24.04+; on 22.04 the build
+          # falls back to X11-only (no -DHAVE_LIBEI). Optional install.
+          sudo apt-get install -y libei-dev 2>/dev/null || true
       - name: Build restash-linux-helper
         run: bash native/build-linux-helper.sh
       - name: Verify binary + bundle
