@@ -1933,7 +1933,8 @@ body.theme-dark .file-zone-picked .file-row.error .thumb {
 
 .rrow {
   display: flex; align-items: center; gap: 8px;
-  margin: 0 2px; padding: 6px 9px;
+  width: 100%; box-sizing: border-box;
+  padding: 6px 9px;
   border-radius: 7px; cursor: pointer; position: relative;
   flex: 0 0 auto;
 }
@@ -1949,9 +1950,12 @@ body.theme-dark .file-zone-picked .file-row.error .thumb {
 .rrow .glyph svg { width: 14px; height: 14px; display: block; }
 .rrow.selected .glyph { color: var(--selected-fg-dim); }
 
-/* the copied text — one truncated monospace line */
+/* the copied text — one truncated monospace line. Owns ALL the leftover
+   horizontal space so it only ellipsizes at the real right edge, just before
+   the qkey. min-width:0 is required for flex children to actually shrink. */
 .rrow .clip {
-  flex: 1; min-width: 0;
+  flex: 1 1 0;
+  min-width: 0;
   font-size: 11.5px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--fg);
@@ -1959,9 +1963,11 @@ body.theme-dark .file-zone-picked .file-row.error .thumb {
 }
 .rrow.selected .clip { color: var(--tint-fg); }
 
-/* the 1–9 quick key */
+/* the 1–9 quick key — pinned to the row's right edge regardless of clip
+   sizing, so it never floats next to a short clip. */
 .rrow .qkey {
   width: 17px; height: 17px; flex: 0 0 17px;
+  margin-left: auto;
   display: grid; place-items: center;
   font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600;
   color: var(--fg-dim);
