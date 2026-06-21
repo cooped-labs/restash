@@ -221,7 +221,6 @@ let currentStashHotkey = DEFAULT_STASH_HOTKEY; // RES-13 notch shelf summon
 // real implementations are defined. registerHotkeySlot is called before then
 // (at module load), so we wrap them in a thunk that resolves at call time.
 let qrTrigger = null;
-let stashShelfTrigger = null; // RES-13: summons the notch quick-add shelf
 
 // Generic per-slot registration. Each slot ('summon' | 'qr' | 'stash') has its
 // own accelerator + handler. Re-registering a slot unregisters the previous
@@ -229,14 +228,12 @@ let stashShelfTrigger = null; // RES-13: summons the notch quick-add shelf
 function registerHotkeySlot(slot, accel) {
   let handler;
   if (slot === 'qr') handler = () => { if (typeof qrTrigger === 'function') qrTrigger(); };
-  else if (slot === 'stash') handler = () => { if (typeof stashShelfTrigger === 'function') stashShelfTrigger(); };
   else handler = togglePopoverAtCursor;
-  const prev = slot === 'qr' ? currentQRHotkey : slot === 'stash' ? currentStashHotkey : currentHotkey;
+  const prev = slot === 'qr' ? currentQRHotkey : currentHotkey;
   if (prev) globalShortcut.unregister(prev);
   const ok = accel ? globalShortcut.register(accel, handler) : false;
   if (ok) {
     if (slot === 'qr') currentQRHotkey = accel;
-    else if (slot === 'stash') currentStashHotkey = accel;
     else currentHotkey = accel;
     return { ok: true, hotkey: accel };
   }
@@ -767,7 +764,6 @@ function createTutorialWindow() {
     const s = readSettings();
     registerHotkeySlot('summon', s.hotkey || DEFAULT_HOTKEY);
     registerHotkeySlot('qr', s.qrHotkey || DEFAULT_QR_HOTKEY);
-    registerHotkeySlot('stash', s.stashHotkey || DEFAULT_STASH_HOTKEY);
   });
   return tutorialWin;
 }
@@ -830,9 +826,16 @@ function createStashEditWindow(stashId) {
 // + stash dropdown + Pin toggle + Stash it button, in one continuous
 // "nook" panel that visually flows from the camera strip.
 // ============================================================
+// v7: the shelf is ALWAYS present at the notch's bounds and expands on
+// drag-enter. Idle = just the cam strip (~notch width × 30pt). Expanded =
+// a wider drawer that drops down with the body. There is no hotkey trigger;
+// drag-to-reveal is the only entry path.
 let shelfWin = null;
-const SHELF_WIDTH  = 340;
-const SHELF_HEIGHT = 280;
+let shelfExpanded = false;
+const SHELF_IDLE_WIDTH  = 200;
+const SHELF_IDLE_HEIGHT = 30;
+const SHELF_OPEN_WIDTH  = 380;
+const SHELF_OPEN_HEIGHT = 320;
 
 function isNotchDisplay(display) {
   // Notch macs have a taller-than-standard menu-bar inset. The standard menu
@@ -857,24 +860,35 @@ function activeShelfDisplay() {
   return screen.getPrimaryDisplay();
 }
 
+function shelfBoundsFor(display, expanded) {
+  const w = expanded ? SHELF_OPEN_WIDTH : SHELF_IDLE_WIDTH;
+  const h = expanded ? SHELF_OPEN_HEIGHT : SHELF_IDLE_HEIGHT;
+  const x = Math.round(display.bounds.x + (display.bounds.width - w) / 2);
+  const y = display.bounds.y;
+  return { x, y, width: w, height: h };
+}
+
 function positionShelfOnActiveDisplay() {
   if (!shelfWin || shelfWin.isDestroyed()) return;
   const d = activeShelfDisplay();
-  // Center horizontally on the display; pin to the top so the panel wraps the
-  // notch (the camera strip overlays the menu-bar y-band on notch Macs).
-  const x = Math.round(d.bounds.x + (d.bounds.width - SHELF_WIDTH) / 2);
-  const y = isNotchDisplay(d)
-    ? d.bounds.y                       // wraparound: top edge at display top
-    : d.workArea.y + 6;                // non-notch: just below standard menu bar
-  shelfWin.setBounds({ x, y, width: SHELF_WIDTH, height: SHELF_HEIGHT });
+  if (!isNotchDisplay(d)) {
+    // v7: notch-only. Hide the window when the active display has no notch.
+    if (shelfWin.isVisible()) shelfWin.hide();
+    return;
+  }
+  shelfWin.setBounds(shelfBoundsFor(d, shelfExpanded));
+  if (!shelfWin.isVisible()) shelfWin.showInactive();
 }
 
 function createShelfWindow() {
   if (shelfWin && !shelfWin.isDestroyed()) return shelfWin;
+  const d = activeShelfDisplay();
+  if (!isNotchDisplay(d)) return null;
+  const bounds = shelfBoundsFor(d, false);
   shelfWin = new BrowserWindow({
-    width: SHELF_WIDTH,
-    height: SHELF_HEIGHT,
-    x: 0, y: 0,
+    width:  bounds.width,
+    height: bounds.height,
+    x: bounds.x, y: bounds.y,
     transparent: true,
     frame: false,
     hasShadow: false,
@@ -895,38 +909,40 @@ function createShelfWindow() {
       nodeIntegration: false,
     },
   });
-  // Above the menu bar; visible across spaces but not inside fullscreen apps
-  // (the notch is hidden in fullscreen by the OS anyway).
+  // Above the menu bar; visible across spaces but hidden in fullscreen.
   shelfWin.setAlwaysOnTop(true, 'pop-up-menu');
   shelfWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
   shelfWin.loadFile('notch-shelf.html');
-  shelfWin.on('blur', () => {
-    // Click-anywhere-else dismisses the shelf, matching the popover.
-    if (shelfWin && shelfWin.isVisible()) shelfWin.hide();
-  });
-  shelfWin.on('hide', () => {
-    try { shelfWin.webContents.send('shelf:hidden'); } catch {}
-  });
   shelfWin.on('closed', () => { shelfWin = null; });
   return shelfWin;
 }
 
-function summonShelf({ withFocus = true } = {}) {
+// Show the shelf at idle bounds. Called on app start and whenever display
+// configuration changes back to a notch display.
+function ensureShelfAtIdle() {
   if (!readSettings().showNotchShelf) return;
-  if (!shelfWin || shelfWin.isDestroyed()) createShelfWindow();
-  positionShelfOnActiveDisplay();
-  if (shelfWin.isVisible()) {
-    if (withFocus) shelfWin.focus();
-    try { shelfWin.webContents.send('shelf:shown'); } catch {}
-    return;
+  if (!shelfWin || shelfWin.isDestroyed()) {
+    const created = createShelfWindow();
+    if (!created) return;   // non-notch display — bail out cleanly
   }
-  if (withFocus) shelfWin.show();
-  else shelfWin.showInactive();
-  try { shelfWin.webContents.send('shelf:shown'); } catch {}
+  shelfExpanded = false;
+  positionShelfOnActiveDisplay();
 }
 
-function dismissShelf() {
-  if (shelfWin && shelfWin.isVisible()) shelfWin.hide();
+function expandShelf() {
+  if (!shelfWin || shelfWin.isDestroyed()) return;
+  const d = activeShelfDisplay();
+  if (!isNotchDisplay(d)) return;
+  shelfExpanded = true;
+  shelfWin.setBounds(shelfBoundsFor(d, true));
+}
+
+function collapseShelf() {
+  if (!shelfWin || shelfWin.isDestroyed()) return;
+  const d = activeShelfDisplay();
+  if (!isNotchDisplay(d)) return;
+  shelfExpanded = false;
+  shelfWin.setBounds(shelfBoundsFor(d, false));
 }
 
 // Push stash-list changes to the shelf so its dropdown stays fresh.
@@ -1827,24 +1843,18 @@ end if`;
     console.warn(`[Restash] QR hotkey couldn't be registered. Use the tray menu's "Decode QR…" item.`);
   }
 
-  // RES-13: Notch drop / quick-add shelf hotkey (default ⌃⇧S).
-  stashShelfTrigger = () => summonShelf({ withFocus: true });
-  let shelfAttempt = registerHotkeySlot('stash', settings.stashHotkey || DEFAULT_STASH_HOTKEY);
-  if (!shelfAttempt.ok && settings.stashHotkey !== DEFAULT_STASH_HOTKEY) {
-    console.warn(`[Restash] Saved stash hotkey ${settings.stashHotkey} unavailable — falling back to ${DEFAULT_STASH_HOTKEY}.`);
-    shelfAttempt = registerHotkeySlot('stash', DEFAULT_STASH_HOTKEY);
-  }
-  if (!shelfAttempt.ok) {
-    console.warn(`[Restash] Notch shelf hotkey couldn't be registered. Change it in Settings to free up the combo.`);
-  }
-  // Follow the user's active display as windows move / displays change.
+  // RES-13 v7: drag-to-reveal — the shelf is permanently parked at the notch
+  // and expands on drag-enter. No hotkey trigger.
+  ensureShelfAtIdle();
   try {
-    screen.on('display-added', positionShelfOnActiveDisplay);
-    screen.on('display-removed', positionShelfOnActiveDisplay);
-    screen.on('display-metrics-changed', positionShelfOnActiveDisplay);
+    const refresh = () => ensureShelfAtIdle();
+    screen.on('display-added', refresh);
+    screen.on('display-removed', refresh);
+    screen.on('display-metrics-changed', refresh);
     app.on('browser-window-focus', () => {
-      // Only reposition while the shelf is visible — no point otherwise.
-      if (shelfWin && shelfWin.isVisible()) positionShelfOnActiveDisplay();
+      // Follow the active display so the shelf moves to wherever the user is
+      // looking. No-op if that display has no notch.
+      if (shelfWin && !shelfWin.isDestroyed()) positionShelfOnActiveDisplay();
     });
   } catch {}
 
@@ -2110,7 +2120,8 @@ end if`;
     return { ok: true, stash: { id: stash.id, name: stash.name } };
   });
 
-  ipcMain.handle('shelf:hide', () => { dismissShelf(); return { ok: true }; });
+  // Renderer asks to collapse back into the notch (Esc, after-save timeout, etc.)
+  ipcMain.handle('shelf:hide', () => { collapseShelf(); return { ok: true }; });
 
   // Create an item from the quick-add path. Honors the Pin toggle by
   // computing the next free pin slot for the destination stash; if full,
@@ -2249,36 +2260,18 @@ end if`;
   });
 
   // Notch shelf hotkey rebind (mirrors hotkey:set / qrHotkey:set patterns).
-  ipcMain.handle('stashHotkey:set', (_e, accel) => {
-    const result = registerHotkeySlot('stash', String(accel || '').trim());
-    if (result.ok) {
-      const s = readSettings();
-      s.stashHotkey = result.hotkey;
-      writeSettings(s);
-      if (shelfWin && !shelfWin.isDestroyed()) {
-        try { shelfWin.webContents.send('shelf:hotkey-changed', result.hotkey); } catch {}
-      }
-    }
-    return result;
-  });
-  ipcMain.handle('stashHotkey:reset', () => {
-    const result = registerHotkeySlot('stash', DEFAULT_STASH_HOTKEY);
-    if (result.ok) {
-      const s = readSettings();
-      s.stashHotkey = DEFAULT_STASH_HOTKEY;
-      writeSettings(s);
-      if (shelfWin && !shelfWin.isDestroyed()) {
-        try { shelfWin.webContents.send('shelf:hotkey-changed', DEFAULT_STASH_HOTKEY); } catch {}
-      }
-    }
-    return result;
-  });
+  // RES-13 v7: drag-to-reveal — the shelf expands when the renderer detects a
+  // drag-enter on the notch, and collapses when the user drags away (with a
+  // 400ms grace) or after a save.
+  ipcMain.handle('shelf:expand',   () => { expandShelf();   return { ok: true }; });
+  ipcMain.handle('shelf:collapse', () => { collapseShelf(); return { ok: true }; });
 
   ipcMain.handle('shelf:set-enabled', (_e, enabled) => {
     const s = readSettings();
     s.showNotchShelf = !!enabled;
     writeSettings(s);
-    if (!s.showNotchShelf && shelfWin && shelfWin.isVisible()) shelfWin.hide();
+    if (s.showNotchShelf) ensureShelfAtIdle();
+    else if (shelfWin && !shelfWin.isDestroyed()) { try { shelfWin.close(); } catch {} }
     return { ok: true, showNotchShelf: s.showNotchShelf };
   });
   // --- Stubs for menu-bar dropdown actions ---

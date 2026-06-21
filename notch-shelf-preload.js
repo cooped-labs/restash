@@ -19,7 +19,12 @@ contextBridge.exposeInMainWorld('shelf', {
   getLastUsedStash: () => ipcRenderer.invoke('shelf:get-last-used-stash'),
   // Drop-zone ingest paths — file paths array + optional stash routing
   ingestFiles: (paths, stashId, pinned) => ipcRenderer.invoke('shelf:ingest-files', { paths, stashId, pinned }),
-  // Dismiss the shelf programmatically (Esc, click-outside, etc.)
+  // RES-13 v7: drag-to-reveal — renderer pings main to widen/shrink the
+  // BrowserWindow as the user enters / leaves the notch.
+  expand:   () => ipcRenderer.invoke('shelf:expand'),
+  collapse: () => ipcRenderer.invoke('shelf:collapse'),
+  // Esc / post-save collapse — alias for collapse(), kept for the existing
+  // renderer keybinding code.
   hide: () => ipcRenderer.invoke('shelf:hide'),
 
   onShown:           (cb) => ipcRenderer.on('shelf:shown', () => cb()),
