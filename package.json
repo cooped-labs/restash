@@ -60,6 +60,7 @@
       "node_modules/jsqr/**/*",
       "bin/restash-share",
       "bin/restash-clip-file",
+      "bin/restash-read-clip-files",
       "bin/restash-decode-qr",
       "bin/restash-windows",
       "package.json"

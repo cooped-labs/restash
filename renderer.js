@@ -60,6 +60,24 @@ function recentImageFile(entry) {
   return ((f.mime || '').startsWith('image/') && f.storedPath) ? f : null;
 }
 
+// True when a recent is a copied-FILE entry (kind:'file' with a files[] array)
+// that is NOT a thumbnailable image — i.e. a pdf/doc/other copied file, or a
+// video / oversized file kept by-reference. These render with the file glyph
+// instead of a thumbnail, and by-ref ones get a Save-to-Downloads action.
+function recentFileEntry(entry) {
+  if (!entry || entry.kind !== 'file') return null;
+  if (!Array.isArray(entry.files) || !entry.files.length) return null;
+  if (recentImageFile(entry)) return null; // images use the thumbnail path
+  return entry.files[0] || null;
+}
+
+// The path a file recent should PASTE / open: the stored vault copy for
+// copied-in files, or the original on-disk path for by-reference (video/large).
+function recentFilePastePath(file) {
+  if (!file) return null;
+  return file.storedPath || file.path || null;
+}
+
 // Monochrome SVG glyphs per file kind. All use currentColor so they pick up
 // the icon-tile foreground (light in dark mode, dark in light mode) — same
 // vibe as the URL / wallet / pin / Aa icons.
@@ -1612,6 +1630,7 @@ function buildModalRecentRow(entry, i) {
   row.className = 'rrow' + (i === state.recentSelIdx ? ' selected' : '') + (hasKey ? '' : ' nokey');
   row.dataset.ridx = String(i);
   const img = recentImageFile(entry);
+  const file = img ? null : recentFileEntry(entry);
   if (img) {
     // Captured/stored image recent — render the thumbnail, reusing the same
     // file:// thumbnail path (encoded src + glyph onerror) as image File items.
@@ -1620,6 +1639,13 @@ function buildModalRecentRow(entry, i) {
     row.innerHTML = `
       <img class="glyph rrow-thumb" src="${fileThumbSrc(img.storedPath)}" alt="" onerror="${onerr}" />
       <span class="clip">${escapeHtml(displayFileName(img) || 'Image')}</span>
+      <span class="qkey">${hasKey ? (i + 1) : '·'}</span>`;
+  } else if (file) {
+    // Copied-file recent (pdf/doc/video/large) — file glyph + name + size.
+    const sz = file.size ? ` · ${formatBytes(file.size)}` : '';
+    row.innerHTML = `
+      <span class="glyph" title="file">${fileGlyph(file.mime)}</span>
+      <span class="clip">${escapeHtml((displayFileName(file) || 'File') + sz)}</span>
       <span class="qkey">${hasKey ? (i + 1) : '·'}</span>`;
   } else {
     const oneLine = String(entry.text || '').replace(/\s+/g, ' ').trim();
@@ -1648,8 +1674,21 @@ function refreshRecentSel() {
 function pasteRecentEntry(entry) {
   if (!entry) return;
   // Captured image recents paste as a file (like image File items), not text.
+  // Copied-file recents (pdf/doc/video/large) paste their stored or original
+  // path through the same file-paste path. Plain text recents paste their text.
   const img = recentImageFile(entry);
-  const payload = img ? { filePaths: [img.storedPath] } : entry.text;
+  let payload;
+  if (img) {
+    payload = { filePaths: [img.storedPath] };
+  } else {
+    const file = recentFileEntry(entry);
+    if (file) {
+      const p = recentFilePastePath(file);
+      payload = p ? { filePaths: [p] } : entry.text;
+    } else {
+      payload = entry.text;
+    }
+  }
   return Promise.resolve(window.restash.pasteActive(payload))
     .then((result) => {
       if (result && result.ok) return;
@@ -2026,16 +2065,33 @@ function buildRecentRow(entry) {
   row.dataset.cid = entry.id;
 
   const img = recentImageFile(entry);
-  const oneLine = img
-    ? (displayFileName(img) || 'Image')
-    : String(entry.text || '').replace(/\s+/g, ' ').trim();
+  const file = img ? null : recentFileEntry(entry);
+  const isByRef = !!(file && file.byRef);
+  // A by-ref recent is a video or oversized file kept by path (not copied into
+  // the vault); it gets a Save-to-Downloads action instead of QR.
+  let oneLine;
+  if (img) {
+    oneLine = displayFileName(img) || 'Image';
+  } else if (file) {
+    const nm = displayFileName(file);
+    const sz = file.size ? ` · ${formatBytes(file.size)}` : '';
+    oneLine = `${nm}${sz}`;
+  } else {
+    oneLine = String(entry.text || '').replace(/\s+/g, ' ').trim();
+  }
   // Same auto-detect leading glyph as the RES-33 cursor-modal recents: link
   // icon for URLs, wallet icon for crypto addresses, neutral clip otherwise.
-  // Captured images render their actual thumbnail in the icon tile instead.
-  const kind = img ? 'image' : detectRecentKind(oneLine);
-  const iconHtml = img
-    ? `<img class="file-thumb" src="${fileThumbSrc(img.storedPath)}" alt="" onerror="${thumbOnError(fileGlyph(img.mime))}" />`
-    : RECENT_GLYPH[kind];
+  // Captured images render their actual thumbnail; copied files render the file
+  // glyph for their mime (video glyph for videos).
+  const kind = img ? 'image' : (file ? 'file' : detectRecentKind(oneLine));
+  let iconHtml;
+  if (img) {
+    iconHtml = `<img class="file-thumb" src="${fileThumbSrc(img.storedPath)}" alt="" onerror="${thumbOnError(fileGlyph(img.mime))}" />`;
+  } else if (file) {
+    iconHtml = fileGlyph(file.mime);
+  } else {
+    iconHtml = RECENT_GLYPH[kind];
+  }
 
   row.innerHTML = `
     <div class="row-main">
@@ -2051,13 +2107,16 @@ function buildRecentRow(entry) {
           <button class="row-act" data-ract="paste" title="Paste" aria-label="Paste">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L19 7"/></svg>
           </button>
+          ${isByRef ? `<button class="row-act" data-ract="download" title="Save to Downloads" aria-label="Save to Downloads">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M5 21h14"/></svg>
+          </button>` : ''}
           <button class="row-act" data-ract="save" title="Save to Restash" aria-label="Save to Restash">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
           </button>
           <button class="row-act" data-ract="share" title="Share…" aria-label="Share">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>
           </button>
-          ${img ? '' : `<button class="row-act" data-ract="qr" title="Show QR code" aria-label="Show QR code">
+          ${(img || file) ? '' : `<button class="row-act" data-ract="qr" title="Show QR code" aria-label="Show QR code">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v3M14 21h3M21 17v4h-4"/></svg>
           </button>`}
           <button class="row-act" data-ract="remove" title="Remove from history" aria-label="Remove from history">
@@ -2076,18 +2135,40 @@ function buildRecentRow(entry) {
       // Reuse the shared recent-paste path (restores the prior clipboard and
       // surfaces a toast / access-UI refresh if Accessibility isn't granted).
       pasteRecentEntry(entry);
+    } else if (act === 'download') {
+      // By-ref recent (video / oversized): copy the original file to Downloads.
+      const p = recentFilePastePath(file);
+      if (!p) { toast('File path unavailable'); return; }
+      (async () => {
+        try {
+          const r = await window.restash.saveFileCopy(p);
+          if (r && r.ok) toast(`Saved to Downloads: ${(r.savedPath || '').split('/').pop()}`);
+          else toast(`Save failed: ${(r && r.reason) || 'unknown'}`);
+        } catch (err) {
+          toast(`Save failed: ${(err && err.message) || 'unknown'}`);
+        }
+      })();
     } else if (act === 'save') {
       // Open the editor pre-filled for the user to label. Image recents seed a
-      // file item carrying the captured image; text recents seed a text item.
+      // file item carrying the captured image; copied-file recents seed a file
+      // item carrying that file; text recents seed a text item.
       applyMode('list');
       if (img) {
         openEditor(null, { prefill: { kind: 'file', files: [{ storedPath: img.storedPath, mime: img.mime, originalName: displayFileName(img) }] } });
+      } else if (file) {
+        const seed = { mime: file.mime, originalName: displayFileName(file), size: file.size };
+        if (file.storedPath) seed.storedPath = file.storedPath;
+        else { seed.path = file.path; seed.byRef = true; }
+        openEditor(null, { prefill: { kind: 'file', files: [seed] } });
       } else {
         openEditor(null, { prefill: { kind: 'text', value: entry.text } });
       }
     } else if (act === 'share') {
       if (img) {
         window.restash.shareItem({ filePath: img.storedPath, filePaths: [img.storedPath], iconPath: img.storedPath, label: 'Recent image' });
+      } else if (file) {
+        const p = recentFilePastePath(file);
+        if (p) window.restash.shareItem({ filePath: p, filePaths: [p], label: 'Recent file' });
       } else {
         window.restash.shareItem({ text: entry.text, label: 'Recent copy' });
       }

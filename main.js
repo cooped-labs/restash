@@ -1,7 +1,7 @@
 const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, clipboard, shell, screen, globalShortcut, systemPreferences, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
-const { execFile } = require('node:child_process');
+const { execFile, execFileSync } = require('node:child_process');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const QRCode = require('qrcode');
@@ -256,6 +256,7 @@ let clipHistoryLoaded = false;
 let clipWatchTimer = null;
 let clipLastHash = null;       // SHA-1 of the last clipboard text we saw
 let clipLastImageHash = null;  // SHA-1 of the last clipboard image PNG we saw
+let clipLastFilesHash = null;  // SHA-1 of the last copied-file selection we saw
 let clipOwnWrites = [];        // ring of { hash, at } for Restash-originated writes
 let clipWriteTimer = null;
 let clipHistoryMax = 0;        // cached clipboardHistoryMax (refreshed by syncClipboardWatcher)
@@ -264,6 +265,51 @@ let clipHistoryMax = 0;        // cached clipboardHistoryMax (refreshed by syncC
 // file-item save path so captured images render through the renderer's existing
 // image-thumbnail code with no new shape (files:[{ storedPath, mime }]).
 const CLIP_FILES_DIR = path.join(app.getPath('userData'), 'files');
+
+// Committed Swift helpers live alongside the app in bin/.
+const BIN = path.join(__dirname, 'bin');
+
+// Module-scope MIME guesser (the IPC handler closure has its own copy; this one
+// is needed by the clipboard file-capture path which runs outside that closure).
+function guessMimeForExt(ext) {
+  const e = String(ext || '').toLowerCase();
+  const map = {
+    '.pdf':  'application/pdf',
+    '.png':  'image/png',  '.jpg': 'image/jpeg',  '.jpeg': 'image/jpeg',
+    '.gif':  'image/gif',  '.webp': 'image/webp', '.svg':  'image/svg+xml',
+    '.heic': 'image/heic',
+    '.mp4':  'video/mp4',  '.mov':  'video/quicktime', '.webm': 'video/webm',
+    '.m4v':  'video/x-m4v', '.avi': 'video/x-msvideo', '.mkv': 'video/x-matroska',
+    '.mp3':  'audio/mpeg', '.wav':  'audio/wav',  '.m4a':  'audio/mp4',
+    '.doc':  'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xls':  'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.ppt':  'application/vnd.ms-powerpoint',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    '.txt':  'text/plain', '.md': 'text/markdown',
+    '.html': 'text/html',  '.htm': 'text/html',
+    '.json': 'application/json',
+    '.zip':  'application/zip',
+  };
+  return map[e] || 'application/octet-stream';
+}
+
+// Video MIME / extension detection — videos are stored BY-REFERENCE only
+// (never copied into the vault) so a multi-GB clip doesn't balloon storage.
+const VIDEO_EXTS = new Set(['.mp4', '.mov', '.webm', '.m4v', '.avi', '.mkv']);
+function isVideoFile(mime, ext) {
+  if (String(mime || '').toLowerCase().startsWith('video/')) return true;
+  return VIDEO_EXTS.has(String(ext || '').toLowerCase());
+}
+
+// Stable signature for a copied-file SELECTION: sha1 of the sorted absolute
+// paths joined by NUL. Used both to dedup across watcher polls and to mark our
+// own paste-path file writes so they aren't re-captured as recents.
+function filesSignature(paths) {
+  const sorted = (paths || []).filter(Boolean).slice().sort();
+  return sha1(sorted.join(' '));
+}
 
 function sha1Buffer(buf) {
   return crypto.createHash('sha1').update(buf).digest('hex');
@@ -365,6 +411,114 @@ function genClipId() {
   return 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
+// Detect COPIED FILES on the pasteboard (⌘C / right-click → Copy in Finder or
+// any app) and capture them as a single kind:'file' recent. Electron can't read
+// file URLs, so we shell out to the committed Swift helper (restash-read-clip-files)
+// which prints existing copied file paths one per line. Returns true when a file
+// selection was handled this tick (so checkClipboard must not also capture text).
+//
+// Storage policy (Kevin's rule):
+//   - VIDEO (video/* mime or video extension) → store BY-REFERENCE; keep the
+//     original path + metadata, never copy the bytes. Marked needsDownload so the
+//     UI offers a "Save"/"Download" action (file:saveCopy) that copies on demand.
+//   - NON-VIDEO ≤ MAX_FILE_BYTES → copy the bytes into FILES_DIR (self-contained
+//     recents), same scheme as the file:add handler.
+//   - NON-VIDEO > MAX_FILE_BYTES → store by-reference too rather than copying a
+//     huge file into the vault.
+function captureClipboardFiles(max) {
+  let formats = [];
+  try { formats = clipboard.availableFormats(); } catch { formats = []; }
+  const hasFileType = formats.some((f) => f.includes('file-url') || f.includes('NSFilenamesPboardType'));
+  if (!hasFileType) return false;
+
+  let out = '';
+  try {
+    out = execFileSync(path.join(BIN, 'restash-read-clip-files'), { timeout: 4000, encoding: 'utf8' });
+  } catch (err) {
+    // exit 1 (nothing) or exit 3 (file PROMISE with no resolvable path) →
+    // execFileSync throws; treat both as "no capturable files" and bail. File
+    // promises are intentionally skipped (no real bytes/path to capture).
+    return false;
+  }
+
+  const paths = String(out || '')
+    .split('\n')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (!paths.length) return false;
+
+  // Dedup across polls: the same selection sits on the pasteboard for many
+  // 700ms ticks; only capture it once.
+  const sig = filesSignature(paths);
+  if (sig === clipLastFilesHash) return true; // already handled this selection
+  clipLastFilesHash = sig;
+
+  // Own-write guard: when Restash itself wrote these files to the clipboard
+  // during a paste, don't re-capture them as a recent.
+  if (isOwnRecentWrite(sig)) return true;
+
+  // Build one files[] entry per path; classify + store per the policy above.
+  const files = [];
+  let needsDownload = false;
+  for (const p of paths) {
+    let stat = null;
+    try { stat = fs.statSync(p); } catch { stat = null; }
+    if (!stat || !stat.isFile()) continue;
+    const ext = path.extname(p);
+    const mime = guessMimeForExt(ext);
+    const name = path.basename(p);
+    const size = stat.size;
+
+    if (isVideoFile(mime, ext)) {
+      // VIDEO → by-reference only; never copy the bytes.
+      files.push({ path: p, name, size, mime, byRef: true });
+      needsDownload = true;
+    } else if (size > MAX_FILE_BYTES) {
+      // Too big to copy into the vault → by-reference too.
+      files.push({ path: p, name, size, mime, byRef: true });
+      needsDownload = true;
+    } else {
+      // NON-VIDEO under the ceiling → copy bytes into FILES_DIR (file:add scheme).
+      let storedPath = null;
+      try {
+        fs.mkdirSync(CLIP_FILES_DIR, { recursive: true });
+        const base = path.basename(p, ext);
+        const safeBase = base.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 60);
+        const storedName = `${Date.now().toString(36)}_${safeBase}${ext}`;
+        const destPath = path.join(CLIP_FILES_DIR, storedName);
+        fs.copyFileSync(p, destPath);
+        storedPath = destPath;
+      } catch { storedPath = null; }
+      if (storedPath) {
+        files.push({ storedPath, name, size, mime });
+      } else {
+        // Copy failed (permissions, gone) → fall back to by-reference.
+        files.push({ path: p, name, size, mime, byRef: true });
+        needsDownload = true;
+      }
+    }
+  }
+  if (!files.length) return true; // nothing usable, but a file selection was present
+
+  ensureClipHistoryLoaded();
+  // Full-ring dedup by the selection signature, then move-to-front.
+  clipHistory = clipHistory.filter((e) => e.filesHash !== sig);
+  const entry = {
+    id: genClipId(),
+    kind: 'file',
+    text: '',
+    files,
+    filesHash: sig,
+    capturedAt: Date.now(),
+  };
+  if (needsDownload) entry.needsDownload = true;
+  clipHistory.unshift(entry);
+  trimClipHistory(max);
+  scheduleClipHistoryWrite();
+  broadcastClipHistory();
+  return true;
+}
+
 // Read the clipboard and, if it changed to something new and capturable,
 // prepend it to the history. No-op when the feature is Off. Uses the cached
 // clipHistoryMax instead of re-reading settings from disk every poll tick.
@@ -421,6 +575,16 @@ function checkClipboard() {
     }
   }
 
+  // Capture COPIED FILES (Finder ⌘C / right-click Copy). A copied file puts a
+  // file-URL on the pasteboard plus a text fallback; capture it as a file recent
+  // and return so it doesn't also fall through to the text path below.
+  if (captureClipboardFiles(max)) {
+    // The file's text fallback (newline-joined paths) shouldn't be captured as a
+    // separate text recent on the next tick, so adopt its hash as "seen text".
+    if (textHash) clipLastHash = textHash;
+    return;
+  }
+
   if (!text) return;                                  // skip empty
   if (textHash === clipLastHash) return;              // unchanged since last poll
   clipLastHash = textHash;
@@ -463,6 +627,19 @@ function syncClipboardWatcher() {
           clipLastImageHash = null;
         }
       } catch { clipLastImageHash = null; }
+      // Seed clipLastFilesHash with any files already on the pasteboard so a
+      // pre-existing copied-file selection isn't grabbed the instant the watcher
+      // starts (mirrors the text/image seeding above).
+      try {
+        const formats = clipboard.availableFormats();
+        if (formats.some((f) => f.includes('file-url') || f.includes('NSFilenamesPboardType'))) {
+          const out = execFileSync(path.join(BIN, 'restash-read-clip-files'), { timeout: 4000, encoding: 'utf8' });
+          const paths = String(out || '').split('\n').map((p) => p.trim()).filter(Boolean);
+          clipLastFilesHash = paths.length ? filesSignature(paths) : null;
+        } else {
+          clipLastFilesHash = null;
+        }
+      } catch { clipLastFilesHash = null; }
       clipWatchTimer = setInterval(checkClipboard, CLIP_POLL_MS);
     }
   } else if (clipWatchTimer) {
@@ -1576,6 +1753,32 @@ app.whenReady().then(() => {
   ipcMain.handle('file:reveal', (_e, storedPath) => {
     if (typeof storedPath === 'string' && storedPath) shell.showItemInFolder(storedPath);
     return { ok: true };
+  });
+
+  // Save a BY-REFERENCE recent (e.g. a copied video kept by path, never copied
+  // into the vault) to the user's Downloads folder, on demand. De-duplicates the
+  // filename if one already exists ("name.ext" → "name (1).ext"). Returns
+  // { ok, savedPath } or { ok:false, reason }.
+  ipcMain.handle('file:saveCopy', async (_e, srcPath) => {
+    if (typeof srcPath !== 'string' || !srcPath) return { ok: false, reason: 'bad-input' };
+    try {
+      const stat = fs.statSync(srcPath);
+      if (!stat.isFile()) return { ok: false, reason: 'not-a-file' };
+      const downloads = app.getPath('downloads');
+      fs.mkdirSync(downloads, { recursive: true });
+      const ext = path.extname(srcPath);
+      const base = path.basename(srcPath, ext);
+      let dest = path.join(downloads, `${base}${ext}`);
+      let n = 1;
+      while (fs.existsSync(dest)) {
+        dest = path.join(downloads, `${base} (${n})${ext}`);
+        n += 1;
+      }
+      fs.copyFileSync(srcPath, dest);
+      return { ok: true, savedPath: dest };
+    } catch (err) {
+      return { ok: false, reason: 'copy-failed', error: err.message };
+    }
   });
 
   ipcMain.handle('items:load', () => readStore());

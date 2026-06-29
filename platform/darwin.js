@@ -92,9 +92,19 @@ async function paste({ text, filePaths, targetWindow }, hooks = {}) {
     }
   };
 
+  // When we write FILES to the clipboard (restash-clip-file), record an
+  // own-write keyed by the SAME selection signature the clipboard watcher uses
+  // (sha1 of the sorted POSIX paths joined by a single space) so our own paste
+  // isn't re-captured as a copied-file recent. We pass the raw joined-paths
+  // string; recordOwnWrite() sha1's it, matching filesSignature() in main.js.
+  const markOwnFileWrite = (fileList) => {
+    const sorted = (fileList || []).filter((p) => typeof p === 'string' && p).slice().sort();
+    if (sorted.length) markOwnWrite(sorted.join(' '));
+  };
+
   const trusted = systemPreferences.isTrustedAccessibilityClient(false);
   if (!trusted) {
-    if (files.length) { try { execFileSync(path.join(BIN, 'restash-clip-file'), files); } catch {} }
+    if (files.length) { markOwnFileWrite(files); try { execFileSync(path.join(BIN, 'restash-clip-file'), files); } catch {} }
     else if (text) { markOwnWrite(text); clipboard.writeText(text); }
     // NB: do NOT also fire isTrustedAccessibilityClient(true) here — the
     // non-prompting check above already established the app is untrusted, and
@@ -119,6 +129,7 @@ async function paste({ text, filePaths, targetWindow }, hooks = {}) {
   const prevHadFiles = prevFormats.some((f) => f.includes('file-url') || f.includes('NSFilenamesPboardType'));
 
   if (files.length) {
+    markOwnFileWrite(files);
     try { execFileSync(path.join(BIN, 'restash-clip-file'), files); }
     catch (err) { return { ok: false, reason: 'clip-file-failed', error: err.message }; }
   } else {

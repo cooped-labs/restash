@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('restash', {
   addFile:  (srcPath) => ipcRenderer.invoke('file:add', srcPath),
   openFile: (storedPath) => ipcRenderer.invoke('file:open', storedPath),
   revealFile: (storedPath) => ipcRenderer.invoke('file:reveal', storedPath),
+  // Copy a by-reference (video/oversized) recent to ~/Downloads on demand.
+  saveFileCopy: (p) => ipcRenderer.invoke('file:saveCopy', p),
   onPopoverShown: (cb) => ipcRenderer.on('popover:shown', cb),
 
   // Environment kind: capture the current workspace + open a whole env.
