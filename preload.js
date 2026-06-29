@@ -66,6 +66,15 @@ contextBridge.exposeInMainWorld('restash', {
 
   rowMenu: (item) => ipcRenderer.invoke('row:menu', item),
 
+  // Clipboard memory (RES-11) — auto-captured recent copies.
+  clipboardHistory: {
+    load:   () => ipcRenderer.invoke('clipboardHistory:load'),
+    remove: (id) => ipcRenderer.invoke('clipboardHistory:remove', id),
+    clear:  () => ipcRenderer.invoke('clipboardHistory:clear'),
+    setMax: (n) => ipcRenderer.invoke('clipboardHistory:setMax', n),
+    onUpdated: (cb) => ipcRenderer.on('clipboard-history:updated', (_e, items) => cb(items)),
+  },
+
   // Mode switching (grid vs list) — main tells renderer which UI to show.
   onModeSet: (cb) => ipcRenderer.on('mode:set', (_e, mode) => cb(mode)),
   onStashCycle: (cb) => ipcRenderer.on('stash:cycle', (_e, payload) => cb(payload || { direction: 1 })),

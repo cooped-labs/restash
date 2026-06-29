@@ -1850,13 +1850,31 @@ body.theme-dark .file-zone-picked .file-row.error .thumb {
   min-height: 0;
   overflow: hidden;
 }
-/* Stash pager header — dots + animated name. Mirrors the mockup. */
+/* Stash pager header — ‹ name › arrows + animated name. Mirrors the mockup. */
 .stash-header {
   flex: 0 0 auto;
   padding: 6px 12px 5px;
   text-align: center;
   border-bottom: 1px solid var(--divider);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
+/* ‹ › unified-cycle arrows (RES-33). Drive the same cycle as hotkey + dots. */
+.stash-arrow {
+  width: 18px; height: 18px;
+  flex: 0 0 18px;
+  border-radius: 5px;
+  display: grid; place-items: center;
+  cursor: pointer;
+  color: var(--fg-muted);
+  font-size: 14px; line-height: 1;
+  user-select: none;
+  transition: background 80ms ease, color 80ms ease;
+}
+.stash-arrow:hover { background: var(--bg-elev); color: var(--fg); }
+.stash-arrow:active { background: var(--bg-elev-2); }
 
 .stash-name {
   font-weight: 600;
@@ -1865,6 +1883,8 @@ body.theme-dark .file-zone-picked .file-row.error .thumb {
   height: 15px; line-height: 15px;
   overflow: hidden;
   position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .stash-name .label {
   position: absolute; inset: 0;
@@ -1874,6 +1894,104 @@ body.theme-dark .file-zone-picked .file-row.error .thumb {
 .stash-name .label.entering.in  { opacity: 1; transform: translateY(0); }
 .stash-name .label.exiting     { opacity: 1; transform: translateY(0); }
 .stash-name .label.exiting.out { opacity: 0; transform: translateY(-8px); }
+
+/* Pager dots (RES-33) — one per cycle page (Recent + each stash). */
+.stash-dots {
+  flex: 0 0 auto;
+  display: flex; gap: 4px; justify-content: center;
+  padding: 5px 0 4px;
+  border-bottom: 1px solid var(--divider);
+}
+.stash-dots.hidden { display: none; }
+.stash-dots i {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--bg-elev-2); cursor: pointer;
+  transition: background 120ms ease;
+}
+.stash-dots i.on { background: var(--tint); }
+
+/* ---------- Recent page (page 0 of the cursor-modal cycle, RES-33) ----------
+   A raw-clip list that lives inside a .grid-page so it slides like the grids,
+   but renders as a vertical list capped to the grid footprint + scrolls. */
+/* Chained with .grid-page so this beats the later `.grid-page { display:grid }`
+   rule (equal specificity → source order would otherwise win) — without this
+   the Recent list is squeezed into a single 1fr grid column (~1/3 width),
+   which truncated rows absurdly short ("http…") with empty space to the right. */
+.grid-page.recent-grid-page {
+  display: block;       /* override the 3×3 grid layout */
+  padding: 0;           /* the inner .rlist owns the padding */
+  overflow: hidden;
+}
+.rlist {
+  height: 100%;
+  padding: 5px 4px;
+  display: flex; flex-direction: column;
+  overflow-y: auto; overflow-x: hidden;
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-elev-2) transparent;
+}
+.rlist::-webkit-scrollbar { width: 6px; }
+.rlist::-webkit-scrollbar-thumb { background: var(--bg-elev-2); border-radius: 3px; }
+.rlist::-webkit-scrollbar-track { background: transparent; }
+
+.rrow {
+  display: flex; align-items: center; gap: 8px;
+  width: auto; box-sizing: border-box;
+  margin: 0 2px; padding: 6px 9px;
+  border-radius: 7px; cursor: pointer; position: relative;
+  flex: 0 0 auto;       /* fixed height in the column; stretches full width */
+}
+.rrow:hover { background: var(--hover); }
+.rrow.selected { background: var(--tint-strong); color: var(--tint-fg); }
+
+/* subtle leading auto-detect glyph — NOT a badge */
+.rrow .glyph {
+  width: 16px; height: 16px; flex: 0 0 16px;
+  display: grid; place-items: center;
+  color: var(--fg-muted);
+}
+.rrow .glyph svg { width: 14px; height: 14px; display: block; }
+.rrow.selected .glyph { color: var(--selected-fg-dim); }
+
+/* the copied text — one truncated monospace line */
+.rrow .clip {
+  flex: 1; min-width: 0;
+  font-size: 11.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--fg);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rrow.selected .clip { color: var(--tint-fg); }
+
+/* the 1–9 quick key — pinned to the far right edge of the row */
+.rrow .qkey {
+  width: 17px; height: 17px; flex: 0 0 17px;
+  margin-left: auto;
+  display: grid; place-items: center;
+  font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600;
+  color: var(--fg-dim);
+  background: var(--bg-elev); border: 1px solid var(--divider);
+  border-radius: 5px;
+}
+.rrow.selected .qkey {
+  background: var(--selected-overlay); border-color: transparent; color: var(--tint-fg);
+}
+.rrow.nokey .qkey { background: transparent; border-color: transparent; color: var(--fg-muted); opacity: .5; }
+
+/* tidy empty state when memory is off / history is empty */
+.rlist-empty {
+  height: 100%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  text-align: center; gap: 6px; padding: 16px 20px;
+}
+.rlist-empty-glyph {
+  width: 28px; height: 28px; color: var(--fg-muted); opacity: 0.55;
+}
+.rlist-empty-glyph svg { width: 28px; height: 28px; display: block; }
+.rlist-empty-title { font-size: 12px; font-weight: 600; color: var(--fg-dim); }
+.rlist-empty-hint { font-size: 10.5px; color: var(--fg-muted); line-height: 1.35; max-width: 200px; }
 
 /* The viewport holds one or two .grid-page layers stacked, sliding in/out. */
 .grid-viewport {
@@ -2242,4 +2360,153 @@ body.theme-dark .qr-safety.warn { background: rgba(255, 159, 10, 0.18); color: #
 @keyframes qrShimmer {
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+
+/* ============================================================
+   Clipboard memory (RES-11) — RECENT section + Settings control.
+   Reuses the app's tokens (light + dark) and mirrors the existing
+   row / row-actions / size-preset conventions. No hardcoded colors.
+   ============================================================ */
+
+/* Recent section header: "RECENT" + a "Clear ✕" affordance on the right. */
+.list-section.recent-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 12px;
+}
+.recent-section .rs-label { color: var(--fg-muted); }
+.recent-section .rs-clear {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  padding: 2px 2px;
+  transition: color 90ms ease-out;
+}
+.recent-section .rs-clear:hover { color: var(--orange); }
+
+/* Recent row reuses the base .row look. Mono text on the left; a fixed-width
+   right slot reserves room for the action cluster so long captured text
+   truncates with an ellipsis instead of sliding UNDER the hover buttons. The
+   timestamp and the actions share the same slot and cross-fade on hover. */
+/* Text container hard-truncates: it only ever occupies the space left over
+   after the reserved right-hand slot, so long captured text can never slide
+   under the hover buttons. min-width:0 is required for the ellipsis to engage
+   inside a flex item; text-overflow on the container backs up the inner span. */
+.row.recent-row .text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row.recent-row .label.mono {
+  display: block;
+  max-width: 100%;
+  font-weight: 400;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Subtle fade right at the truncation edge so the ellipsis softens
+     visually toward the action cluster — pure decoration, no layout impact. */
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 10px), transparent);
+          mask-image: linear-gradient(to right, black calc(100% - 10px), transparent);
+}
+/* Right-anchor slot — a NON-SHRINKING reserved column. Its width is held
+   constant whether the timestamp or the action cluster is showing, so the
+   text always has the same room and the row never reflows on hover. 100px ≈
+   4 buttons (22px) + 3 gaps (2px) + trailing pad, with headroom so the
+   absolutely-positioned action cluster can never sit over the text. */
+.row.recent-row .recent-right {
+  flex: 0 0 100px;
+  flex-shrink: 0;
+  margin-left: auto;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 22px;
+}
+.row.recent-row .recent-time {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  color: var(--fg-muted);
+  padding-right: 4px;
+  transition: opacity 110ms ease-out;
+}
+.row.recent-row .recent-actions {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translate(4px, -50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 110ms ease-out, transform 110ms ease-out;
+  pointer-events: none;
+}
+.row.recent-row:hover .recent-actions,
+.row.recent-row.selected .recent-actions {
+  opacity: 1;
+  transform: translate(0, -50%);
+  pointer-events: auto;
+}
+.row.recent-row:hover .recent-time,
+.row.recent-row.selected .recent-time { opacity: 0; }
+.row.recent-row .recent-icon { color: var(--fg-dim); }
+
+/* Settings → Clipboard memory segmented control. */
+.clip-seg {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+.clip-seg button {
+  flex: 1;
+  font: inherit;
+  font-size: 11.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  border: 1px solid var(--divider);
+  background: var(--bg-elev);
+  color: var(--fg-dim);
+  border-radius: 8px;
+  padding: 7px 0;
+  cursor: pointer;
+  transition: background 90ms ease-out, color 90ms ease-out;
+}
+.clip-seg button:hover { background: var(--bg-elev-2); color: var(--fg); }
+.clip-seg button.on {
+  background: var(--tint);
+  border-color: transparent;
+  color: var(--tint-fg);
+  font-weight: 600;
+}
+.clip-help {
+  font-size: 11px;
+  color: var(--fg-muted);
+  line-height: 1.45;
+  margin-top: 8px;
+}
+.clip-clear-row {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 10px;
+}
+.btn.ghost-danger {
+  background: transparent;
+  border: 1px solid var(--divider);
+  color: var(--fg-dim);
+}
+.btn.ghost-danger:hover {
+  border-color: var(--red);
+  color: var(--red);
 }

@@ -3,6 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { execFile } = require('node:child_process');
 const os = require('node:os');
+const crypto = require('node:crypto');
 const QRCode = require('qrcode');
 // Platform-abstraction layer — every native call routes through this so main.js
 // is OS-agnostic and the zero-install bundling policy is enforced in one place.
@@ -121,6 +122,7 @@ let win = null;
 
 const STORE_FILE = path.join(app.getPath('userData'), 'items.json');
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
+const CLIPBOARD_HISTORY_FILE = path.join(app.getPath('userData'), 'clipboard-history.json');
 
 // ── Owner build ──────────────────────────────────────────────────────────
 // Grants permanent full access without a license — for your own machines.
@@ -169,6 +171,7 @@ function readSettings() {
     otoShown: false,   // one-time-offer fires once, ever
     menuSize: null,    // {width,height} — user-resized list popover (null = default)
     gridSize: null,    // {width,height} — user-resized cursor numpad (null = default)
+    clipboardHistoryMax: 3, // Clipboard memory: # of recent copies to auto-capture (0 = Off)
   };
   try {
     if (!fs.existsSync(SETTINGS_FILE)) return defaults;
@@ -181,6 +184,136 @@ function readSettings() {
 function writeSettings(s) {
   fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify(s, null, 2));
+}
+
+// ── Clipboard memory (RES-11) ──────────────────────────────────────────────
+// Auto-captures the user's most-recent text copies into a small, local,
+// newest-first ring of items, stored separately from the user's saved items.
+// Everything stays on-device; nothing is ever sent anywhere.
+//
+// FOLLOW-UP: this v1 is text-only and JS-only. A later pass should add the
+// Swift "concealed pasteboard" detection (org.nspasteboard.ConcealedType /
+// password-manager hints) so password copies are skipped — that needs new
+// native code, so it's deferred to keep this build Xcode-free.
+const CLIP_HISTORY_VERSION = 1;
+const CLIP_MAX_BYTES = 100 * 1024;        // skip strings larger than 100KB
+const CLIP_POLL_MS = 700;                 // clipboard watcher interval
+const CLIP_WRITE_DEBOUNCE_MS = 250;       // debounce json writes
+const CLIP_OWN_WRITE_WINDOW_MS = 2000;    // drop captures that match our own write
+const CLIP_OWN_WRITE_RING = 8;            // cap of the own-write ring buffer
+
+let clipHistory = [];          // in-memory items, newest-first
+let clipHistoryLoaded = false;
+let clipWatchTimer = null;
+let clipLastHash = null;       // SHA-1 of the last clipboard text we saw
+let clipOwnWrites = [];        // ring of { hash, at } for Restash-originated writes
+let clipWriteTimer = null;
+
+function sha1(text) {
+  return crypto.createHash('sha1').update(String(text), 'utf8').digest('hex');
+}
+
+function readClipHistory() {
+  try {
+    if (!fs.existsSync(CLIPBOARD_HISTORY_FILE)) return [];
+    const data = JSON.parse(fs.readFileSync(CLIPBOARD_HISTORY_FILE, 'utf8'));
+    return Array.isArray(data && data.items) ? data.items : [];
+  } catch {
+    return [];
+  }
+}
+
+function ensureClipHistoryLoaded() {
+  if (clipHistoryLoaded) return;
+  clipHistory = readClipHistory();
+  clipHistoryLoaded = true;
+}
+
+// Debounced write of the in-memory history to disk.
+function scheduleClipHistoryWrite() {
+  if (clipWriteTimer) clearTimeout(clipWriteTimer);
+  clipWriteTimer = setTimeout(() => {
+    clipWriteTimer = null;
+    try {
+      fs.mkdirSync(path.dirname(CLIPBOARD_HISTORY_FILE), { recursive: true });
+      fs.writeFileSync(
+        CLIPBOARD_HISTORY_FILE,
+        JSON.stringify({ version: CLIP_HISTORY_VERSION, items: clipHistory }, null, 2)
+      );
+    } catch {}
+  }, CLIP_WRITE_DEBOUNCE_MS);
+}
+
+function broadcastClipHistory() {
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('clipboard-history:updated', clipHistory);
+  }
+}
+
+// Every Restash-originated clipboard write must go through this so the watcher
+// doesn't capture our own paste/copy as a "recent" item (which would create a
+// loop). We record the hash BEFORE writing, then drop matching captures inside
+// CLIP_OWN_WRITE_WINDOW_MS.
+function restashWriteClipboard(text) {
+  const str = String(text ?? '');
+  clipOwnWrites.push({ hash: sha1(str), at: Date.now() });
+  if (clipOwnWrites.length > CLIP_OWN_WRITE_RING) {
+    clipOwnWrites = clipOwnWrites.slice(-CLIP_OWN_WRITE_RING);
+  }
+  clipboard.writeText(str);
+}
+
+function isOwnRecentWrite(hash) {
+  const now = Date.now();
+  // Prune expired entries while we're here.
+  clipOwnWrites = clipOwnWrites.filter((w) => now - w.at <= CLIP_OWN_WRITE_WINDOW_MS);
+  return clipOwnWrites.some((w) => w.hash === hash);
+}
+
+function trimClipHistory(max) {
+  if (clipHistory.length > max) clipHistory = clipHistory.slice(0, max);
+}
+
+// Read the clipboard and, if it changed to something new and capturable,
+// prepend it to the history. No-op when the feature is Off.
+function checkClipboard() {
+  const max = readSettings().clipboardHistoryMax || 0;
+  if (max <= 0) return;
+  let text = '';
+  try { text = clipboard.readText() || ''; } catch { return; }
+  if (!text) return;                                  // skip empty
+  const hash = sha1(text);
+  if (hash === clipLastHash) return;                  // unchanged since last poll
+  clipLastHash = hash;
+  if (isOwnRecentWrite(hash)) return;                 // our own paste/copy — ignore
+  if (Buffer.byteLength(text, 'utf8') > CLIP_MAX_BYTES) return; // too large
+  ensureClipHistoryLoaded();
+  if (clipHistory[0] && clipHistory[0].text === text) return;   // dup of top
+
+  clipHistory.unshift({
+    id: 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    text,
+    capturedAt: Date.now(),
+  });
+  trimClipHistory(max);
+  scheduleClipHistoryWrite();
+  broadcastClipHistory();
+}
+
+// Start/stop the polling watcher based on the current setting. Idempotent.
+function syncClipboardWatcher() {
+  const max = readSettings().clipboardHistoryMax || 0;
+  if (max > 0) {
+    if (!clipWatchTimer) {
+      // Seed clipLastHash with the current clipboard so we don't capture
+      // whatever happened to be there before the watcher started.
+      try { clipLastHash = sha1(clipboard.readText() || ''); } catch { clipLastHash = null; }
+      clipWatchTimer = setInterval(checkClipboard, CLIP_POLL_MS);
+    }
+  } else if (clipWatchTimer) {
+    clearInterval(clipWatchTimer);
+    clipWatchTimer = null;
+  }
 }
 
 // Stamp the trial start the first time the app runs. Idempotent.
@@ -245,18 +378,19 @@ let currentQRHotkey = DEFAULT_QR_HOTKEY;   // QR decoder
 // (at module load), so we wrap them in a thunk that resolves at call time.
 let qrTrigger = null;
 
-// Generic per-slot registration. Each slot ('summon' | 'qr') has its own
-// accelerator + handler. Re-registering a slot unregisters the previous one,
-// preserves the other slot, and rolls back if the new combo is in use.
+// Generic per-slot registration. Each slot ('summon' | 'qr' | 'stash') has its
+// own accelerator + handler. Re-registering a slot unregisters the previous
+// one, preserves the other slots, and rolls back if the new combo is in use.
 function registerHotkeySlot(slot, accel) {
-  const handler = slot === 'qr'
-    ? () => { if (typeof qrTrigger === 'function') qrTrigger(); }
-    : togglePopoverAtCursor;
+  let handler;
+  if (slot === 'qr') handler = () => { if (typeof qrTrigger === 'function') qrTrigger(); };
+  else handler = togglePopoverAtCursor;
   const prev = slot === 'qr' ? currentQRHotkey : currentHotkey;
   if (prev) globalShortcut.unregister(prev);
   const ok = accel ? globalShortcut.register(accel, handler) : false;
   if (ok) {
-    if (slot === 'qr') currentQRHotkey = accel; else currentHotkey = accel;
+    if (slot === 'qr') currentQRHotkey = accel;
+    else currentHotkey = accel;
     return { ok: true, hotkey: accel };
   }
   // Rollback to the prior accel for this slot so we don't lose it entirely.
@@ -568,8 +702,59 @@ function createWindow() {
       weTriggeredHide = false;
       return;
     }
-    lastExternalHideAt = Date.now(); // user clicked outside — record for race fix
-    win.hide();
+
+    // Distinguish "focus went to one of OUR OWN windows" (e.g. the stash
+    // editor, the QR/scan overlay, the tutorial) from a genuine click-out to
+    // another app. We must NOT hide in the former case — doing so is the
+    // classic "opens then instantly closes" bug, because an own-window focus
+    // steal (an overlay re-asserting itself, a handoff between our own windows,
+    // etc.) fires this blur.
+    //
+    // The tricky part: during a focus handoff between two of OUR OWN windows,
+    // macOS briefly reports getFocusedWindow() === null for a frame or two. A
+    // single deferred check can land inside that transient gap and mis-read it
+    // as an external click-out. So we
+    // POLL for a short window: as soon as we observe focus on any own window (or
+    // the app still being the active app), we keep the popover open. Only if the
+    // whole poll window elapses with Restash genuinely not the active app do we
+    // treat it as a real click-out and hide.
+    const POLL_INTERVAL = 30;
+    const POLL_DEADLINE = Date.now() + 360; // ~12 samples
+    const decide = () => {
+      if (!win || win.isDestroyed()) return;
+      if (!win.isVisible()) return;           // already hidden by another path
+      if (win.isFocused()) return;            // focus came back to the popover
+      if (suppressBlurHideUntil > Date.now()) return;
+      if (weTriggeredHide) { weTriggeredHide = false; return; }
+
+      const focused = BrowserWindow.getFocusedWindow();
+      const ownFocused = focused && focused !== win && !focused.isDestroyed();
+      // appIsActive: true while Restash is the frontmost application — i.e.
+      // focus is still inside Restash even if it's momentarily between our own
+      // windows. This is the signal that survives the transient null gap during
+      // an own-window handoff. We track it via the app's
+      // did-become-active / did-resign-active events because Electron exposes no
+      // synchronous app.isActive() in this version.
+      const appActive = appIsActive;
+
+      if (ownFocused || appActive) {
+        // Focus is on (or returning to) one of our own windows — keep open.
+        return;
+      }
+
+      if (Date.now() < POLL_DEADLINE) {
+        // Still inside the grace window and we haven't seen an own-window claim
+        // yet — could be a transient null mid-handoff. Sample again shortly.
+        setTimeout(decide, POLL_INTERVAL);
+        return;
+      }
+
+      // Grace window elapsed with Restash NOT the active app and no own window
+      // focused: a genuine click-out to another application.
+      lastExternalHideAt = Date.now(); // user clicked outside — record for race fix
+      win.hide();
+    };
+    setTimeout(decide, POLL_INTERVAL);
   });
 
   // Each time the popover appears, tell the renderer. `activated` differentiates
@@ -587,6 +772,29 @@ let showWasActive = true;
 // native helper (share sheet, etc.). Without this, the helper steals focus
 // and we'd hide our popover right after the user clicked Share.
 let suppressBlurHideUntil = 0;
+
+// RES-43: cold-open blur grace. The polling blur handler needs stable signals
+// (appIsActive, getFocusedWindow) to decide; at t≈0 after a fresh open those
+// haven't settled. Suppress blur-hide for this window so the first transient
+// blur (status-item handoff, Cocoa init, dock animation) is ignored.
+const POPOVER_OPEN_BLUR_GRACE_MS = 500;
+let popoverOpenedAt = 0;
+
+// RES-43: idempotent open. togglePopover() hides if already visible — wrong
+// for "bring forward" paths (dock click while open, second-instance launch).
+function openPopoverIfHidden() {
+  if (!win || win.isDestroyed()) return;
+  if (win.isVisible()) { win.focus(); return; }
+  togglePopover();
+}
+
+// True while Restash is the active (frontmost) application. Maintained by the
+// app's did-become-active / did-resign-active events. The popover blur handler
+// uses this to tell an internal own-window focus handoff (app stays active —
+// keep the popover open) from a real click-out to another app (app resigns
+// active — hide). Electron exposes no synchronous app.isActive() here, so we
+// track it ourselves. Assume active at startup since the app launches frontmost.
+let appIsActive = true;
 
 // Two distinct UI modes share one BrowserWindow:
 //   'grid' — Option B numpad (3x3 of top 9 items), summoned at cursor by hotkey
@@ -680,6 +888,11 @@ function togglePopover() {
     showWasActive = true;
     win.show();
     win.focus();
+    popoverOpenedAt = Date.now();
+    suppressBlurHideUntil = Math.max(
+      suppressBlurHideUntil,
+      popoverOpenedAt + POPOVER_OPEN_BLUR_GRACE_MS,
+    );
   }
 }
 
@@ -826,7 +1039,19 @@ async function togglePopoverAtCursor() {
   showWasActive = true;
   win.show();
   win.focus();
+  popoverOpenedAt = Date.now();
+  suppressBlurHideUntil = Math.max(
+    suppressBlurHideUntil,
+    popoverOpenedAt + POPOVER_OPEN_BLUR_GRACE_MS,
+  );
 }
+
+// Track application active state for the popover blur handler. These fire when
+// Restash as a whole gains/loses frontmost status (i.e. the user switches to or
+// away from ANOTHER app) — NOT for focus moving between our own windows. That
+// makes appIsActive the reliable "did focus leave Restash entirely" signal.
+app.on('did-become-active', () => { appIsActive = true; });
+app.on('did-resign-active',  () => { appIsActive = false; });
 
 app.whenReady().then(() => {
   // Show in the Dock like a normal app. Forced at runtime so it's reliable even
@@ -895,11 +1120,13 @@ app.whenReady().then(() => {
   }
 
   // Clicking the Dock icon opens/toggles the popover (same as tray click).
-  app.on('activate', () => togglePopover());
+  // RES-43: openPopoverIfHidden() is idempotent (no hide-if-visible), so a
+  // dock click while the popover is already open just brings focus, not close.
+  app.on('activate', () => openPopoverIfHidden());
 
   // A second launch (Spotlight, double-click, `npm start`) is bounced by the
   // single-instance lock above — when it happens, surface THIS instance instead.
-  app.on('second-instance', () => togglePopover());
+  app.on('second-instance', () => openPopoverIfHidden());
 
   // End-to-end QR flow: capture → decode → show in popover.
   // ============================================================
@@ -1205,7 +1432,7 @@ app.whenReady().then(() => {
 
   // --- IPC: clipboard / external ---
   ipcMain.handle('clipboard:write', (_e, text) => {
-    clipboard.writeText(String(text ?? ''));
+    restashWriteClipboard(String(text ?? ''));
     return true;
   });
   ipcMain.handle('shell:open', (_e, url) => shell.openExternal(String(url)));
@@ -1567,11 +1794,6 @@ end if`;
     }
     if (!text && !filePaths.length) return { ok: false, reason: 'bad-input' };
 
-    // Route through the platform layer. Each OS handles clipboard write
-    // (text or multi-file), foreground restore, and paste synthesis via its
-    // bundled mechanism (osascript / win-helper / xcb / libei-portal / uinput),
-    // and falls back to copy-only when synthesis isn't available. hooks let the
-    // platform hide our windows so focus can return.
     return platform.paste(
       { text, filePaths, targetWindow: previousAppPid },
       {
@@ -1616,6 +1838,51 @@ end if`;
   }));
   // Renderer asks for a fresh entitlement read (e.g. after the billing modal).
   ipcMain.handle('entitlement:get', () => resolveEntitlement());
+
+  // ── Clipboard memory IPC (RES-11) ──────────────────────────────────────
+  ipcMain.handle('clipboardHistory:load', () => {
+    ensureClipHistoryLoaded();
+    return clipHistory;
+  });
+  ipcMain.handle('clipboardHistory:remove', (_e, id) => {
+    ensureClipHistoryLoaded();
+    clipHistory = clipHistory.filter((it) => it.id !== id);
+    scheduleClipHistoryWrite();
+    broadcastClipHistory();
+    return clipHistory;
+  });
+  ipcMain.handle('clipboardHistory:clear', () => {
+    ensureClipHistoryLoaded();
+    clipHistory = [];
+    // Wipe: remove the on-disk history entirely (also cancel any pending write
+    // so it can't recreate the file). This is the app's clipboard-data reset.
+    if (clipWriteTimer) { clearTimeout(clipWriteTimer); clipWriteTimer = null; }
+    try { fs.unlinkSync(CLIPBOARD_HISTORY_FILE); } catch {}
+    broadcastClipHistory();
+    return clipHistory;
+  });
+  ipcMain.handle('clipboardHistory:setMax', (_e, n) => {
+    let max = parseInt(n, 10);
+    if (!Number.isFinite(max) || max < 0) max = 0;
+    const s = readSettings();
+    s.clipboardHistoryMax = max;
+    writeSettings(s);
+    ensureClipHistoryLoaded();
+    if (max === 0) {
+      // Off — stop capturing. History on disk is left intact; the renderer
+      // simply hides the section. (Use "Clear history" to wipe it.)
+    } else {
+      trimClipHistory(max);
+      scheduleClipHistoryWrite();
+    }
+    syncClipboardWatcher();
+    broadcastClipHistory();
+    return { ok: true, max };
+  });
+
+  // Load history into memory and start the watcher per the saved setting.
+  ensureClipHistoryLoaded();
+  syncClipboardWatcher();
 
   // ── Lemon Squeezy license activation ──────────────────────────────────
   // Activate a license key on this device; on success the entitlement flips
@@ -1839,6 +2106,7 @@ end if`;
     }
     return result;
   });
+
   // --- Stubs for menu-bar dropdown actions ---
   ipcMain.handle('app:check-updates', async () => {
     // electron-updater: NSIS differential on Windows, AppImage zsync on Linux.

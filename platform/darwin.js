@@ -238,16 +238,6 @@ function positionAtCursor(win) {
   win.setPosition(x, y, false);
 }
 
-function positionShelf(win) {
-  // mac: notch/top-center band. Kept simple here; RES-13 shelf isn't on this
-  // base. Center on the active display's work-area top.
-  if (!win) return;
-  const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-  const wa = d.workArea;
-  const b = win.getBounds();
-  win.setPosition(Math.round(wa.x + wa.width / 2 - b.width / 2), wa.y, false);
-}
-
 // --- native share sheet via the committed Swift helper ---
 function share({ text, url, filePath, label, iconPath } = {}, hooks = {}) {
   const helper = path.join(BIN, 'restash-share');
@@ -291,7 +281,6 @@ module.exports = {
   openSites,
   trayIcon,
   positionPopover,
-  positionShelf,
   share,
   SHADOW_PAD,
 };

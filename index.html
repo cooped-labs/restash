@@ -41,8 +41,11 @@
   <section id="qrPanel" class="qr-panel hidden"></section>
   <main id="gridWrap" class="grid-wrap hidden">
     <div class="stash-header">
-      <div id="stashName" class="stash-name"><span class="label">All</span></div>
+      <span class="stash-arrow prev" title="Previous" aria-label="Previous page">‹</span>
+      <div id="stashName" class="stash-name"><span class="label">Recent</span></div>
+      <span class="stash-arrow next" title="Next" aria-label="Next page">›</span>
     </div>
+    <div id="stashDots" class="stash-dots hidden"></div>
     <div id="grid" class="grid-viewport"></div>
   </main>
 
@@ -188,6 +191,21 @@
         <div class="field">
           <span>Cursor numpad size</span>
           <div id="gridSizePresets" class="size-presets"></div>
+        </div>
+        <div class="field">
+          <span>Clipboard memory</span>
+          <div id="clipHistorySeg" class="clip-seg" role="group" aria-label="Recent items to keep">
+            <button type="button" data-n="0">Off</button>
+            <button type="button" data-n="1">1</button>
+            <button type="button" data-n="2">2</button>
+            <button type="button" data-n="3">3</button>
+            <button type="button" data-n="5">5</button>
+            <button type="button" data-n="10">10</button>
+          </div>
+          <div class="clip-help">Auto-capture your most-recent copies. Restash never sends clipboard data anywhere.</div>
+          <div class="clip-clear-row">
+            <button id="clipClearBtn" class="btn ghost-danger">Clear history</button>
+          </div>
         </div>
         <div class="field">
           <span>Accessibility (required for auto-paste)</span>
