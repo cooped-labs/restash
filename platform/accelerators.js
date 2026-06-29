@@ -8,9 +8,11 @@
 
 const isMac = process.platform === 'darwin';
 
-// macOS keeps its historical glyph defaults; Win/Linux get safe Ctrl+Alt combos.
+// macOS summon moves OFF ⌘⇧V (Apple-standard "Paste and Match Style", which a
+// global shortcut would shadow system-wide) to a non-colliding ⌘⌥V, mirroring
+// the Win/Linux Ctrl+Alt+V decision; QR uses ⌘⌥F. Win/Linux get safe Ctrl+Alt.
 const DEFAULTS = isMac
-  ? { summon: 'Command+Shift+V', qr: 'Control+Shift+F' }
+  ? { summon: 'Command+Alt+V', qr: 'Command+Alt+F' }
   : { summon: 'Control+Alt+V', qr: 'Control+Alt+F' };
 
 /**

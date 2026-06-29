@@ -1975,6 +1975,13 @@ body.theme-dark .file-zone-picked .file-row.error .thumb {
 .rrow .glyph svg { width: 14px; height: 14px; display: block; }
 .rrow.selected .glyph { color: var(--selected-fg-dim); }
 
+/* captured-image recent: the leading glyph is the actual thumbnail */
+.rrow .glyph.rrow-thumb {
+  width: 18px; height: 18px; flex: 0 0 18px;
+  object-fit: cover; border-radius: 4px;
+  border: 1px solid var(--divider);
+}
+
 /* the copied text — one truncated monospace line */
 .rrow .clip {
   flex: 1; min-width: 0;

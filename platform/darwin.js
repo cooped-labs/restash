@@ -86,20 +86,43 @@ async function paste({ text, filePaths, targetWindow }, hooks = {}) {
   const files = (filePaths || []).filter((p) => typeof p === 'string' && p);
   if (!text && !files.length) return { ok: false, reason: 'bad-input' };
 
+  const markOwnWrite = (payload) => {
+    if (typeof hooks.markOwnWrite === 'function') {
+      try { hooks.markOwnWrite(payload); } catch {}
+    }
+  };
+
   const trusted = systemPreferences.isTrustedAccessibilityClient(false);
   if (!trusted) {
     if (files.length) { try { execFileSync(path.join(BIN, 'restash-clip-file'), files); } catch {} }
-    else if (text) clipboard.writeText(text);
-    systemPreferences.isTrustedAccessibilityClient(true);
+    else if (text) { markOwnWrite(text); clipboard.writeText(text); }
+    // NB: do NOT also fire isTrustedAccessibilityClient(true) here — the
+    // non-prompting check above already established the app is untrusted, and
+    // the System Settings deep-link below is the single actionable surface.
+    // Prompting as well would double-surface the native TCC dialog.
     shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
     return { ok: false, reason: 'no-accessibility', mode: 'copied-only' };
   }
 
-  const prevClipboard = clipboard.readText();
+  // Format-aware snapshot so we don't silently wipe a copied image/file/RTF.
+  // Electron can round-trip text/html/rtf/image; file lists are not captured
+  // here, so when the prior clipboard was richer than plain text we skip the
+  // text-only restore rather than degrade/destroy it.
+  const prevFormats = clipboard.availableFormats();
+  const hadText = prevFormats.some((f) => f === 'text/plain' || f.startsWith('text/'));
+  const prevText = hadText ? clipboard.readText() : '';
+  const prevHtml = prevFormats.includes('text/html') ? clipboard.readHTML() : '';
+  const prevRtf = prevFormats.some((f) => f.includes('rtf')) ? clipboard.readRTF() : '';
+  const prevImage = prevFormats.some((f) => f.startsWith('image/')) ? clipboard.readImage() : null;
+  const prevHadImage = !!(prevImage && !prevImage.isEmpty());
+  // file lists (public.file-url) cannot be round-tripped via Electron's clipboard
+  const prevHadFiles = prevFormats.some((f) => f.includes('file-url') || f.includes('NSFilenamesPboardType'));
+
   if (files.length) {
     try { execFileSync(path.join(BIN, 'restash-clip-file'), files); }
     catch (err) { return { ok: false, reason: 'clip-file-failed', error: err.message }; }
   } else {
+    markOwnWrite(text);
     clipboard.writeText(text);
   }
 
@@ -117,7 +140,33 @@ async function paste({ text, filePaths, targetWindow }, hooks = {}) {
     );
   });
 
-  setTimeout(() => { try { clipboard.writeText(prevClipboard); } catch {} }, 350);
+  setTimeout(() => {
+    try {
+      // If the prior clipboard held content we can't faithfully round-trip
+      // (file URLs), leave the injected item in place rather than clobber the
+      // user's clipboard with a degraded text-only copy or an empty string.
+      if (prevHadFiles && !hadText && !prevHadImage && !prevHtml && !prevRtf) return;
+      // Restore the richest representations we captured, recording each as an
+      // own-write so the restore isn't re-captured into clipboard history.
+      const restore = {};
+      if (prevText) restore.text = prevText;
+      if (prevHtml) restore.html = prevHtml;
+      if (prevRtf) restore.rtf = prevRtf;
+      if (Object.keys(restore).length) {
+        markOwnWrite(prevText || prevHtml || prevRtf);
+        clipboard.write(restore);
+      } else if (prevHadImage) {
+        // Record the restored image as an own-write so the image watcher in
+        // main.js doesn't re-capture it on its next poll.
+        try { markOwnWrite(prevImage.toPNG()); } catch {}
+        clipboard.writeImage(prevImage);
+      } else if (hadText) {
+        // text was present but empty — preserve original empty-text state
+        markOwnWrite(prevText);
+        clipboard.writeText(prevText);
+      }
+    } catch {}
+  }, 350);
   return result;
 }
 
@@ -239,7 +288,7 @@ function positionAtCursor(win) {
 }
 
 // --- native share sheet via the committed Swift helper ---
-function share({ text, url, filePath, label, iconPath } = {}, hooks = {}) {
+function share({ text, url, filePath, filePaths, label, iconPath } = {}, hooks = {}) {
   const helper = path.join(BIN, 'restash-share');
   const args = [];
   if (label) args.push(`--title=${String(label)}`);
@@ -247,7 +296,12 @@ function share({ text, url, filePath, label, iconPath } = {}, hooks = {}) {
     const abs = path.isAbsolute(iconPath) ? iconPath : path.join(ROOT, iconPath);
     args.push(`--icon=${abs}`);
   }
-  if (filePath) args.push(String(filePath));
+  // Push every file path as a positional arg — the Swift helper wraps each as a
+  // fileURL. Prefer the multi-file array; fall back to the single filePath.
+  const paths = (Array.isArray(filePaths) && filePaths.length)
+    ? filePaths.filter((p) => typeof p === 'string' && p)
+    : (filePath ? [String(filePath)] : []);
+  for (const p of paths) args.push(String(p));
   if (text) args.push(String(text));
   if (url) args.push(String(url));
   if (!args.length || (args.length === 1 && args[0].startsWith('--'))) {

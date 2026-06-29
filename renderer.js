@@ -28,18 +28,37 @@ const ICONS = {
 // A recent is just literal copied text. At render time we sniff whether it
 // looks like a URL or a crypto address so we can show a subtle leading glyph
 // (link / wallet / neutral clip). Mirrors the approved prototype's detect().
-const RE_RECENT_URL = /^(https?:\/\/|www\.)|^[a-z0-9-]+(\.[a-z0-9-]+)+(\/|$)/i;
+// URL: require a scheme or www., OR a single whitespace-free token whose final
+// label is a known TLD. This stops ordinary text like "notes.txt" or "a.b"
+// from being mislabeled as a link while still catching real bare hosts.
+const RE_RECENT_URL = /^(https?:\/\/\S+|www\.\S+\.\S+)$/i;
+const RE_RECENT_HOST = /^[a-z0-9-]+(\.[a-z0-9-]+)*\.(com|org|net|io|dev|app|co|gov|edu|ai|xyz|info|me|gg)(\/\S*)?$/i;
 const RE_RECENT_BTC = /^(bc1|[13])[a-km-zA-HJ-NP-Z0-9]{25,62}$/;
 const RE_RECENT_ETH = /^0x[0-9a-fA-F]{40}$/;
 const RE_RECENT_SOL = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 function detectRecentKind(text) {
   const t = String(text || '').trim();
   if (!t) return 'clip';
-  if (RE_RECENT_URL.test(t)) return 'url';
-  if (RE_RECENT_ETH.test(t) || RE_RECENT_BTC.test(t) || RE_RECENT_SOL.test(t)) return 'crypto';
+  if (/\s/.test(t)) return 'clip'; // multi-token prose is never a URL/address
+  if (RE_RECENT_URL.test(t) || RE_RECENT_HOST.test(t)) return 'url';
+  // BTC/ETH are well-anchored (low false positives). SOL is base58-length-only
+  // and ambiguous, so guard it: a single token that isn't a URL/host.
+  if (RE_RECENT_ETH.test(t) || RE_RECENT_BTC.test(t)) return 'crypto';
+  if (RE_RECENT_SOL.test(t) && !RE_RECENT_URL.test(t) && !RE_RECENT_HOST.test(t)) return 'crypto';
   return 'clip';
 }
 const RECENT_GLYPH = { url: ICONS.url, crypto: ICONS.cryptoWallet, clip: ICONS.clip };
+
+// Image auto-capture (RES image-capture): the clipboard watcher in main saves a
+// copied image to FILES_DIR and emits a recent/clip entry carrying
+// files:[{ storedPath, mime:'image/png' }] — EXACTLY the shape of a saved image
+// File item. These helpers let the Recent renderers detect such an entry and
+// reuse the existing image-thumbnail path.
+function recentImageFile(entry) {
+  if (!entry || !Array.isArray(entry.files) || !entry.files.length) return null;
+  const f = entry.files[0] || {};
+  return ((f.mime || '').startsWith('image/') && f.storedPath) ? f : null;
+}
 
 // Monochrome SVG glyphs per file kind. All use currentColor so they pick up
 // the icon-tile foreground (light in dark mode, dark in light mode) — same
@@ -81,6 +100,28 @@ function fileGlyph(mime) {
   if (m.includes('zip') || m.includes('compressed'))           return FILE_GLYPHS.archive;
   if (m.startsWith('text/'))    return FILE_GLYPHS.document;
   return FILE_GLYPHS.generic;
+}
+
+// Build a properly URL-encoded file:// src for a stored absolute path.
+// encodeURI handles spaces, unicode, %, etc.; we additionally escape the
+// few chars encodeURI leaves alone that break a URL pathname (# ? "). The
+// stored files live under app.getPath('userData')/files which always contains
+// a space, and stored names can contain # — so encoding is required for the
+// CSP-allowed file: thumbnails to actually load.
+function fileThumbSrc(p) {
+  return 'file://' + encodeURI(String(p || ''))
+    .replace(/#/g, '%23')
+    .replace(/\?/g, '%3F')
+    .replace(/"/g, '%22');
+}
+
+// Inline onerror handler that swaps a broken <img> thumbnail for its kind
+// glyph (out-of-band-deleted file → glyph instead of the browser's broken
+// image). The glyph SVG is passed through encodeURIComponent so it can live
+// safely inside the double-quoted onerror attribute.
+function thumbOnError(glyphHtml) {
+  const enc = encodeURIComponent(glyphHtml).replace(/'/g, '%27');
+  return `this.outerHTML=decodeURIComponent('${enc}')`;
 }
 
 function formatBytes(n) {
@@ -131,8 +172,8 @@ function iconForItem(item) {
     const badge = extra ? `<span class="file-count-badge">+${extra}</span>` : '';
     const isStack = files.length > 1;
     if ((first.mime || '').startsWith('image/') && first.storedPath) {
-      const safe = first.storedPath.replace(/"/g, '%22');
-      return { html: `<img class="file-thumb" src="file://${safe}" alt="" />${badge}`, isThumb: true, isStack };
+      const onerr = thumbOnError(fileGlyph(first.mime));
+      return { html: `<img class="file-thumb" src="${fileThumbSrc(first.storedPath)}" alt="" onerror="${onerr}" />${badge}`, isThumb: true, isStack };
     }
     return { html: fileGlyph(first.mime) + badge, isFile: true, isStack };
   }
@@ -1155,7 +1196,18 @@ function renderQRPanel() {
         <button class="qr-btn" data-qr-act="dismiss">Close</button>
       </div>
     `;
-    panel.querySelector('[data-qr-act="retry"]')?.addEventListener('click', () => window.restash.qrCaptureAndDecode());
+    panel.querySelector('[data-qr-act="retry"]')?.addEventListener('click', () => {
+      // The macOS qr:capture-and-decode handler returns its result via the
+      // invoke promise (it never fires the onQRResult event), so consume it
+      // here and push it back into the panel via the normal render path.
+      Promise.resolve(window.restash.qrCaptureAndDecode())
+        .then((r) => {
+          if (!r || r.reason === 'cancelled') return; // user pressed Esc during region select
+          state.qrResult = r;
+          render();
+        })
+        .catch(() => {});
+    });
     panel.querySelector('[data-qr-act="dismiss"]')?.addEventListener('click', () => window.restash.hideWindow?.());
     return;
   }
@@ -1448,21 +1500,24 @@ function makeTile(item, idx) {
   tile.className = 'tile pinned' + (isImageFile ? ' image-bg' : '');
   tile.dataset.id = item.id;
   tile.dataset.slot = String(idx + 1);
+  const glyphLayout = `
+      <span class="num">${idx + 1}</span>
+      ${countBadge}
+      <div class="ic${icon.isChain ? ' is-chain' : ''}">${item.kind === 'file' ? fileGlyph(firstFile && firstFile.mime) : icon.html}</div>
+      <div class="lbl">${escapeHtml(item.label)}</div>
+    `;
   if (isImageFile) {
-    const safe = firstFile.storedPath.replace(/"/g, '%22');
+    // onerror: if the stored image was deleted out-of-band, drop the image-bg
+    // styling and fall back to the glyph layout instead of a broken thumbnail.
+    const onerr = `this.parentElement.classList.remove('image-bg');this.parentElement.innerHTML=decodeURIComponent('${encodeURIComponent(glyphLayout).replace(/'/g, '%27')}')`;
     tile.innerHTML = `
-      <img class="tile-bg" src="file://${safe}" alt="" />
+      <img class="tile-bg" src="${fileThumbSrc(firstFile.storedPath)}" alt="" onerror="${onerr}" />
       <span class="num">${idx + 1}</span>
       ${countBadge}
       <div class="lbl">${escapeHtml(item.label)}</div>
     `;
   } else {
-    tile.innerHTML = `
-      <span class="num">${idx + 1}</span>
-      ${countBadge}
-      <div class="ic${icon.isChain ? ' is-chain' : ''}${icon.isThumb ? ' is-thumb' : ''}">${icon.html}</div>
-      <div class="lbl">${escapeHtml(item.label)}</div>
-    `;
+    tile.innerHTML = glyphLayout;
   }
   tile.addEventListener('click', () => pasteItem(item));
   tile.addEventListener('contextmenu', async (e) => {
@@ -1483,14 +1538,18 @@ function buildGridPage(stash) {
 }
 
 // ---------- cursor-modal unified page cycle (RES-33) ----------
-// Page 0 is "Recent" (a vertical list of raw recent copies, replacing the old
-// "All" grid). Pages 1+ are the saved/auto stashes EXCEPT "All" (its role is
-// taken over by Recent), rendered as the familiar 3×3 numpad grids. The cycle
-// wraps. This is the SINGLE source of truth for the cursor numpad's pages.
+// Page 0 is "Recent" (a vertical list of raw recent copies). Page 1 is the
+// image-capable "All" grid (kept so pinned/captured IMAGE items — which only
+// render as thumbnails on grid pages — stay reachable in the cursor numpad);
+// it is skipped only when it holds no items. Pages 2+ are the remaining
+// saved/auto stashes as the familiar 3×3 numpad grids. The cycle wraps. This
+// is the SINGLE source of truth for the cursor numpad's pages.
 function gridPages() {
   const pages = [{ id: 'recent', name: 'Recent', recent: true }];
   for (const s of computeStashes()) {
-    if (s.id === 'all') continue; // Recent has taken over the first-page slot
+    // Only skip an empty "All" page; otherwise keep it so image items pinned to
+    // All remain reachable as thumbnails in the cursor grid.
+    if (s.id === 'all' && itemsForStash(s).length === 0) continue;
     pages.push(s);
   }
   return pages;
@@ -1552,12 +1611,24 @@ function buildModalRecentRow(entry, i) {
   const hasKey = i < 9;
   row.className = 'rrow' + (i === state.recentSelIdx ? ' selected' : '') + (hasKey ? '' : ' nokey');
   row.dataset.ridx = String(i);
-  const oneLine = String(entry.text || '').replace(/\s+/g, ' ').trim();
-  const kind = detectRecentKind(oneLine);
-  row.innerHTML = `
-    <span class="glyph" title="${kind}">${RECENT_GLYPH[kind]}</span>
-    <span class="clip">${escapeHtml(oneLine)}</span>
-    <span class="qkey">${hasKey ? (i + 1) : '·'}</span>`;
+  const img = recentImageFile(entry);
+  if (img) {
+    // Captured/stored image recent — render the thumbnail, reusing the same
+    // file:// thumbnail path (encoded src + glyph onerror) as image File items.
+    const onerr = thumbOnError(`<span class="glyph" title="image">${fileGlyph(img.mime)}</span>`);
+    row.classList.add('rrow-image');
+    row.innerHTML = `
+      <img class="glyph rrow-thumb" src="${fileThumbSrc(img.storedPath)}" alt="" onerror="${onerr}" />
+      <span class="clip">${escapeHtml(displayFileName(img) || 'Image')}</span>
+      <span class="qkey">${hasKey ? (i + 1) : '·'}</span>`;
+  } else {
+    const oneLine = String(entry.text || '').replace(/\s+/g, ' ').trim();
+    const kind = detectRecentKind(oneLine);
+    row.innerHTML = `
+      <span class="glyph" title="${kind}">${RECENT_GLYPH[kind]}</span>
+      <span class="clip">${escapeHtml(oneLine)}</span>
+      <span class="qkey">${hasKey ? (i + 1) : '·'}</span>`;
+  }
   row.addEventListener('mouseenter', () => { state.recentSelIdx = i; refreshRecentSel(); });
   row.addEventListener('click', () => pasteRecentEntry(entry));
   return row;
@@ -1565,7 +1636,9 @@ function buildModalRecentRow(entry, i) {
 
 // Keep the selected Recent row highlighted + scrolled into view.
 function refreshRecentSel() {
-  const rows = Array.from(gridEl.querySelectorAll('.rrow'));
+  // Scope to the centered page so a lingering exiting page (mid page-cycle)
+  // can't capture the selection / steal the scrollIntoView.
+  const rows = Array.from((gridEl.querySelector('.grid-page.center') || gridEl).querySelectorAll('.rrow'));
   rows.forEach((r, i) => r.classList.toggle('selected', i === state.recentSelIdx));
   if (rows[state.recentSelIdx]) rows[state.recentSelIdx].scrollIntoView({ block: 'nearest' });
 }
@@ -1574,7 +1647,21 @@ function refreshRecentSel() {
 // clipboard) so muscle memory and behavior match the menu-dropdown Recent rows.
 function pasteRecentEntry(entry) {
   if (!entry) return;
-  window.restash.pasteActive(entry.text);
+  // Captured image recents paste as a file (like image File items), not text.
+  const img = recentImageFile(entry);
+  const payload = img ? { filePaths: [img.storedPath] } : entry.text;
+  return Promise.resolve(window.restash.pasteActive(payload))
+    .then((result) => {
+      if (result && result.ok) return;
+      if (result && result.reason === 'no-accessibility') {
+        accessGranted = false;
+        refreshAccessUI();
+        toast(`Grant Accessibility to "Restash" in System Settings, then try again`);
+        return;
+      }
+      toast(`Paste failed: ${(result && result.reason) || 'unknown'} — value is on clipboard`);
+    })
+    .catch((err) => toast(`Paste failed: ${(err && err.message) || 'unknown'} — value is on clipboard`));
 }
 
 function buildPage(page) {
@@ -1938,15 +2025,22 @@ function buildRecentRow(entry) {
   row.className = 'row recent-row';
   row.dataset.cid = entry.id;
 
-  const oneLine = String(entry.text || '').replace(/\s+/g, ' ').trim();
+  const img = recentImageFile(entry);
+  const oneLine = img
+    ? (displayFileName(img) || 'Image')
+    : String(entry.text || '').replace(/\s+/g, ' ').trim();
   // Same auto-detect leading glyph as the RES-33 cursor-modal recents: link
   // icon for URLs, wallet icon for crypto addresses, neutral clip otherwise.
-  const kind = detectRecentKind(oneLine);
+  // Captured images render their actual thumbnail in the icon tile instead.
+  const kind = img ? 'image' : detectRecentKind(oneLine);
+  const iconHtml = img
+    ? `<img class="file-thumb" src="${fileThumbSrc(img.storedPath)}" alt="" onerror="${thumbOnError(fileGlyph(img.mime))}" />`
+    : RECENT_GLYPH[kind];
 
   row.innerHTML = `
     <div class="row-main">
-      <div class="icon recent-icon" title="${kind}">
-        ${RECENT_GLYPH[kind]}
+      <div class="icon recent-icon${img ? ' is-thumb' : ''}" title="${kind}">
+        ${iconHtml}
       </div>
       <div class="text">
         <span class="label mono">${escapeHtml(oneLine)}</span>
@@ -1963,8 +2057,11 @@ function buildRecentRow(entry) {
           <button class="row-act" data-ract="share" title="Share…" aria-label="Share">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>
           </button>
-          <button class="row-act" data-ract="qr" title="Show QR code" aria-label="Show QR code">
+          ${img ? '' : `<button class="row-act" data-ract="qr" title="Show QR code" aria-label="Show QR code">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v3M14 21h3M21 17v4h-4"/></svg>
+          </button>`}
+          <button class="row-act" data-ract="remove" title="Remove from history" aria-label="Remove from history">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
           </button>
         </div>
       </div>
@@ -1976,16 +2073,38 @@ function buildRecentRow(entry) {
     const act = actBtn ? actBtn.dataset.ract : 'paste'; // clicking the row pastes
     e.stopPropagation();
     if (act === 'paste') {
-      // Reuse the existing paste path (restores the prior clipboard).
-      window.restash.pasteActive(entry.text);
+      // Reuse the shared recent-paste path (restores the prior clipboard and
+      // surfaces a toast / access-UI refresh if Accessibility isn't granted).
+      pasteRecentEntry(entry);
     } else if (act === 'save') {
-      // Open the editor pre-filled as a new text item for the user to label.
+      // Open the editor pre-filled for the user to label. Image recents seed a
+      // file item carrying the captured image; text recents seed a text item.
       applyMode('list');
-      openEditor(null, { prefill: { kind: 'text', value: entry.text } });
+      if (img) {
+        openEditor(null, { prefill: { kind: 'file', files: [{ storedPath: img.storedPath, mime: img.mime, originalName: displayFileName(img) }] } });
+      } else {
+        openEditor(null, { prefill: { kind: 'text', value: entry.text } });
+      }
     } else if (act === 'share') {
-      window.restash.shareItem({ text: entry.text, label: 'Recent copy' });
+      if (img) {
+        window.restash.shareItem({ filePath: img.storedPath, filePaths: [img.storedPath], iconPath: img.storedPath, label: 'Recent image' });
+      } else {
+        window.restash.shareItem({ text: entry.text, label: 'Recent copy' });
+      }
     } else if (act === 'qr') {
       openQR({ label: 'Recent copy', value: entry.text });
+    } else if (act === 'remove') {
+      // Drop this entry from clipboard history; main broadcasts the updated
+      // list back via clipboardHistory.onUpdated, which re-renders Recent.
+      (async () => {
+        try {
+          const updated = await window.restash.clipboardHistory.remove(entry.id);
+          state.clipHistory = Array.isArray(updated) ? updated : state.clipHistory.filter((e2) => e2.id !== entry.id);
+        } catch {
+          state.clipHistory = state.clipHistory.filter((e2) => e2.id !== entry.id);
+        }
+        if (state.mode === 'list') renderRecent();
+      })();
     }
   });
 
@@ -2152,10 +2271,19 @@ function renderList() {
           // For URLs use both text+url so Mail / Messages can offer to send a link.
           const url = item.kind === 'url' ? item.value : null;
 
-          // File items: pass the stored file path. The Swift share helper
-          // wraps it as an NSURL fileURL so AirDrop / Mail / Messages
-          // recognize it as a real file (attachment, not text).
-          const filePath = item.kind === 'file' ? item.value : null;
+          // File items: derive paths/mime from files[] (the source of truth);
+          // item.value/item.mime are only legacy single-file fallbacks. The
+          // Swift share helper wraps each path as an NSURL fileURL so AirDrop /
+          // Mail / Messages recognize them as real files (attachments).
+          const _files = (Array.isArray(item.files) && item.files.length)
+            ? item.files
+            : [{ storedPath: item.value, mime: item.mime }];
+          const _first = _files[0] || {};
+          const filePaths = item.kind === 'file'
+            ? _files.map((f) => f.storedPath).filter(Boolean)
+            : null;
+          // Back-compat single path (first file) for any single-file consumer.
+          const filePath = item.kind === 'file' ? (_first.storedPath || null) : null;
 
           // Preview icon for the share sheet. Crypto items use their chain
           // logo when set; file images use their actual thumbnail; otherwise
@@ -2165,14 +2293,15 @@ function renderList() {
             iconPath = (item.tag && CHAINS[item.tag])
               ? `assets/chains/${item.tag.toLowerCase()}.svg`
               : 'assets/wallet.svg';
-          } else if (item.kind === 'file' && (item.mime || '').startsWith('image/')) {
-            iconPath = item.value; // absolute path; main resolves OK
+          } else if (item.kind === 'file' && (_first.mime || '').startsWith('image/')) {
+            iconPath = _first.storedPath; // absolute path; main resolves OK
           }
 
           window.restash.shareItem({
             text: item.kind === 'file' ? null : item.value,
             url,
             filePath,
+            filePaths,
             label: item.label,
             iconPath,
           });
@@ -2385,7 +2514,7 @@ async function pasteItem(item) {
     // Main already opened System Settings → Accessibility for the user.
     accessGranted = false;
     refreshAccessUI();
-    toast(`Grant Accessibility to "Electron" in System Settings, then try again`);
+    toast(`Grant Accessibility to "Restash" in System Settings, then try again`);
     return;
   }
   // Other failure modes (osascript error, bad input) — keep window open
@@ -2446,6 +2575,10 @@ async function openEditor(item, opts = {}) {
     } else {
       editorFiles = [];
     }
+  } else if (prefill?.kind === 'file' && Array.isArray(prefill.files) && prefill.files.length) {
+    // Prefill from a captured image recent (or similar) — seed editorFiles so
+    // the file rows + image preview render in the editor before saving.
+    editorFiles = prefill.files.map((f) => ({ ...f }));
   } else {
     editorFiles = [];
   }
@@ -2821,7 +2954,7 @@ function renderFilePicker() {
     const isImage = (f.mime || '').startsWith('image/');
     const isVideo = (f.mime || '').startsWith('video/');
     const thumb = isImage && f.storedPath
-      ? `<div class="thumb"><img src="file://${f.storedPath.replace(/"/g, '%22')}" alt="" /></div>`
+      ? `<div class="thumb"><img src="${fileThumbSrc(f.storedPath)}" alt="" onerror="${thumbOnError(`<div class="file-glyph">${fileGlyph(f.mime)}</div>`)}" /></div>`
       : `<div class="thumb${isVideo ? ' video' : ''}"><div class="file-glyph">${fileGlyph(f.mime)}</div></div>`;
     const sizeStr = formatBytes(f.size);
     const ext = (f.originalName.match(/\.([^.]+)$/) || [, ''])[1].toUpperCase();
@@ -2988,6 +3121,11 @@ async function saveFromEditor() {
   } else if (isContact) {
     if (state.editing) {
       Object.assign(state.editing, { kind: 'contact', label, value: contactValue, tag: undefined, stashIds, contact });
+      // Switching away from file — drop stale file fields.
+      delete state.editing.files;
+      delete state.editing.originalName;
+      delete state.editing.mime;
+      delete state.editing.size;
     } else {
       state.items.push({
         id: uid(),
@@ -3008,6 +3146,11 @@ async function saveFromEditor() {
     if (state.editing) {
       Object.assign(state.editing, { kind: 'environment', label, value, tag: undefined, stashIds, env });
       delete state.editing.contact;
+      // Switching away from file — drop stale file fields.
+      delete state.editing.files;
+      delete state.editing.originalName;
+      delete state.editing.mime;
+      delete state.editing.size;
     } else {
       state.items.push({
         id: uid(),
@@ -3027,6 +3170,11 @@ async function saveFromEditor() {
       Object.assign(state.editing, { kind: editorKind, label, value, tag, stashIds });
       // Switching away from contact — drop the stale structured object.
       delete state.editing.contact;
+      // Switching away from file — drop stale file fields.
+      delete state.editing.files;
+      delete state.editing.originalName;
+      delete state.editing.mime;
+      delete state.editing.size;
     } else {
       state.items.push({
         id: uid(),
@@ -3702,9 +3850,9 @@ function wire() {
 
   if (!state.items || state.items.length === 0) {
     state.items = [
-      { id: uid(), kind: 'url', label: 'CFA Crypto Pro', value: 'https://cfacryptopro.com', createdAt: Date.now(), pins: { all: 0 } },
+      { id: uid(), kind: 'url', label: 'Example site', value: 'https://example.com', createdAt: Date.now(), pins: { all: 0 } },
       { id: uid(), kind: 'cryptoAddress', label: 'Example ETH wallet', value: '0x0000000000000000000000000000000000000000', tag: 'ETH', createdAt: Date.now() - 1000 },
-      { id: uid(), kind: 'text', label: 'Email signature', value: '—\nKevin\nkevin@cfacryptopro.com', createdAt: Date.now() - 2000 },
+      { id: uid(), kind: 'text', label: 'Email signature', value: '—\nYour Name\nyou@example.com', createdAt: Date.now() - 2000 },
     ];
     await persist();
   }
@@ -3728,6 +3876,21 @@ function wire() {
     state.clipHistory = Array.isArray(items) ? items : [];
     if (state.mode === 'list') renderRecent();
   });
+  // When the stash-edit window (or any other window) mutates items.json,
+  // main broadcasts 'items:changed'. Reload from disk and re-render so the
+  // popover's next persist() doesn't blind-overwrite that external change
+  // with our stale in-memory array (last-writer-wins clobber).
+  if (typeof window.restash.onItemsChanged === 'function') {
+    window.restash.onItemsChanged(async () => {
+      try {
+        const fresh = await window.restash.loadItems();
+        if (Array.isArray(fresh)) {
+          state.items = fresh;
+          render();
+        }
+      } catch {}
+    });
+  }
   try {
     availableStashes = await window.restash.listStashes();
   } catch { availableStashes = []; }

@@ -144,18 +144,66 @@ function isOwnerBuild() {
 const DEFAULT_HOTKEY    = platform.defaultHotkeys.summon;
 const DEFAULT_QR_HOTKEY = platform.defaultHotkeys.qr;
 
-function readStore() {
+const STORE_BAK_FILE = STORE_FILE + '.bak';
+
+// Parse a store file, returning the parsed array or null if missing/invalid.
+function tryParseStore(file) {
   try {
-    if (!fs.existsSync(STORE_FILE)) return [];
-    return JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
+    if (!fs.existsSync(file)) return null;
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return Array.isArray(data) ? data : null;
   } catch {
-    return [];
+    return null;
   }
 }
 
+// Read the user's items. On a corrupt/unparseable primary store we DO NOT
+// silently return [] (which would let the next save clobber recoverable data):
+// we preserve the corrupt file as a timestamped .corrupt copy and fall back to
+// the rolling .bak so a single bad write can't lose the vault.
+function readStore() {
+  const primary = tryParseStore(STORE_FILE);
+  if (primary) return primary;
+
+  // Primary missing → fresh install (or empty), nothing to recover.
+  if (!fs.existsSync(STORE_FILE)) {
+    const fromBak = tryParseStore(STORE_BAK_FILE);
+    return fromBak || [];
+  }
+
+  // Primary EXISTS but is corrupt — preserve it, then recover from .bak.
+  try {
+    const corruptPath = `${STORE_FILE}.corrupt-${Date.now()}`;
+    fs.copyFileSync(STORE_FILE, corruptPath);
+    console.warn(`[Restash] items.json was corrupt; preserved a copy at ${corruptPath} and recovered from backup.`);
+  } catch {}
+  const fromBak = tryParseStore(STORE_BAK_FILE);
+  return fromBak || [];
+}
+
+// Atomic write: serialize to a temp file (with fsync), roll the previous good
+// store to .bak, then rename the temp into place. A crash mid-write leaves
+// either the prior store or the .bak intact — never a truncated items.json.
 function writeStore(items) {
-  fs.mkdirSync(path.dirname(STORE_FILE), { recursive: true });
-  fs.writeFileSync(STORE_FILE, JSON.stringify(items, null, 2));
+  const dir = path.dirname(STORE_FILE);
+  fs.mkdirSync(dir, { recursive: true });
+  const json = JSON.stringify(items, null, 2);
+  const tmp = `${STORE_FILE}.tmp-${process.pid}-${Date.now()}`;
+
+  const fd = fs.openSync(tmp, 'w');
+  try {
+    fs.writeFileSync(fd, json);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+
+  // Roll the current good store to .bak before replacing it.
+  try {
+    if (fs.existsSync(STORE_FILE)) fs.copyFileSync(STORE_FILE, STORE_BAK_FILE);
+  } catch {}
+
+  fs.renameSync(tmp, STORE_FILE);
 }
 
 const TRIAL_DAYS = 30;
@@ -201,13 +249,37 @@ const CLIP_POLL_MS = 700;                 // clipboard watcher interval
 const CLIP_WRITE_DEBOUNCE_MS = 250;       // debounce json writes
 const CLIP_OWN_WRITE_WINDOW_MS = 2000;    // drop captures that match our own write
 const CLIP_OWN_WRITE_RING = 8;            // cap of the own-write ring buffer
+const MAX_FILE_BYTES = 100 * 1024 * 1024; // 100 MB ceiling for stored files/images
 
 let clipHistory = [];          // in-memory items, newest-first
 let clipHistoryLoaded = false;
 let clipWatchTimer = null;
 let clipLastHash = null;       // SHA-1 of the last clipboard text we saw
+let clipLastImageHash = null;  // SHA-1 of the last clipboard image PNG we saw
 let clipOwnWrites = [];        // ring of { hash, at } for Restash-originated writes
 let clipWriteTimer = null;
+let clipHistoryMax = 0;        // cached clipboardHistoryMax (refreshed by syncClipboardWatcher)
+
+// Where auto-captured images live on disk — mirrors the FILES_DIR used by the
+// file-item save path so captured images render through the renderer's existing
+// image-thumbnail code with no new shape (files:[{ storedPath, mime }]).
+const CLIP_FILES_DIR = path.join(app.getPath('userData'), 'files');
+
+function sha1Buffer(buf) {
+  return crypto.createHash('sha1').update(buf).digest('hex');
+}
+
+// Persist a captured NativeImage to CLIP_FILES_DIR as PNG and return its path,
+// reusing the on-disk naming convention of the file-item save path.
+function saveClipImage(img) {
+  const png = img.toPNG();
+  if (!png || !png.length) return null;
+  fs.mkdirSync(CLIP_FILES_DIR, { recursive: true });
+  const storedName = `${Date.now().toString(36)}_clip.png`;
+  const destPath = path.join(CLIP_FILES_DIR, storedName);
+  fs.writeFileSync(destPath, png);
+  return destPath;
+}
 
 function sha1(text) {
   return crypto.createHash('sha1').update(String(text), 'utf8').digest('hex');
@@ -250,16 +322,31 @@ function broadcastClipHistory() {
   }
 }
 
-// Every Restash-originated clipboard write must go through this so the watcher
-// doesn't capture our own paste/copy as a "recent" item (which would create a
-// loop). We record the hash BEFORE writing, then drop matching captures inside
-// CLIP_OWN_WRITE_WINDOW_MS.
-function restashWriteClipboard(text) {
-  const str = String(text ?? '');
-  clipOwnWrites.push({ hash: sha1(str), at: Date.now() });
+// Every Restash-originated clipboard write must record its hash BEFORE writing,
+// so the watcher drops matching captures inside CLIP_OWN_WRITE_WINDOW_MS and
+// doesn't capture our own paste/copy/restore as a "recent" item (a feedback
+// loop). Accepts a string (text payload) OR a Buffer (e.g. a PNG image),
+// hashing each the same way checkClipboard() hashes the corresponding clipboard
+// read so the guard matches for both text and image writes from the paste path.
+function recordOwnWrite(payload) {
+  let hash = null;
+  if (Buffer.isBuffer(payload)) {
+    if (!payload.length) return;
+    hash = sha1Buffer(payload);
+  } else {
+    const str = String(payload ?? '');
+    if (!str) return;
+    hash = sha1(str);
+  }
+  clipOwnWrites.push({ hash, at: Date.now() });
   if (clipOwnWrites.length > CLIP_OWN_WRITE_RING) {
     clipOwnWrites = clipOwnWrites.slice(-CLIP_OWN_WRITE_RING);
   }
+}
+
+function restashWriteClipboard(text) {
+  const str = String(text ?? '');
+  recordOwnWrite(str);
   clipboard.writeText(str);
 }
 
@@ -274,24 +361,79 @@ function trimClipHistory(max) {
   if (clipHistory.length > max) clipHistory = clipHistory.slice(0, max);
 }
 
+function genClipId() {
+  return 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
 // Read the clipboard and, if it changed to something new and capturable,
-// prepend it to the history. No-op when the feature is Off.
+// prepend it to the history. No-op when the feature is Off. Uses the cached
+// clipHistoryMax instead of re-reading settings from disk every poll tick.
 function checkClipboard() {
-  const max = readSettings().clipboardHistoryMax || 0;
+  const max = clipHistoryMax;
   if (max <= 0) return;
+
   let text = '';
-  try { text = clipboard.readText() || ''; } catch { return; }
+  try { text = clipboard.readText() || ''; } catch { text = ''; }
+  const textHash = text ? sha1(text) : null;
+
+  // Capture an IMAGE when the clipboard holds one that is newer than the last
+  // text we saw (a fresh image copy clears/lags the text representation). This
+  // mirrors the existing image-File item shape so the renderer's thumbnail path
+  // renders it with no new shape: files:[{ storedPath, mime:'image/png' }].
+  if (!text || textHash !== clipLastHash) {
+    let img = null;
+    try {
+      const formats = clipboard.availableFormats();
+      if (formats.some((f) => f.startsWith('image/'))) img = clipboard.readImage();
+    } catch { img = null; }
+    if (img && !img.isEmpty()) {
+      let png = null;
+      try { png = img.toPNG(); } catch { png = null; }
+      if (png && png.length) {
+        const imgHash = sha1Buffer(png);
+        if (imgHash !== clipLastImageHash) {
+          clipLastImageHash = imgHash;
+          // Don't re-capture our own image writes, and skip oversized images.
+          if (!isOwnRecentWrite(imgHash) && png.length <= MAX_FILE_BYTES) {
+            let storedPath = null;
+            try { storedPath = saveClipImage(img); } catch { storedPath = null; }
+            if (storedPath) {
+              ensureClipHistoryLoaded();
+              // Full-ring dedup by stored content hash, then move-to-front.
+              clipHistory = clipHistory.filter((e) => e.imageHash !== imgHash);
+              clipHistory.unshift({
+                id: genClipId(),
+                kind: 'file',
+                text: '',
+                files: [{ storedPath, mime: 'image/png' }],
+                imageHash: imgHash,
+                capturedAt: Date.now(),
+              });
+              trimClipHistory(max);
+              scheduleClipHistoryWrite();
+              broadcastClipHistory();
+            }
+          }
+        }
+        // An image was present this tick; don't also capture stale text below.
+        return;
+      }
+    }
+  }
+
   if (!text) return;                                  // skip empty
-  const hash = sha1(text);
-  if (hash === clipLastHash) return;                  // unchanged since last poll
-  clipLastHash = hash;
-  if (isOwnRecentWrite(hash)) return;                 // our own paste/copy — ignore
+  if (textHash === clipLastHash) return;              // unchanged since last poll
+  clipLastHash = textHash;
+  if (isOwnRecentWrite(textHash)) return;             // our own paste/copy — ignore
   if (Buffer.byteLength(text, 'utf8') > CLIP_MAX_BYTES) return; // too large
   ensureClipHistoryLoaded();
-  if (clipHistory[0] && clipHistory[0].text === text) return;   // dup of top
+
+  // Full-ring dedup: re-copying an older clip moves it to the front rather than
+  // creating a duplicate row (natural most-recently-used ordering).
+  clipHistory = clipHistory.filter((e) => e.text !== text || (e.files && e.files.length));
 
   clipHistory.unshift({
-    id: 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    id: genClipId(),
     text,
     capturedAt: Date.now(),
   });
@@ -301,13 +443,26 @@ function checkClipboard() {
 }
 
 // Start/stop the polling watcher based on the current setting. Idempotent.
+// Caches the max into clipHistoryMax so checkClipboard() doesn't re-read
+// settings from disk on every poll tick. The clipboardHistory:setMax handler
+// calls this whenever the value changes, keeping the cache fresh.
 function syncClipboardWatcher() {
   const max = readSettings().clipboardHistoryMax || 0;
+  clipHistoryMax = max;
   if (max > 0) {
     if (!clipWatchTimer) {
-      // Seed clipLastHash with the current clipboard so we don't capture
-      // whatever happened to be there before the watcher started.
+      // Seed clipLastHash/clipLastImageHash with the current clipboard so we
+      // don't capture whatever happened to be there before the watcher started.
       try { clipLastHash = sha1(clipboard.readText() || ''); } catch { clipLastHash = null; }
+      try {
+        const formats = clipboard.availableFormats();
+        if (formats.some((f) => f.startsWith('image/'))) {
+          const img0 = clipboard.readImage();
+          clipLastImageHash = (img0 && !img0.isEmpty()) ? sha1Buffer(img0.toPNG()) : null;
+        } else {
+          clipLastImageHash = null;
+        }
+      } catch { clipLastImageHash = null; }
       clipWatchTimer = setInterval(checkClipboard, CLIP_POLL_MS);
     }
   } else if (clipWatchTimer) {
@@ -1312,8 +1467,7 @@ app.whenReady().then(() => {
   // ---------- File items ----------
   // Files saved to Restash live in userData/files/. We copy in on save so
   // items don't break if the user moves or deletes the source.
-  const FILES_DIR = path.join(app.getPath('userData'), 'files');
-  const MAX_FILE_BYTES = 100 * 1024 * 1024; // 100 MB ceiling
+  const FILES_DIR = CLIP_FILES_DIR; // userData/files — shared with clip image capture
 
   function ensureFilesDir() {
     if (!fs.existsSync(FILES_DIR)) fs.mkdirSync(FILES_DIR, { recursive: true });
@@ -1425,8 +1579,19 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('items:load', () => readStore());
-  ipcMain.handle('items:save', (_e, items) => {
+  ipcMain.handle('items:save', (e, items) => {
+    // writeStore is synchronous, so concurrent items:save IPCs from the popover
+    // and the stash-edit window are already serialized in the main process —
+    // no interleaved/torn write. To stop last-writer-wins CLOBBER of the other
+    // window's stale in-memory view, broadcast the change so each non-sending
+    // window reloads from disk after a save.
     writeStore(items);
+    const senderId = e.sender && e.sender.id;
+    for (const w of [win, stashEditWin]) {
+      if (w && !w.isDestroyed() && w.webContents.id !== senderId) {
+        w.webContents.send('items:changed');
+      }
+    }
     return true;
   });
 
@@ -1651,6 +1816,15 @@ end if`;
     try { platform.openSites(byProfile, { separate: urlMode === 'separate' }); } catch {}
     return { ok: true };
   });
+
+  // Per-site Chrome profile picker — forwards to the platform implementation
+  // (getChromeProfiles is exported by darwin/win32/linux). Renderer gates the
+  // profile dropdown on a non-empty list, so a missing handler made it dead.
+  ipcMain.handle('chrome:profiles', () => {
+    try { return platform.getChromeProfiles ? platform.getChromeProfiles() : []; }
+    catch { return []; }
+  });
+
   ipcMain.handle('qr:dataurl', (_e, text) => QRCode.toDataURL(String(text ?? ''), {
     errorCorrectionLevel: 'H',
     margin: 1,
@@ -1664,9 +1838,9 @@ end if`;
   // share sheet, so platform.share returns { fallback: true } and the renderer
   // shows an in-app Copy / Open URL / Reveal file / Email action set (all via
   // already-cross-platform Electron shell APIs — zero new native deps).
-  ipcMain.handle('share:item', (e, { text, url, filePath, label, iconPath } = {}) => {
+  ipcMain.handle('share:item', (e, { text, url, filePath, filePaths, label, iconPath } = {}) => {
     return platform.share(
-      { text, url, filePath, label, iconPath },
+      { text, url, filePath, filePaths, label, iconPath },
       {
         beforeShare: () => {
           // Suppress blur-hide + drop window level so the system picker floats above.
@@ -1801,6 +1975,10 @@ end if`;
           if (win && win.isVisible()) win.hide();
           if (process.platform === 'darwin') app.hide();
         },
+        // Route every clipboard write the paste path makes (the injected value
+        // AND the snapshot it restores) through the own-write ring so the
+        // watcher doesn't re-capture pasted items as duplicate "recents".
+        markOwnWrite: (payload) => recordOwnWrite(payload),
       }
     );
   });
@@ -2150,8 +2328,10 @@ end if`;
     return result;
   });
 
-  // Auto-open the popover on first launch so it's discoverable.
-  setTimeout(togglePopover, 400);
+  // First-run discoverability is handled by the tutorial window (gated on
+  // !onboarded, above). We intentionally do NOT auto-open the popover on
+  // launch: it was unguarded and popped open on every cold start of this
+  // background menu-bar app, which is unwanted for established users.
 });
 
 app.on('will-quit', () => {

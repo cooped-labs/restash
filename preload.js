@@ -3,13 +3,16 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('restash', {
   loadItems: () => ipcRenderer.invoke('items:load'),
   saveItems: (items) => ipcRenderer.invoke('items:save', items),
+  // Fired when the OTHER window (popover ↔ stash-edit) saves items, so this
+  // window can reload from disk instead of clobbering with a stale view.
+  onItemsChanged: (cb) => ipcRenderer.on('items:changed', cb),
   copy: (text) => ipcRenderer.invoke('clipboard:write', text),
   openExternal: (url) => ipcRenderer.invoke('shell:open', url),
   hideWindow: () => ipcRenderer.invoke('window:hide'),
   resizeWindow: (payload) => ipcRenderer.invoke('window:resize', payload),
   qrDataURL: (text) => ipcRenderer.invoke('qr:dataurl', text),
-  shareItem: ({ text, url, filePath, label, iconPath }) =>
-    ipcRenderer.invoke('share:item', { text, url, filePath, label, iconPath }),
+  shareItem: ({ text, url, filePath, filePaths, label, iconPath }) =>
+    ipcRenderer.invoke('share:item', { text, url, filePath, filePaths, label, iconPath }),
   // File item flow
   pickFile: () => ipcRenderer.invoke('file:pick'),
   addFile:  (srcPath) => ipcRenderer.invoke('file:add', srcPath),

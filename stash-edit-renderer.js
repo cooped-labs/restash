@@ -112,58 +112,97 @@ function renderItems() {
   });
 }
 
-async function toggleMembership(itemId) {
-  const item = items.find((i) => i.id === itemId);
-  if (!item) return;
-  if (!Array.isArray(item.stashIds)) item.stashIds = [];
-  const idx = item.stashIds.indexOf(stashId);
-  if (idx >= 0) {
-    item.stashIds.splice(idx, 1);
-    // No longer a member → can't be pinned in this stash either.
-    if (item.pins) delete item.pins[stashId];
-  } else {
-    item.stashIds.push(stashId);
+// Read-modify-write against the LATEST on-disk items to avoid clobbering edits
+// the popover (or another window) made since this window loaded. We reload the
+// fresh array, re-apply the caller's mutation against the matching items by id,
+// persist the merged result, then adopt it as our working set so the editor
+// reflects external changes too. `mutate(freshItems)` performs the change in
+// place on the reloaded array and returns true to proceed (false to abort).
+// NOTE: this narrows but does not fully close the last-writer-wins race — the
+// proper fix is a granular mutate IPC + 'items:changed' broadcast in
+// main.js/preload.js (recorded as a cross-file need).
+async function commit(mutate) {
+  let fresh;
+  try {
+    fresh = await window.restash.loadItems();
+  } catch {
+    fresh = items; // fall back to our snapshot if the reload fails
   }
-  // Persist immediately so changes survive a window close even if the user
-  // forgets to hit Done.
+  if (!Array.isArray(fresh)) fresh = items;
+  const proceed = mutate(fresh);
+  if (proceed === false) {
+    // Mutation declined (e.g. numpad full) — keep our view in sync with disk.
+    items = fresh;
+    renderSlots();
+    renderItems();
+    return;
+  }
+  items = fresh;
   await window.restash.saveItems(items);
   renderSlots();
   renderItems();
+}
+
+async function toggleMembership(itemId) {
+  await commit((all) => {
+    const item = all.find((i) => i.id === itemId);
+    if (!item) return false;
+    if (!Array.isArray(item.stashIds)) item.stashIds = [];
+    const idx = item.stashIds.indexOf(stashId);
+    if (idx >= 0) {
+      item.stashIds.splice(idx, 1);
+      // No longer a member → can't be pinned in this stash either.
+      if (item.pins) delete item.pins[stashId];
+    } else {
+      item.stashIds.push(stashId);
+    }
+    return true;
+  });
 }
 
 // Toggle this item's pin IN THIS STASH (its numpad slot). The 3×3 numpad caps
 // each stash at 9 pins.
 async function togglePin(itemId) {
-  const item = items.find((i) => i.id === itemId);
-  if (!item) return;
-  if (isPinned(item)) {
-    delete item.pins[stashId];
-  } else {
-    if (pinnedSlots().length >= 9) return; // numpad full
-    if (!item.pins) item.pins = {};
-    item.pins[stashId] = nextPinOrder();
-  }
-  await window.restash.saveItems(items);
-  renderSlots();
-  renderItems();
+  await commit((all) => {
+    const item = all.find((i) => i.id === itemId);
+    if (!item) return false;
+    if (item.pins && Object.prototype.hasOwnProperty.call(item.pins, stashId)) {
+      delete item.pins[stashId];
+    } else {
+      // Recompute slot occupancy against the fresh array.
+      const pinnedCount = all
+        .filter((i) => Array.isArray(i.stashIds) && i.stashIds.includes(stashId))
+        .filter((i) => i.pins && Object.prototype.hasOwnProperty.call(i.pins, stashId))
+        .length;
+      if (pinnedCount >= 9) return false; // numpad full
+      const used = all.filter((i) => i.pins && typeof i.pins[stashId] === 'number').map((i) => i.pins[stashId]);
+      if (!item.pins) item.pins = {};
+      item.pins[stashId] = used.length ? Math.max(...used) + 1 : 0;
+    }
+    return true;
+  });
 }
 
 async function persistAndClose() {
-  // Every edit already persisted on change; save once more as a safety net.
-  await window.restash.saveItems(items);
+  // Every edit already persisted (merge-by-id) on change, so do NOT blindly
+  // re-save our possibly-stale snapshot here — that re-save was the most
+  // damaging clobber path. Just close.
   window.restash.closeWindow();
 }
 
 async function deleteStash() {
   if (!confirm('Delete this stash? Items stay; only the grouping is removed.')) return;
-  // Strip the id from any items referencing it before deleting the stash.
-  for (const it of items) {
-    if (Array.isArray(it.stashIds)) {
-      it.stashIds = it.stashIds.filter((id) => id !== stashId);
+  // Strip the id from any items referencing it before deleting the stash —
+  // against the latest on-disk array so we don't resurrect stale edits.
+  await commit((all) => {
+    for (const it of all) {
+      if (Array.isArray(it.stashIds)) {
+        it.stashIds = it.stashIds.filter((id) => id !== stashId);
+      }
+      if (it.pins) delete it.pins[stashId];
     }
-    if (it.pins) delete it.pins[stashId];
-  }
-  await window.restash.saveItems(items);
+    return true;
+  });
   await window.restash.deleteStash(stashId);
   window.restash.closeWindow();
 }
