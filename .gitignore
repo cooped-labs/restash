@@ -2,6 +2,9 @@ node_modules/
 .DS_Store
 dist/
 out/
+# Internal design exploration artifacts (removed before public release)
+mockups/
+prototypes/
 *.log
 npm-debug.log*
 .env

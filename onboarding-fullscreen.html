@@ -2,11 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; script-src 'self' 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com;" />
 <title>Restash — Onboarding (story-driven prototype)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <style>
   :root {
     /* Aligned with the live app's dark-mode palette so the tutorial feels
@@ -418,6 +419,9 @@
   .tile-mock .ic { width: 22px; height: 22px; display: grid; place-items: center; }
   .tile-mock .ic svg { width: 16px; height: 16px; }
   .tile-mock .ic img { width: 22px; height: 22px; display: block; border-radius: 5px; }
+  /* Image items render as a thumbnail of the stored file, matching the real popover. */
+  .tile-mock .ic.is-thumb { width: 22px; height: 22px; }
+  .tile-mock .ic img.ic-thumb { object-fit: cover; }
   .tile-mock .lbl {
     line-height: 1.18; text-align: center; max-width: 100%; overflow: hidden;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word;
@@ -802,7 +806,7 @@
           </div>
         </div>
         <div class="chat-body" id="chat2">
-          <div class="bubble in">Hey! Approved the invoice — send me your Wisemen wallet and I'll wire it over tonight.</div>
+          <div class="bubble in">Hey! Approved the invoice — send me your wallet and I'll wire it over tonight.</div>
         </div>
         <div class="compose">
           <input type="text" class="field real" id="field2" placeholder="Message Sarah" autocomplete="off" />
@@ -845,7 +849,7 @@
           </div>
           <div class="row-mock hovered">
             <span class="icn"><img src="assets/chains/sol.svg" alt=""></span>
-            <span class="lbl">Wisemen Wallet</span>
+            <span class="lbl">My Wallet</span>
             <div class="actions">
               <button class="act-btn pulse-now" id="qrTriggerBtn" title="Show QR">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -865,8 +869,8 @@
             </div>
           </div>
           <div class="row-mock">
-            <span class="icn"><img src="assets/chains/sol.svg" alt=""></span>
-            <span class="lbl">Wisemen Marketing</span>
+            <span class="icn"><img src="assets/chains/eth.svg" alt=""></span>
+            <span class="lbl">Backup Wallet</span>
           </div>
           <div class="row-mock">
             <span class="icn" style="background:rgba(0,0,0,0.06);"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.5 7 13 7 13s7-7.5 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg></span>
@@ -875,9 +879,9 @@
         </div>
 
         <div class="qr-modal" id="qrModal">
-          <div class="qr-label">Wisemen Wallet</div>
+          <div class="qr-label">My Wallet</div>
           <div class="qr-img"><img id="qrImg" alt=""></div>
-          <div class="qr-val">CJbUGxnVG2oXdsYD2dVVkhkoR8WQJEjch35VRa7xifsi</div>
+          <div class="qr-val">So11111111111111111111111111111111111111112</div>
         </div>
       </div>
 
@@ -907,7 +911,7 @@
           </div>
           <div class="row-mock hovered">
             <span class="icn"><img src="assets/chains/sol.svg" alt=""></span>
-            <span class="lbl">Wisemen Wallet</span>
+            <span class="lbl">My Wallet</span>
             <div class="actions">
               <button class="act-btn" title="Show QR">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -927,8 +931,8 @@
             </div>
           </div>
           <div class="row-mock">
-            <span class="icn"><img src="assets/chains/sol.svg" alt=""></span>
-            <span class="lbl">Wisemen Marketing</span>
+            <span class="icn"><img src="assets/chains/eth.svg" alt=""></span>
+            <span class="lbl">Backup Wallet</span>
           </div>
           <div class="row-mock">
             <span class="icn" style="background:rgba(0,0,0,0.06);"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.5 7 13 7 13s7-7.5 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg></span>
@@ -1009,12 +1013,12 @@
   // demos with their actual content. Order is chosen so scenario 1 (address)
   // and scenario 2 (wallet) highlight the right items at slots 1 and 2.
   const PINNED = [
-    { kind: 'address', label: 'Home',              value: '17936 NW 59th Ave, Unit 102\nHialeah, FL 33015' },
-    { kind: 'crypto',  tag: 'SOL', label: 'Wisemen Wallet',  value: 'CJbUGxnVG2oXdsYD2dVVkhkoR8WQJEjch35VRa7xifsi' },
-    { kind: 'url',     label: 'CFA Crypto Pro',    value: 'https://cfacryptopro.com' },
-    { kind: 'crypto',  tag: 'SOL', label: 'Wisemen Marketing', value: '4d2GCkVTphEvEQBvv3av4dsusZnoQsHWMbHo3otq51CJ' },
-    { kind: 'url',     label: 'Link Tree',         value: 'https://wisemenalpha.com/linktree' },
-    { kind: 'text',    label: 'Morning Tea',       value: 'Wisemen Morning Tea is now live!' },
+    { kind: 'address', label: 'Home',           value: '123 Example St, Suite 100\nAnytown, CA 90210' },
+    { kind: 'crypto',  tag: 'SOL', label: 'My Wallet',      value: 'So11111111111111111111111111111111111111112' },
+    { kind: 'url',     label: 'My Website',      value: 'https://example.com' },
+    { kind: 'image',   label: 'Headshot',        value: 'assets/brand/app/256.png' },
+    { kind: 'url',     label: 'Link Tree',       value: 'https://example.com/links' },
+    { kind: 'text',    label: 'Announcement',    value: 'Our latest update is now live!' },
   ];
 
   const SCENARIOS = {
@@ -1089,6 +1093,13 @@
   function tileIcon(item) {
     if (item.kind === 'crypto') {
       return `<span class="ic"><img src="assets/chains/${item.tag.toLowerCase()}.svg" alt=""></span>`;
+    }
+    if (item.kind === 'image') {
+      // Mirror the real popover, which renders image items as a thumbnail of
+      // the stored file (renderer.js iconForItem / makeTile). Quote-escape the
+      // path the same way the live renderer does.
+      const safe = String(item.value || '').replace(/"/g, '%22');
+      return `<span class="ic is-thumb"><img class="ic-thumb" src="${safe}" alt=""></span>`;
     }
     if (item.kind === 'url') {
       return `<span class="ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M10.6 14.6a4 4 0 0 0 5.66 0l3.18-3.18a4 4 0 0 0-5.66-5.66l-1.59 1.59 1.41 1.41 1.59-1.59a2 2 0 0 1 2.83 2.83l-3.18 3.18a2 2 0 0 1-2.83 0 1 1 0 0 0-1.41 1.41z"/><path d="M13.4 9.4a4 4 0 0 0-5.66 0L4.56 12.58a4 4 0 0 0 5.66 5.66l1.59-1.59-1.41-1.41-1.59 1.59a2 2 0 0 1-2.83-2.83l3.18-3.18a2 2 0 0 1 2.83 0 1 1 0 0 0 1.41-1.41z"/></svg></span>`;
@@ -1207,32 +1218,35 @@
   });
 
   // ---------- QR scene ----------
+  // The QR is generated entirely offline by the main process (window.tutorial.qr
+  // bridges to the bundled `qrcode` module via the existing 'qr:dataurl' IPC
+  // handler), so the scene honors its "Generated on your Mac. No internet." copy.
   let qrRendered = false;
-  function renderQR() {
+  async function renderQR() {
     if (qrRendered) return;
-    const value = 'CJbUGxnVG2oXdsYD2dVVkhkoR8WQJEjch35VRa7xifsi';
-    if (typeof qrcode === 'undefined') {
-      console.warn('[qr] qrcode-generator library not loaded');
-      document.getElementById('qrImg').alt = 'QR library failed to load';
+    const value = 'So11111111111111111111111111111111111111112';
+    const imgEl = document.getElementById('qrImg');
+    const qrImgBox = imgEl ? imgEl.parentElement : null;
+    if (!window.tutorial || typeof window.tutorial.qr !== 'function') {
+      console.warn('[qr] tutorial QR bridge unavailable');
+      if (qrImgBox) qrImgBox.textContent = 'QR unavailable';
       return;
     }
     try {
-      const qr = qrcode(0, 'H'); // typeNumber=0 (auto-detect), errorCorrection='H'
-      qr.addData(value);
-      qr.make();
-      // cellSize=8, margin=4 → ~25×25 modules render at ~232px square
-      const dataUrl = qr.createDataURL(8, 4);
-      const imgEl = document.getElementById('qrImg');
+      const dataUrl = await window.tutorial.qr(value);
+      if (!dataUrl) throw new Error('empty data URL');
       imgEl.src = dataUrl;
       imgEl.style.imageRendering = 'pixelated';
       qrRendered = true;
     } catch (err) {
       console.error('[qr] render failed', err);
+      // Show an explicit unavailable state rather than a blank white box.
+      if (qrImgBox) qrImgBox.textContent = 'QR unavailable';
     }
   }
 
-  document.getElementById('qrTriggerBtn').addEventListener('click', () => {
-    renderQR();
+  document.getElementById('qrTriggerBtn').addEventListener('click', async () => {
+    await renderQR();
     document.getElementById('qrModal').classList.add('visible');
     // Enable the "Next" button now that user has seen the QR.
     const nextBtn = document.getElementById('qrNextBtn');
@@ -1568,11 +1582,12 @@
 
     if (scene === 'qr' && (e.key === 'Enter' || e.key.toLowerCase() === 'q')) {
       e.preventDefault();
-      renderQR();
-      document.getElementById('qrModal').classList.add('visible');
-      const nextBtn = document.getElementById('qrNextBtn');
-      nextBtn.disabled = false;
-      nextBtn.style.opacity = '1';
+      renderQR().then(() => {
+        document.getElementById('qrModal').classList.add('visible');
+        const nextBtn = document.getElementById('qrNextBtn');
+        nextBtn.disabled = false;
+        nextBtn.style.opacity = '1';
+      });
     }
 
     if (scene === 'share' && e.key === 'Enter') {

@@ -28,18 +28,55 @@ const ICONS = {
 // A recent is just literal copied text. At render time we sniff whether it
 // looks like a URL or a crypto address so we can show a subtle leading glyph
 // (link / wallet / neutral clip). Mirrors the approved prototype's detect().
-const RE_RECENT_URL = /^(https?:\/\/|www\.)|^[a-z0-9-]+(\.[a-z0-9-]+)+(\/|$)/i;
+// URL: require a scheme or www., OR a single whitespace-free token whose final
+// label is a known TLD. This stops ordinary text like "notes.txt" or "a.b"
+// from being mislabeled as a link while still catching real bare hosts.
+const RE_RECENT_URL = /^(https?:\/\/\S+|www\.\S+\.\S+)$/i;
+const RE_RECENT_HOST = /^[a-z0-9-]+(\.[a-z0-9-]+)*\.(com|org|net|io|dev|app|co|gov|edu|ai|xyz|info|me|gg)(\/\S*)?$/i;
 const RE_RECENT_BTC = /^(bc1|[13])[a-km-zA-HJ-NP-Z0-9]{25,62}$/;
 const RE_RECENT_ETH = /^0x[0-9a-fA-F]{40}$/;
 const RE_RECENT_SOL = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 function detectRecentKind(text) {
   const t = String(text || '').trim();
   if (!t) return 'clip';
-  if (RE_RECENT_URL.test(t)) return 'url';
-  if (RE_RECENT_ETH.test(t) || RE_RECENT_BTC.test(t) || RE_RECENT_SOL.test(t)) return 'crypto';
+  if (/\s/.test(t)) return 'clip'; // multi-token prose is never a URL/address
+  if (RE_RECENT_URL.test(t) || RE_RECENT_HOST.test(t)) return 'url';
+  // BTC/ETH are well-anchored (low false positives). SOL is base58-length-only
+  // and ambiguous, so guard it: a single token that isn't a URL/host.
+  if (RE_RECENT_ETH.test(t) || RE_RECENT_BTC.test(t)) return 'crypto';
+  if (RE_RECENT_SOL.test(t) && !RE_RECENT_URL.test(t) && !RE_RECENT_HOST.test(t)) return 'crypto';
   return 'clip';
 }
 const RECENT_GLYPH = { url: ICONS.url, crypto: ICONS.cryptoWallet, clip: ICONS.clip };
+
+// Image auto-capture (RES image-capture): the clipboard watcher in main saves a
+// copied image to FILES_DIR and emits a recent/clip entry carrying
+// files:[{ storedPath, mime:'image/png' }] — EXACTLY the shape of a saved image
+// File item. These helpers let the Recent renderers detect such an entry and
+// reuse the existing image-thumbnail path.
+function recentImageFile(entry) {
+  if (!entry || !Array.isArray(entry.files) || !entry.files.length) return null;
+  const f = entry.files[0] || {};
+  return ((f.mime || '').startsWith('image/') && (f.storedPath || f.path)) ? f : null;
+}
+
+// True when a recent is a copied-FILE entry (kind:'file' with a files[] array)
+// that is NOT a thumbnailable image — i.e. a pdf/doc/other copied file, or a
+// video / oversized file kept by-reference. These render with the file glyph
+// instead of a thumbnail, and by-ref ones get a Save-to-Downloads action.
+function recentFileEntry(entry) {
+  if (!entry || entry.kind !== 'file') return null;
+  if (!Array.isArray(entry.files) || !entry.files.length) return null;
+  if (recentImageFile(entry)) return null; // images use the thumbnail path
+  return entry.files[0] || null;
+}
+
+// The path a file recent should PASTE / open: the stored vault copy for
+// copied-in files, or the original on-disk path for by-reference (video/large).
+function recentFilePastePath(file) {
+  if (!file) return null;
+  return file.storedPath || file.path || null;
+}
 
 // Monochrome SVG glyphs per file kind. All use currentColor so they pick up
 // the icon-tile foreground (light in dark mode, dark in light mode) — same
@@ -81,6 +118,28 @@ function fileGlyph(mime) {
   if (m.includes('zip') || m.includes('compressed'))           return FILE_GLYPHS.archive;
   if (m.startsWith('text/'))    return FILE_GLYPHS.document;
   return FILE_GLYPHS.generic;
+}
+
+// Build a properly URL-encoded file:// src for a stored absolute path.
+// encodeURI handles spaces, unicode, %, etc.; we additionally escape the
+// few chars encodeURI leaves alone that break a URL pathname (# ? "). The
+// stored files live under app.getPath('userData')/files which always contains
+// a space, and stored names can contain # — so encoding is required for the
+// CSP-allowed file: thumbnails to actually load.
+function fileThumbSrc(p) {
+  return 'file://' + encodeURI(String(p || ''))
+    .replace(/#/g, '%23')
+    .replace(/\?/g, '%3F')
+    .replace(/"/g, '%22');
+}
+
+// Inline onerror handler that swaps a broken <img> thumbnail for its kind
+// glyph (out-of-band-deleted file → glyph instead of the browser's broken
+// image). The glyph SVG is passed through encodeURIComponent so it can live
+// safely inside the double-quoted onerror attribute.
+function thumbOnError(glyphHtml) {
+  const enc = encodeURIComponent(glyphHtml).replace(/'/g, '%27');
+  return `this.outerHTML=decodeURIComponent('${enc}')`;
 }
 
 function formatBytes(n) {
@@ -131,8 +190,8 @@ function iconForItem(item) {
     const badge = extra ? `<span class="file-count-badge">+${extra}</span>` : '';
     const isStack = files.length > 1;
     if ((first.mime || '').startsWith('image/') && first.storedPath) {
-      const safe = first.storedPath.replace(/"/g, '%22');
-      return { html: `<img class="file-thumb" src="file://${safe}" alt="" />${badge}`, isThumb: true, isStack };
+      const onerr = thumbOnError(fileGlyph(first.mime));
+      return { html: `<img class="file-thumb" src="${fileThumbSrc(first.storedPath)}" alt="" onerror="${onerr}" />${badge}`, isThumb: true, isStack };
     }
     return { html: fileGlyph(first.mime) + badge, isFile: true, isStack };
   }
@@ -612,43 +671,6 @@ function toast(msg) {
   setTimeout(() => toastEl.classList.add('hidden'), 1400);
 }
 
-// ---------- free-tier enforcement ----------
-// Limits apply only once the trial is over (effective === 'free'). During the
-// trial, effective === 'full' and nothing is capped.
-function isFree() {
-  return (state.entitlement && state.entitlement.effective) === 'free';
-}
-
-// Returns true if a NEW `kind` would exceed the free cap — and fires the
-// upgrade nudge. Returns false when allowed. Existing over-limit data is never
-// touched; this only blocks fresh additions.
-function hitsFreeLimit(kind) {
-  if (!isFree()) return false;
-  const lim = (state.entitlement && state.entitlement.limits)
-    || { items: 15, stashes: 1, pins: 9 };
-  let count, cap;
-  if (kind === 'items')        { count = state.items.length; cap = lim.items; }
-  else if (kind === 'stashes') { count = availableStashes.length; cap = lim.stashes; }
-  else if (kind === 'pins')    { count = pinnedInStash(activeStashId()).length; cap = lim.pins; }
-  else return false;
-  if (count < cap) return false;
-  const noun = { items: 'Item', stashes: 'Stash', pins: 'Pin' }[kind];
-  showLimitNudge(`${noun} limit reached (${count}/${cap})`);
-  return true;
-}
-
-let _limitNudgeTimer = null;
-function showLimitNudge(title) {
-  const el = $('limitNudge');
-  if (!el) return;
-  const t = el.querySelector('.ln-title');
-  if (t) t.textContent = title;
-  el.classList.remove('hidden');
-  el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
-  clearTimeout(_limitNudgeTimer);
-  _limitNudgeTimer = setTimeout(() => el.classList.add('hidden'), 5500);
-}
-
 async function persist() {
   await window.restash.saveItems(state.items);
 }
@@ -677,297 +699,133 @@ async function toggleTheme() {
 }
 
 // ---------- footer actions (list mode) ----------
+// "Check for updates" — manual (forced) check. Routes to the update card on a
+// newer release, a toast when current, and always to GitHub on any error
+// (incl. the private-repo 404).
 async function handleUpdatesCheck() {
+  let r;
+  try {
+    r = await window.restash.checkUpdates({ force: true });
+  } catch {
+    r = { status: 'error', releasesUrl: 'https://github.com/cooped-labs/restash/releases' };
+  }
+  if (r && r.status === 'available') {
+    clearUpdateBadge();
+    openUpdateCard(r);
+  } else if (r && r.status === 'up-to-date') {
+    toast(`✓ You're on the latest (v${r.current})`);
+  } else {
+    toast('Couldn’t check — opening GitHub');
+    window.restash.openExternal((r && r.releasesUrl) || 'https://github.com/cooped-labs/restash/releases');
+  }
+}
+
+// ---------- update available card ----------
+const updateBackdrop = $('updateBackdrop');
+// The release URL the card's buttons open — set when the card is shown.
+let _updateReleaseUrl = 'https://github.com/cooped-labs/restash/releases';
+
+function setUpdateBadge() {
+  $('updatesBtn')?.classList.add('has-update');
+}
+function clearUpdateBadge() {
+  $('updatesBtn')?.classList.remove('has-update');
+}
+
+function openUpdateCard(r) {
+  if (!updateBackdrop) return;
+  _updateReleaseUrl = (r && r.url) || 'https://github.com/cooped-labs/restash/releases';
+  const ver = $('ucVersion');
+  if (ver) ver.textContent = `v${(r && r.latest) || ''}`;
+  const notes = $('ucNotes');
+  if (notes) {
+    const text = (r && r.notes) || '';
+    notes.textContent = text;
+    notes.classList.toggle('hidden', !text);
+  }
+  updateBackdrop.classList.remove('hidden');
+}
+function closeUpdateCard() {
+  if (!updateBackdrop) return;
+  updateBackdrop.classList.add('hidden');
+  focusSearch();
+}
+
+// Quiet background check on load: cached/non-forced. Badge the ↻ button when a
+// newer release exists; never surfaces errors (private-repo 404 stays silent).
+async function backgroundUpdateCheck() {
   try {
     const r = await window.restash.checkUpdates();
-    if (r.status === 'up-to-date') toast(`You're on the latest (v${r.version})`);
-    else toast(`Update available: ${r.version}`);
-  } catch {
-    toast('Could not check updates');
-  }
+    if (r && r.status === 'available') setUpdateBadge();
+  } catch { /* silent — background only */ }
 }
 
-function handleBillingOpen() {
-  openBilling();
+// ---------- support / star count ----------
+const REPO_URL = 'https://github.com/cooped-labs/restash';
+// Last known star count (number) or null while private/offline.
+let _starCount = null;
+const starBackdrop = $('starBackdrop');
+
+// Compact number format: 1234 → "1.2k", 12000 → "12k", 999 → "999".
+function formatStars(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v < 1000) return String(Math.max(0, Math.round(v) || 0));
+  const k = v / 1000;
+  // One decimal under 10k (1.2k), none above (12k); trim a trailing ".0".
+  const s = k < 10 ? k.toFixed(1).replace(/\.0$/, '') : String(Math.round(k));
+  return `${s}k`;
 }
 
-// ---------- billing ----------
-// Lemon Squeezy checkout URLs — REPLACE with the real product links once the
-// store is set up. Each opens in the user's browser.
-const CHECKOUT_URLS = {
-  monthly:  'https://restash.lemonsqueezy.com/buy/REPLACE-MONTHLY',
-  yearly:   'https://restash.lemonsqueezy.com/buy/REPLACE-YEARLY',
-  lifetime: 'https://restash.lemonsqueezy.com/buy/REPLACE-LIFETIME',
-  // Discounted one-time-offer checkout links (separate LS products / discount codes).
-  otoLifetime: 'https://restash.lemonsqueezy.com/buy/REPLACE-OTO-LIFETIME',
-  otoYearly:   'https://restash.lemonsqueezy.com/buy/REPLACE-OTO-YEARLY',
-};
-const SUPPORT_EMAIL = 'support@restash.app'; // REPLACE with real support inbox
-
-// Plan currently highlighted in the Free-state segmented picker.
-let billingSelectedPlan = 'yearly';
-const PLAN_INFO = {
-  monthly:  { price: '$9.99', unit: '/mo', sub: 'Billed monthly' },
-  yearly:   { price: '$39',   unit: '/yr', sub: '$3.25/mo · billed yearly · save 67%' },
-  lifetime: { price: '$99',   unit: '',    sub: 'One payment · yours forever' },
-};
-const CLOCK_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>`;
-
-const billingBackdrop = $('billingBackdrop');
-
-function openBilling() {
-  renderBilling();
-  window.restash.setBillingWindow?.(true);   // grow the popover so it fits, no scroll
-  billingBackdrop.classList.remove('hidden');
-}
-function closeBilling() {
-  billingBackdrop.classList.add('hidden');
-  window.restash.setBillingWindow?.(false);  // restore list height
-  focusSearch();
-}
-
-// ---------- one-time offer (Option B) ----------
-const otoBackdrop = $('otoBackdrop');
-// Which discounted deal the CTA will buy. 'lifetime' is pre-selected.
-let otoSelectedDeal = 'lifetime';
-const OTO_DEALS = {
-  lifetime: { name: 'Lifetime', sub: 'Pay once · yours forever', now: '$50', was: '$99', url: 'otoLifetime', badge: 'BEST VALUE' },
-  yearly:   { name: '1 Year',   sub: '12 months of Pro',        now: '$30', was: '$39', url: 'otoYearly' },
-};
-
-function renderOTO() {
-  const card = $('otoCard');
-  if (!card) return;
-  const dealRow = (id) => {
-    const d = OTO_DEALS[id];
-    const on = id === otoSelectedDeal;
-    const badge = d.badge ? `<span class="oto-badge">${d.badge}</span>` : '';
-    return `
-      <button type="button" class="oto-deal${on ? ' best' : ''}" data-oto-deal="${id}">
-        <div class="oto-deal-main">
-          <div class="oto-deal-name">${d.name}${badge}</div>
-          <div class="oto-deal-sub">${d.sub}</div>
-        </div>
-        <div class="oto-deal-price">
-          <div class="oto-deal-now">${d.now}</div>
-          <div class="oto-deal-was">${d.was}</div>
-        </div>
-      </button>`;
-  };
-  const sel = OTO_DEALS[otoSelectedDeal];
-  card.innerHTML = `
-    <div class="oto-eyebrow">★ One-time offer</div>
-    <div class="oto-title">A deal that won't<br>come back</div>
-    ${dealRow('lifetime')}
-    ${dealRow('yearly')}
-    <button type="button" class="oto-cta" data-oto-cta>Claim ${sel.name} — ${sel.now}</button>
-    <button type="button" class="oto-ghost" data-oto-dismiss>No thanks</button>
-    <div class="oto-footnote">One-time offer · won't appear again</div>
-  `;
-}
-
-function openOTO() {
-  renderOTO();
-  window.restash.setBillingWindow?.(true); // OTO needs the taller window too
-  otoBackdrop.classList.remove('hidden');
-}
-function closeOTO() {
-  otoBackdrop.classList.add('hidden');
-  window.restash.setBillingWindow?.(false);
-  focusSearch();
-}
-
-// Fire the OTO at most once, at a high-intent moment: trial winding down
-// (≤5 days left) and not yet shown. Persisted via settings.otoShown so it
-// survives restarts.
-async function maybeShowOTO() {
-  const ent = state.entitlement || {};
-  if (state.otoShown) return;
-  const trialEnding = ent.trialActive && (ent.trialDaysLeft || 0) <= 5;
-  if (!trialEnding) return;
-  state.otoShown = true;
-  await window.restash.markOTOShown?.();
-  openOTO();
-}
-
-// Build the billing body for the current tier. `state.tier` is one of
-// 'free' | 'monthly' | 'yearly' | 'lifetime'; `state.billing.renewsAt` is an
-// epoch-ms timestamp for subscribers (drives the time-left bar).
-// Small footer shown on paid billing views: masked license key + a button to
-// release this device's activation.
-function licenseFooterHTML(lic) {
-  if (!lic) return '';
-  return `
-    <div class="license-foot">
-      <span class="lf-key">Licensed · ${escapeHtml(lic.keyMasked || '')}</span>
-      <button class="lf-deact" data-license-deactivate>Deactivate this device</button>
-    </div>`;
-}
-
-function renderBilling() {
-  const body = $('billingBody');
-  const ent = state.entitlement || {};
-  const tier = ent.tier || 'free';
-  const lic = ent.license || null;
-
-  if (tier === 'complete') {
-    body.innerHTML = `
-      <div class="billing-lifetime">
-        <div class="lt-mark">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="4" y="11" width="16" height="7" rx="1.5"/><path d="M6 8h12"/><path d="M8 5h8"/>
-          </svg>
-        </div>
-        <div class="tier-badge"><span class="spark">✦</span> Complete access</div>
-        <div class="billing-note">You have complete access — every feature unlocked, free. No trial, no limits, no expiry.</div>
-      </div>
-    `;
-    return;
-  }
-
-  if (tier === 'lifetime') {
-    body.innerHTML = `
-      <div class="billing-lifetime">
-        <div class="lt-mark">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="4" y="11" width="16" height="7" rx="1.5"/><path d="M6 8h12"/><path d="M8 5h8"/>
-          </svg>
-        </div>
-        <div class="tier-badge"><span class="spark">✦</span> Lifetime</div>
-        <div class="billing-note">You own Restash forever. No renewals, no expiry — every future update included.</div>
-      </div>
-      ${licenseFooterHTML(lic)}
-    `;
-    return;
-  }
-
-  if (tier === 'monthly' || tier === 'yearly') {
-    // Lemon Squeezy reports the subscription's next-renewal date as the
-    // license key's expires_at.
-    const renewsAt = (lic && lic.expiresAt) ? Date.parse(lic.expiresAt) : 0;
-    const periodMs = tier === 'yearly' ? 365 * 864e5 : 30 * 864e5;
-    let barHTML = '';
-    if (renewsAt) {
-      const msLeft = Math.max(0, renewsAt - Date.now());
-      const daysLeft = Math.ceil(msLeft / 864e5);
-      const pct = Math.max(2, Math.min(100, Math.round((msLeft / periodMs) * 100)));
-      const renewDate = new Date(renewsAt).toLocaleDateString(undefined,
-        { month: 'short', day: 'numeric', year: 'numeric' });
-      barHTML = `
-        <div class="renewal">
-          <div class="renewal-line">
-            <span>Renews ${renewDate}</span>
-            <span class="left">${daysLeft} day${daysLeft === 1 ? '' : 's'} left</span>
-          </div>
-          <div class="bar"><div class="bar-fill" style="width:${pct}%"></div></div>
-        </div>`;
-    }
-    const priceLabel = tier === 'yearly' ? '$39 / year' : '$9.99 / month';
-    const upsell = tier === 'monthly'
-      ? `<button class="b-btn" data-billing-upsell="yearly">Switch to Yearly · save 67%</button>`
-      : `<button class="b-btn" data-billing-upsell="lifetime">Upgrade to Lifetime · $99</button>`;
-    body.innerHTML = `
-      <div class="tier-hero">
-        <div class="tier-badge">${tier === 'yearly' ? 'Yearly' : 'Monthly'}</div>
-        <div class="tier-sub">${priceLabel}</div>
-      </div>
-      ${barHTML}
-      <button class="b-btn" data-billing-manage>Manage subscription</button>
-      ${upsell}
-      ${licenseFooterHTML(lic)}
-    `;
-    return;
-  }
-
-  // Free — segmented picker layout. Trial banner + Free→Pro comparison +
-  // a Monthly/Yearly/Lifetime segment that shows one plan + one CTA.
-  const banner = ent.trialActive
-    ? `<div class="trial">
-         <div class="ico">${CLOCK_SVG}</div>
-         <div class="t-main">
-           <div class="t-title">Free trial</div>
-           <div class="t-sub">Full access · then 1 stash / 15 items</div>
-         </div>
-         <div class="t-days">${ent.trialDaysLeft || 0}<small>${(ent.trialDaysLeft || 0) === 1 ? 'day left' : 'days left'}</small></div>
-       </div>`
-    : `<div class="trial">
-         <div class="ico">${CLOCK_SVG}</div>
-         <div class="t-main">
-           <div class="t-title">Free plan</div>
-           <div class="t-sub">Trial ended · limited to 1 stash / 15 items</div>
-         </div>
-       </div>`;
-
-  const sel = billingSelectedPlan;
-  const plan = PLAN_INFO[sel];
-  body.innerHTML = `
-    ${banner}
-    <div class="cmp">
-      <div class="cmp-h">Free → Pro</div>
-      <div class="cmp-row"><span class="cmp-label">Stashes</span><span class="cmp-vals"><span class="cmp-free">1</span><span class="cmp-arrow">→</span><span class="cmp-pro">Unlimited</span></span></div>
-      <div class="cmp-row"><span class="cmp-label">Saved items</span><span class="cmp-vals"><span class="cmp-free">15</span><span class="cmp-arrow">→</span><span class="cmp-pro">Unlimited</span></span></div>
-      <div class="cmp-row"><span class="cmp-label">Pinned slots</span><span class="cmp-vals"><span class="cmp-free">9</span><span class="cmp-arrow">→</span><span class="cmp-pro">Unlimited</span></span></div>
-      <div class="cmp-row"><span class="cmp-label">Max file size</span><span class="cmp-vals"><span class="cmp-free">100 MB</span><span class="cmp-arrow">→</span><span class="cmp-pro">5 GB</span></span></div>
-      <div class="cmp-row"><span class="cmp-label">Support</span><span class="cmp-vals"><span class="cmp-free">Standard</span><span class="cmp-arrow">→</span><span class="cmp-pro">Priority</span></span></div>
-    </div>
-    <div class="section-label">Choose a plan</div>
-    <div class="seg">
-      <button data-billing-seg="monthly"${sel === 'monthly' ? ' class="on"' : ''}>Monthly</button>
-      <button data-billing-seg="yearly"${sel === 'yearly' ? ' class="on"' : ''}>Yearly</button>
-      <button data-billing-seg="lifetime"${sel === 'lifetime' ? ' class="on"' : ''}>Lifetime</button>
-    </div>
-    <div class="seg-detail">
-      <div class="seg-price">${plan.price}<small>${plan.unit}</small></div>
-      <div class="seg-sub">${plan.sub}</div>
-    </div>
-    <button class="big-cta" data-billing-cta>Upgrade to ${sel[0].toUpperCase()}${sel.slice(1)}</button>
-    <div class="activate">
-      <button type="button" class="activate-toggle" data-activate-toggle>Already bought Restash? <b>Enter your license key</b></button>
-      <div class="activate-box hidden" id="activateBox">
-        <input id="licenseKeyInput" type="text" placeholder="License key" autocomplete="off" spellcheck="false" />
-        <button type="button" class="b-btn primary" data-activate-go>Activate</button>
-      </div>
-      <div class="activate-msg hidden" id="activateMsg"></div>
-    </div>
-  `;
-}
-
-// Run a license activation from the billing modal: call Lemon Squeezy, then
-// refresh the entitlement everywhere on success.
-async function activateLicenseFromBilling() {
-  const input = $('licenseKeyInput');
-  const msg = $('activateMsg');
-  const btn = document.querySelector('[data-activate-go]');
-  if (!input) return;
-  const key = input.value.trim();
-  if (!key) { input.focus(); return; }
-  if (btn) { btn.disabled = true; btn.textContent = 'Activating…'; }
-  if (msg) msg.classList.add('hidden');
-  const res = await window.restash.activateLicense(key);
-  if (res && res.ok) {
-    state.entitlement = res.entitlement;
-    state.tier = res.entitlement.tier;
-    renderBilling();        // flips to the paid view
-    render();               // limits lifted — refresh the list
-    toast('Restash unlocked — thank you!');
+// Render the inline count on the ★ footer button. A number shows "★ 1.2k";
+// null (private/offline) just shows the bare ★.
+function renderStarBadge() {
+  const el = $('starCount');
+  if (!el) return;
+  if (typeof _starCount === 'number') {
+    el.textContent = formatStars(_starCount);
+    el.classList.remove('hidden');
   } else {
-    if (btn) { btn.disabled = false; btn.textContent = 'Activate'; }
-    if (msg) {
-      msg.textContent = (res && res.error) || 'Activation failed.';
-      msg.classList.remove('hidden');
-    }
+    el.textContent = '';
+    el.classList.add('hidden');
   }
 }
 
-async function deactivateLicenseFromBilling() {
-  const res = await window.restash.deactivateLicense();
-  if (res && res.ok) {
-    state.entitlement = res.entitlement;
-    state.tier = res.entitlement.tier;
-    renderBilling();
-    render();
-    toast('License released on this device');
+// Fetch the live star count; store + render it. Never throws.
+async function loadStarCount() {
+  try {
+    const r = await window.restash.getStars();
+    _starCount = (r && r.ok && typeof r.stars === 'number') ? r.stars : null;
+  } catch {
+    _starCount = null;
   }
+  renderStarBadge();
+}
+
+// Update the big number inside the open support card. Stars of 0 / null show a
+// friendly "Be the first to star ★" instead of a cold "0".
+function renderSupportStars() {
+  const num = $('supportStarNum');
+  if (!num) return;
+  if (typeof _starCount === 'number' && _starCount > 0) {
+    num.textContent = formatStars(_starCount);
+    num.classList.remove('support-empty');
+  } else {
+    num.textContent = 'Be the first to star ★';
+    num.classList.add('support-empty');
+  }
+}
+
+function openStarCard() {
+  if (!starBackdrop) return;
+  renderSupportStars();
+  starBackdrop.classList.remove('hidden');
+  // Refresh the count when the card opens so it's current; re-render on return.
+  loadStarCount().then(renderSupportStars);
+}
+function closeStarCard() {
+  if (!starBackdrop) return;
+  starBackdrop.classList.add('hidden');
+  focusSearch();
 }
 
 
@@ -1155,7 +1013,18 @@ function renderQRPanel() {
         <button class="qr-btn" data-qr-act="dismiss">Close</button>
       </div>
     `;
-    panel.querySelector('[data-qr-act="retry"]')?.addEventListener('click', () => window.restash.qrCaptureAndDecode());
+    panel.querySelector('[data-qr-act="retry"]')?.addEventListener('click', () => {
+      // The macOS qr:capture-and-decode handler returns its result via the
+      // invoke promise (it never fires the onQRResult event), so consume it
+      // here and push it back into the panel via the normal render path.
+      Promise.resolve(window.restash.qrCaptureAndDecode())
+        .then((r) => {
+          if (!r || r.reason === 'cancelled') return; // user pressed Esc during region select
+          state.qrResult = r;
+          render();
+        })
+        .catch(() => {});
+    });
     panel.querySelector('[data-qr-act="dismiss"]')?.addEventListener('click', () => window.restash.hideWindow?.());
     return;
   }
@@ -1448,21 +1317,24 @@ function makeTile(item, idx) {
   tile.className = 'tile pinned' + (isImageFile ? ' image-bg' : '');
   tile.dataset.id = item.id;
   tile.dataset.slot = String(idx + 1);
+  const glyphLayout = `
+      <span class="num">${idx + 1}</span>
+      ${countBadge}
+      <div class="ic${icon.isChain ? ' is-chain' : ''}">${item.kind === 'file' ? fileGlyph(firstFile && firstFile.mime) : icon.html}</div>
+      <div class="lbl">${escapeHtml(item.label)}</div>
+    `;
   if (isImageFile) {
-    const safe = firstFile.storedPath.replace(/"/g, '%22');
+    // onerror: if the stored image was deleted out-of-band, drop the image-bg
+    // styling and fall back to the glyph layout instead of a broken thumbnail.
+    const onerr = `this.parentElement.classList.remove('image-bg');this.parentElement.innerHTML=decodeURIComponent('${encodeURIComponent(glyphLayout).replace(/'/g, '%27')}')`;
     tile.innerHTML = `
-      <img class="tile-bg" src="file://${safe}" alt="" />
+      <img class="tile-bg" src="${fileThumbSrc(firstFile.storedPath)}" alt="" onerror="${onerr}" />
       <span class="num">${idx + 1}</span>
       ${countBadge}
       <div class="lbl">${escapeHtml(item.label)}</div>
     `;
   } else {
-    tile.innerHTML = `
-      <span class="num">${idx + 1}</span>
-      ${countBadge}
-      <div class="ic${icon.isChain ? ' is-chain' : ''}${icon.isThumb ? ' is-thumb' : ''}">${icon.html}</div>
-      <div class="lbl">${escapeHtml(item.label)}</div>
-    `;
+    tile.innerHTML = glyphLayout;
   }
   tile.addEventListener('click', () => pasteItem(item));
   tile.addEventListener('contextmenu', async (e) => {
@@ -1483,14 +1355,18 @@ function buildGridPage(stash) {
 }
 
 // ---------- cursor-modal unified page cycle (RES-33) ----------
-// Page 0 is "Recent" (a vertical list of raw recent copies, replacing the old
-// "All" grid). Pages 1+ are the saved/auto stashes EXCEPT "All" (its role is
-// taken over by Recent), rendered as the familiar 3×3 numpad grids. The cycle
-// wraps. This is the SINGLE source of truth for the cursor numpad's pages.
+// Page 0 is "Recent" (a vertical list of raw recent copies). Page 1 is the
+// image-capable "All" grid (kept so pinned/captured IMAGE items — which only
+// render as thumbnails on grid pages — stay reachable in the cursor numpad);
+// it is skipped only when it holds no items. Pages 2+ are the remaining
+// saved/auto stashes as the familiar 3×3 numpad grids. The cycle wraps. This
+// is the SINGLE source of truth for the cursor numpad's pages.
 function gridPages() {
   const pages = [{ id: 'recent', name: 'Recent', recent: true }];
   for (const s of computeStashes()) {
-    if (s.id === 'all') continue; // Recent has taken over the first-page slot
+    // Only skip an empty "All" page; otherwise keep it so image items pinned to
+    // All remain reachable as thumbnails in the cursor grid.
+    if (s.id === 'all' && itemsForStash(s).length === 0) continue;
     pages.push(s);
   }
   return pages;
@@ -1552,12 +1428,32 @@ function buildModalRecentRow(entry, i) {
   const hasKey = i < 9;
   row.className = 'rrow' + (i === state.recentSelIdx ? ' selected' : '') + (hasKey ? '' : ' nokey');
   row.dataset.ridx = String(i);
-  const oneLine = String(entry.text || '').replace(/\s+/g, ' ').trim();
-  const kind = detectRecentKind(oneLine);
-  row.innerHTML = `
-    <span class="glyph" title="${kind}">${RECENT_GLYPH[kind]}</span>
-    <span class="clip">${escapeHtml(oneLine)}</span>
-    <span class="qkey">${hasKey ? (i + 1) : '·'}</span>`;
+  const img = recentImageFile(entry);
+  const file = img ? null : recentFileEntry(entry);
+  if (img) {
+    // Captured/stored image recent — render the thumbnail, reusing the same
+    // file:// thumbnail path (encoded src + glyph onerror) as image File items.
+    const onerr = thumbOnError(`<span class="glyph" title="image">${fileGlyph(img.mime)}</span>`);
+    row.classList.add('rrow-image');
+    row.innerHTML = `
+      <img class="glyph rrow-thumb" src="${fileThumbSrc(img.storedPath || img.path)}" alt="" onerror="${onerr}" />
+      <span class="clip">${escapeHtml(displayFileName(img) || 'Image')}</span>
+      <span class="qkey">${hasKey ? (i + 1) : '·'}</span>`;
+  } else if (file) {
+    // Copied-file recent (pdf/doc/video/large) — file glyph + name + size.
+    const sz = file.size ? ` · ${formatBytes(file.size)}` : '';
+    row.innerHTML = `
+      <span class="glyph" title="file">${fileGlyph(file.mime)}</span>
+      <span class="clip">${escapeHtml((displayFileName(file) || 'File') + sz)}</span>
+      <span class="qkey">${hasKey ? (i + 1) : '·'}</span>`;
+  } else {
+    const oneLine = String(entry.text || '').replace(/\s+/g, ' ').trim();
+    const kind = detectRecentKind(oneLine);
+    row.innerHTML = `
+      <span class="glyph" title="${kind}">${RECENT_GLYPH[kind]}</span>
+      <span class="clip">${escapeHtml(oneLine)}</span>
+      <span class="qkey">${hasKey ? (i + 1) : '·'}</span>`;
+  }
   row.addEventListener('mouseenter', () => { state.recentSelIdx = i; refreshRecentSel(); });
   row.addEventListener('click', () => pasteRecentEntry(entry));
   return row;
@@ -1565,7 +1461,9 @@ function buildModalRecentRow(entry, i) {
 
 // Keep the selected Recent row highlighted + scrolled into view.
 function refreshRecentSel() {
-  const rows = Array.from(gridEl.querySelectorAll('.rrow'));
+  // Scope to the centered page so a lingering exiting page (mid page-cycle)
+  // can't capture the selection / steal the scrollIntoView.
+  const rows = Array.from((gridEl.querySelector('.grid-page.center') || gridEl).querySelectorAll('.rrow'));
   rows.forEach((r, i) => r.classList.toggle('selected', i === state.recentSelIdx));
   if (rows[state.recentSelIdx]) rows[state.recentSelIdx].scrollIntoView({ block: 'nearest' });
 }
@@ -1574,7 +1472,34 @@ function refreshRecentSel() {
 // clipboard) so muscle memory and behavior match the menu-dropdown Recent rows.
 function pasteRecentEntry(entry) {
   if (!entry) return;
-  window.restash.pasteActive(entry.text);
+  // Captured image recents paste as a file (like image File items), not text.
+  // Copied-file recents (pdf/doc/video/large) paste their stored or original
+  // path through the same file-paste path. Plain text recents paste their text.
+  const img = recentImageFile(entry);
+  let payload;
+  if (img) {
+    payload = { filePaths: [img.storedPath] };
+  } else {
+    const file = recentFileEntry(entry);
+    if (file) {
+      const p = recentFilePastePath(file);
+      payload = p ? { filePaths: [p] } : entry.text;
+    } else {
+      payload = entry.text;
+    }
+  }
+  return Promise.resolve(window.restash.pasteActive(payload))
+    .then((result) => {
+      if (result && result.ok) return;
+      if (result && result.reason === 'no-accessibility') {
+        accessGranted = false;
+        refreshAccessUI();
+        toast(`Grant Accessibility to "Restash" in System Settings, then try again`);
+        return;
+      }
+      toast(`Paste failed: ${(result && result.reason) || 'unknown'} — value is on clipboard`);
+    })
+    .catch((err) => toast(`Paste failed: ${(err && err.message) || 'unknown'} — value is on clipboard`));
 }
 
 function buildPage(page) {
@@ -1830,7 +1755,6 @@ function renderListStashBar() {
       e.preventDefault();
       const name = newInput.value.trim();
       if (!name) return;
-      if (hitsFreeLimit('stashes')) return;
       const res = await window.restash.createStash(name);
       if (res?.ok && res.stash) {
         availableStashes.push(res.stash);
@@ -1938,15 +1862,39 @@ function buildRecentRow(entry) {
   row.className = 'row recent-row';
   row.dataset.cid = entry.id;
 
-  const oneLine = String(entry.text || '').replace(/\s+/g, ' ').trim();
+  const img = recentImageFile(entry);
+  const file = img ? null : recentFileEntry(entry);
+  const isByRef = !!(file && file.byRef);
+  // A by-ref recent is a video or oversized file kept by path (not copied into
+  // the vault); it gets a Save-to-Downloads action instead of QR.
+  let oneLine;
+  if (img) {
+    oneLine = displayFileName(img) || 'Image';
+  } else if (file) {
+    const nm = displayFileName(file);
+    const sz = file.size ? ` · ${formatBytes(file.size)}` : '';
+    oneLine = `${nm}${sz}`;
+  } else {
+    oneLine = String(entry.text || '').replace(/\s+/g, ' ').trim();
+  }
   // Same auto-detect leading glyph as the RES-33 cursor-modal recents: link
   // icon for URLs, wallet icon for crypto addresses, neutral clip otherwise.
-  const kind = detectRecentKind(oneLine);
+  // Captured images render their actual thumbnail; copied files render the file
+  // glyph for their mime (video glyph for videos).
+  const kind = img ? 'image' : (file ? 'file' : detectRecentKind(oneLine));
+  let iconHtml;
+  if (img) {
+    iconHtml = `<img class="file-thumb" src="${fileThumbSrc(img.storedPath || img.path)}" alt="" onerror="${thumbOnError(fileGlyph(img.mime))}" />`;
+  } else if (file) {
+    iconHtml = fileGlyph(file.mime);
+  } else {
+    iconHtml = RECENT_GLYPH[kind];
+  }
 
   row.innerHTML = `
     <div class="row-main">
-      <div class="icon recent-icon" title="${kind}">
-        ${RECENT_GLYPH[kind]}
+      <div class="icon recent-icon${img ? ' is-thumb' : ''}" title="${kind}">
+        ${iconHtml}
       </div>
       <div class="text">
         <span class="label mono">${escapeHtml(oneLine)}</span>
@@ -1957,14 +1905,20 @@ function buildRecentRow(entry) {
           <button class="row-act" data-ract="paste" title="Paste" aria-label="Paste">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L19 7"/></svg>
           </button>
+          ${isByRef ? `<button class="row-act" data-ract="download" title="Save to Downloads" aria-label="Save to Downloads">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M5 21h14"/></svg>
+          </button>` : ''}
           <button class="row-act" data-ract="save" title="Save to Restash" aria-label="Save to Restash">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
           </button>
           <button class="row-act" data-ract="share" title="Share…" aria-label="Share">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>
           </button>
-          <button class="row-act" data-ract="qr" title="Show QR code" aria-label="Show QR code">
+          ${(img || file) ? '' : `<button class="row-act" data-ract="qr" title="Show QR code" aria-label="Show QR code">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v3M14 21h3M21 17v4h-4"/></svg>
+          </button>`}
+          <button class="row-act" data-ract="remove" title="Remove from history" aria-label="Remove from history">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
           </button>
         </div>
       </div>
@@ -1976,16 +1930,60 @@ function buildRecentRow(entry) {
     const act = actBtn ? actBtn.dataset.ract : 'paste'; // clicking the row pastes
     e.stopPropagation();
     if (act === 'paste') {
-      // Reuse the existing paste path (restores the prior clipboard).
-      window.restash.pasteActive(entry.text);
+      // Reuse the shared recent-paste path (restores the prior clipboard and
+      // surfaces a toast / access-UI refresh if Accessibility isn't granted).
+      pasteRecentEntry(entry);
+    } else if (act === 'download') {
+      // By-ref recent (video / oversized): copy the original file to Downloads.
+      const p = recentFilePastePath(file);
+      if (!p) { toast('File path unavailable'); return; }
+      (async () => {
+        try {
+          const r = await window.restash.saveFileCopy(p);
+          if (r && r.ok) toast(`Saved to Downloads: ${(r.savedPath || '').split('/').pop()}`);
+          else toast(`Save failed: ${(r && r.reason) || 'unknown'}`);
+        } catch (err) {
+          toast(`Save failed: ${(err && err.message) || 'unknown'}`);
+        }
+      })();
     } else if (act === 'save') {
-      // Open the editor pre-filled as a new text item for the user to label.
+      // Open the editor pre-filled for the user to label. Image recents seed a
+      // file item carrying the captured image; copied-file recents seed a file
+      // item carrying that file; text recents seed a text item.
       applyMode('list');
-      openEditor(null, { prefill: { kind: 'text', value: entry.text } });
+      if (img) {
+        openEditor(null, { prefill: { kind: 'file', files: [{ storedPath: img.storedPath, mime: img.mime, originalName: displayFileName(img) }] } });
+      } else if (file) {
+        const seed = { mime: file.mime, originalName: displayFileName(file), size: file.size };
+        if (file.storedPath) seed.storedPath = file.storedPath;
+        else { seed.path = file.path; seed.byRef = true; }
+        openEditor(null, { prefill: { kind: 'file', files: [seed] } });
+      } else {
+        openEditor(null, { prefill: { kind: 'text', value: entry.text } });
+      }
     } else if (act === 'share') {
-      window.restash.shareItem({ text: entry.text, label: 'Recent copy' });
+      if (img) {
+        window.restash.shareItem({ filePath: img.storedPath, filePaths: [img.storedPath], iconPath: img.storedPath, label: 'Recent image' });
+      } else if (file) {
+        const p = recentFilePastePath(file);
+        if (p) window.restash.shareItem({ filePath: p, filePaths: [p], label: 'Recent file' });
+      } else {
+        window.restash.shareItem({ text: entry.text, label: 'Recent copy' });
+      }
     } else if (act === 'qr') {
       openQR({ label: 'Recent copy', value: entry.text });
+    } else if (act === 'remove') {
+      // Drop this entry from clipboard history; main broadcasts the updated
+      // list back via clipboardHistory.onUpdated, which re-renders Recent.
+      (async () => {
+        try {
+          const updated = await window.restash.clipboardHistory.remove(entry.id);
+          state.clipHistory = Array.isArray(updated) ? updated : state.clipHistory.filter((e2) => e2.id !== entry.id);
+        } catch {
+          state.clipHistory = state.clipHistory.filter((e2) => e2.id !== entry.id);
+        }
+        if (state.mode === 'list') renderRecent();
+      })();
     }
   });
 
@@ -2152,10 +2150,19 @@ function renderList() {
           // For URLs use both text+url so Mail / Messages can offer to send a link.
           const url = item.kind === 'url' ? item.value : null;
 
-          // File items: pass the stored file path. The Swift share helper
-          // wraps it as an NSURL fileURL so AirDrop / Mail / Messages
-          // recognize it as a real file (attachment, not text).
-          const filePath = item.kind === 'file' ? item.value : null;
+          // File items: derive paths/mime from files[] (the source of truth);
+          // item.value/item.mime are only legacy single-file fallbacks. The
+          // Swift share helper wraps each path as an NSURL fileURL so AirDrop /
+          // Mail / Messages recognize them as real files (attachments).
+          const _files = (Array.isArray(item.files) && item.files.length)
+            ? item.files
+            : [{ storedPath: item.value, mime: item.mime }];
+          const _first = _files[0] || {};
+          const filePaths = item.kind === 'file'
+            ? _files.map((f) => f.storedPath).filter(Boolean)
+            : null;
+          // Back-compat single path (first file) for any single-file consumer.
+          const filePath = item.kind === 'file' ? (_first.storedPath || null) : null;
 
           // Preview icon for the share sheet. Crypto items use their chain
           // logo when set; file images use their actual thumbnail; otherwise
@@ -2165,14 +2172,15 @@ function renderList() {
             iconPath = (item.tag && CHAINS[item.tag])
               ? `assets/chains/${item.tag.toLowerCase()}.svg`
               : 'assets/wallet.svg';
-          } else if (item.kind === 'file' && (item.mime || '').startsWith('image/')) {
-            iconPath = item.value; // absolute path; main resolves OK
+          } else if (item.kind === 'file' && (_first.mime || '').startsWith('image/')) {
+            iconPath = _first.storedPath; // absolute path; main resolves OK
           }
 
           window.restash.shareItem({
             text: item.kind === 'file' ? null : item.value,
             url,
             filePath,
+            filePaths,
             label: item.label,
             iconPath,
           });
@@ -2385,7 +2393,7 @@ async function pasteItem(item) {
     // Main already opened System Settings → Accessibility for the user.
     accessGranted = false;
     refreshAccessUI();
-    toast(`Grant Accessibility to "Electron" in System Settings, then try again`);
+    toast(`Grant Accessibility to "Restash" in System Settings, then try again`);
     return;
   }
   // Other failure modes (osascript error, bad input) — keep window open
@@ -2446,6 +2454,10 @@ async function openEditor(item, opts = {}) {
     } else {
       editorFiles = [];
     }
+  } else if (prefill?.kind === 'file' && Array.isArray(prefill.files) && prefill.files.length) {
+    // Prefill from a captured image recent (or similar) — seed editorFiles so
+    // the file rows + image preview render in the editor before saving.
+    editorFiles = prefill.files.map((f) => ({ ...f }));
   } else {
     editorFiles = [];
   }
@@ -2723,7 +2735,6 @@ function renderStashPicker() {
       e.preventDefault();
       const name = $('newStashInput').value.trim();
       if (!name) return;
-      if (hitsFreeLimit('stashes')) return;
       const res = await window.restash.createStash(name);
       if (res?.ok && res.stash) {
         availableStashes.push(res.stash);
@@ -2821,7 +2832,7 @@ function renderFilePicker() {
     const isImage = (f.mime || '').startsWith('image/');
     const isVideo = (f.mime || '').startsWith('video/');
     const thumb = isImage && f.storedPath
-      ? `<div class="thumb"><img src="file://${f.storedPath.replace(/"/g, '%22')}" alt="" /></div>`
+      ? `<div class="thumb"><img src="${fileThumbSrc(f.storedPath)}" alt="" onerror="${thumbOnError(`<div class="file-glyph">${fileGlyph(f.mime)}</div>`)}" /></div>`
       : `<div class="thumb${isVideo ? ' video' : ''}"><div class="file-glyph">${fileGlyph(f.mime)}</div></div>`;
     const sizeStr = formatBytes(f.size);
     const ext = (f.originalName.match(/\.([^.]+)$/) || [, ''])[1].toUpperCase();
@@ -2956,10 +2967,6 @@ async function saveFromEditor() {
     if (!label || !value) return;
   }
 
-  // Free-tier cap — block a NEW item past the limit (editing an existing
-  // item is always allowed). Keeps the editor open so input isn't lost.
-  if (!state.editing && hitsFreeLimit('items')) return;
-
   if (isFile) {
     const fileFields = { files: editorFiles.map((f) => ({ ...f })) };
     // Keep `value` populated with the first stored path for back-compat with
@@ -2988,6 +2995,11 @@ async function saveFromEditor() {
   } else if (isContact) {
     if (state.editing) {
       Object.assign(state.editing, { kind: 'contact', label, value: contactValue, tag: undefined, stashIds, contact });
+      // Switching away from file — drop stale file fields.
+      delete state.editing.files;
+      delete state.editing.originalName;
+      delete state.editing.mime;
+      delete state.editing.size;
     } else {
       state.items.push({
         id: uid(),
@@ -3008,6 +3020,11 @@ async function saveFromEditor() {
     if (state.editing) {
       Object.assign(state.editing, { kind: 'environment', label, value, tag: undefined, stashIds, env });
       delete state.editing.contact;
+      // Switching away from file — drop stale file fields.
+      delete state.editing.files;
+      delete state.editing.originalName;
+      delete state.editing.mime;
+      delete state.editing.size;
     } else {
       state.items.push({
         id: uid(),
@@ -3027,6 +3044,11 @@ async function saveFromEditor() {
       Object.assign(state.editing, { kind: editorKind, label, value, tag, stashIds });
       // Switching away from contact — drop the stale structured object.
       delete state.editing.contact;
+      // Switching away from file — drop stale file fields.
+      delete state.editing.files;
+      delete state.editing.originalName;
+      delete state.editing.mime;
+      delete state.editing.size;
     } else {
       state.items.push({
         id: uid(),
@@ -3086,90 +3108,33 @@ document.addEventListener('click', (e) => {
   if (which === 'qr') { e.preventDefault(); closeQR(); }
   else if (which === 'editor') { e.preventDefault(); closeEditor(); }
   else if (which === 'settings') { e.preventDefault(); closeSettings(); }
-  else if (which === 'billing') { e.preventDefault(); closeBilling(); }
+  else if (which === 'update') { e.preventDefault(); closeUpdateCard(); }
+  else if (which === 'star') { e.preventDefault(); closeStarCard(); }
 });
 
-// Billing modal interactions — segment switch, CTA, upsell, manage, support.
+// Update card interactions — both buttons open the release page on GitHub.
 document.addEventListener('click', (e) => {
-  const seg = e.target.closest('[data-billing-seg]');
-  if (seg) {
-    billingSelectedPlan = seg.dataset.billingSeg;
-    renderBilling();
-    return;
-  }
-  if (e.target.closest('[data-billing-cta]')) {
-    window.restash.openExternal(CHECKOUT_URLS[billingSelectedPlan]);
-    return;
-  }
-  const upsell = e.target.closest('[data-billing-upsell]');
-  if (upsell) {
-    window.restash.openExternal(CHECKOUT_URLS[upsell.dataset.billingUpsell]);
-    return;
-  }
-  if (e.target.closest('[data-billing-manage]')) {
-    // Lemon Squeezy customer order portal — buyers enter their email to get a
-    // magic link for invoices, plan changes, and cancellation.
-    window.restash.openExternal('https://app.lemonsqueezy.com/my-orders');
-    return;
-  }
-  if (e.target.closest('[data-activate-toggle]')) {
-    const box = $('activateBox');
-    if (box) {
-      box.classList.toggle('hidden');
-      if (!box.classList.contains('hidden')) $('licenseKeyInput')?.focus();
-    }
-    return;
-  }
-  if (e.target.closest('[data-activate-go]')) {
-    activateLicenseFromBilling();
-    return;
-  }
-  if (e.target.closest('[data-license-deactivate]')) {
-    deactivateLicenseFromBilling();
-    return;
-  }
-  if (e.target.closest('#billingSupportBtn')) {
-    window.restash.openExternal(`mailto:${SUPPORT_EMAIL}?subject=Restash%20support`);
+  if (e.target.closest('[data-update-whatsnew]') || e.target.closest('[data-update-get]')) {
+    window.restash.openExternal(_updateReleaseUrl);
+    closeUpdateCard();
   }
 });
-if (billingBackdrop) {
-  billingBackdrop.addEventListener('click', (e) => {
-    if (e.target === billingBackdrop) closeBilling();
+if (updateBackdrop) {
+  updateBackdrop.addEventListener('click', (e) => {
+    if (e.target === updateBackdrop) closeUpdateCard();
   });
 }
 
-// One-time offer interactions — deal select, claim, dismiss.
+// Support card — primary button opens the repo to star; outside-click dismisses.
 document.addEventListener('click', (e) => {
-  const deal = e.target.closest('[data-oto-deal]');
-  if (deal) {
-    otoSelectedDeal = deal.dataset.otoDeal;
-    renderOTO();
-    return;
-  }
-  if (e.target.closest('[data-oto-cta]')) {
-    window.restash.openExternal(CHECKOUT_URLS[OTO_DEALS[otoSelectedDeal].url]);
-    closeOTO();
-    return;
-  }
-  if (e.target.closest('[data-oto-dismiss]')) {
-    closeOTO();
+  if (e.target.closest('[data-support-star]')) {
+    window.restash.openExternal(REPO_URL);
+    closeStarCard();
   }
 });
-if (otoBackdrop) {
-  otoBackdrop.addEventListener('click', (e) => {
-    // OTO dismisses on outside click too — it's a one-shot, no trapping.
-    if (e.target === otoBackdrop) closeOTO();
-  });
-}
-
-// Upgrade nudge → billing. Hide any open modal first so billing isn't stacked.
-{
-  const lnBtn = $('limitNudgeBtn');
-  if (lnBtn) lnBtn.addEventListener('click', () => {
-    $('limitNudge').classList.add('hidden');
-    editorBackdrop.classList.add('hidden');
-    settingsBackdrop.classList.add('hidden');
-    openBilling();
+if (starBackdrop) {
+  starBackdrop.addEventListener('click', (e) => {
+    if (e.target === starBackdrop) closeStarCard();
   });
 }
 
@@ -3400,35 +3365,16 @@ function wire() {
     if (act === 'theme') return toggleTheme();
     if (act === 'settings') return openSettings();
     if (act === 'updates') return handleUpdatesCheck();
-    if (act === 'billing') return handleBillingOpen();
+    if (act === 'star') return openStarCard();
     if (act === 'quit') return window.restash.quit();
   });
 
   // Right-click tray menu items relay to renderer through these IPC events.
   window.restash.onOpenSettings(() => openSettings());
   window.restash.onOpenUpdates(() => handleUpdatesCheck());
-  window.restash.onOpenBilling(() => handleBillingOpen());
 
   // Main process tells us which mode to render before each show.
   window.restash.onModeSet((mode) => applyMode(mode));
-
-  // License re-check downgraded us (refund / expiry) — refresh entitlement.
-  window.restash.onEntitlementChanged?.(async () => {
-    try {
-      state.entitlement = await window.restash.getEntitlement();
-      state.tier = state.entitlement.tier;
-      if (!billingBackdrop.classList.contains('hidden')) renderBilling();
-      render();
-    } catch {}
-  });
-
-  // Enter inside the license-key field submits the activation.
-  document.addEventListener('keydown', (e) => {
-    if (e.target && e.target.id === 'licenseKeyInput' && e.key === 'Enter') {
-      e.preventDefault();
-      activateLicenseFromBilling();
-    }
-  });
 
   // Drag-to-resize handles + the modal-open watcher that hides them.
   wireResizeHandles();
@@ -3453,6 +3399,10 @@ function wire() {
   });
 
   $('settingsCloseBtn').addEventListener('click', closeSettings);
+  $('contactSupportBtn')?.addEventListener('click', () =>
+    window.restash.openExternal('mailto:coopedlabs@gmail.com?subject=Restash%20support'));
+  $('viewGithubBtn')?.addEventListener('click', () =>
+    window.restash.openExternal('https://github.com/cooped-labs/restash'));
 
   // Stash edit lives in its own BrowserWindow (stash-edit.html). When the
   // user clicks Done / Delete there, main emits stashes:changed; we refresh
@@ -3521,8 +3471,8 @@ function wire() {
     const editorOpen = !editorBackdrop.classList.contains('hidden');
     const qrOpen = !qrBackdrop.classList.contains('hidden');
     const settingsOpen = !settingsBackdrop.classList.contains('hidden');
-    const billingOpen = !billingBackdrop.classList.contains('hidden');
-    const otoOpen = otoBackdrop && !otoBackdrop.classList.contains('hidden');
+    const updateOpen = updateBackdrop && !updateBackdrop.classList.contains('hidden');
+    const starOpen = starBackdrop && !starBackdrop.classList.contains('hidden');
 
     // Either hotkey recorder (summon or QR) swallows everything while active.
     if (recording || qrRecording) {
@@ -3555,16 +3505,16 @@ function wire() {
     }
 
     if (e.key === 'Escape') {
-      if (otoOpen) closeOTO();
+      if (starOpen) closeStarCard();
+      else if (updateOpen) closeUpdateCard();
       else if (editorOpen) closeEditor();
       else if (qrOpen) closeQR();
       else if (settingsOpen) closeSettings();
-      else if (billingOpen) closeBilling();
       else window.restash.hideWindow();
       return;
     }
 
-    if (editorOpen || qrOpen || settingsOpen || billingOpen || otoOpen) return;
+    if (editorOpen || qrOpen || settingsOpen || updateOpen || starOpen) return;
 
     if (e.metaKey && e.key === ',') {
       e.preventDefault();
@@ -3670,8 +3620,6 @@ function wire() {
     refreshAccessUI();
     render();
     focusSearch();
-    // One high-intent shot at the discounted offer once the trial's near its end.
-    maybeShowOTO();
   });
 
   // Apply the initial mode so the correct UI shell is shown before any
@@ -3702,9 +3650,9 @@ function wire() {
 
   if (!state.items || state.items.length === 0) {
     state.items = [
-      { id: uid(), kind: 'url', label: 'CFA Crypto Pro', value: 'https://cfacryptopro.com', createdAt: Date.now(), pins: { all: 0 } },
+      { id: uid(), kind: 'url', label: 'Example site', value: 'https://example.com', createdAt: Date.now(), pins: { all: 0 } },
       { id: uid(), kind: 'cryptoAddress', label: 'Example ETH wallet', value: '0x0000000000000000000000000000000000000000', tag: 'ETH', createdAt: Date.now() - 1000 },
-      { id: uid(), kind: 'text', label: 'Email signature', value: '—\nKevin\nkevin@cfacryptopro.com', createdAt: Date.now() - 2000 },
+      { id: uid(), kind: 'text', label: 'Email signature', value: '—\nYour Name\nyou@example.com', createdAt: Date.now() - 2000 },
     ];
     await persist();
   }
@@ -3713,21 +3661,38 @@ function wire() {
     const s = await window.restash.loadSettings();
     state.hotkey   = s.currentHotkey   || s.hotkey   || state.hotkey;
     state.qrHotkey = s.currentQRHotkey || s.qrHotkey || state.qrHotkey || 'Command+Shift+F';
-    state.tier        = s.tier || 'free';
-    state.billing     = s.billing || null;
-    state.entitlement = s.entitlement || { tier: 'free', effective: 'free', trialActive: false, trialDaysLeft: 0 };
-    state.otoShown    = !!s.otoShown;
     state.menuSize    = s.menuSize || null;
     state.gridSize    = s.gridSize || null;
     state.clipHistoryMax = (typeof s.clipboardHistoryMax === 'number') ? s.clipboardHistoryMax : 3;
     applyTheme(s.theme || 'light');
   } catch {}
+  // Quiet, cached background update check — badges the ↻ button if a newer
+  // GitHub release exists. Errors (incl. the private-repo 404) stay silent.
+  backgroundUpdateCheck();
+  // Live star count → inline ★ {count} on the footer button. Silent on
+  // private/offline (just shows a bare ★).
+  loadStarCount();
   // Clipboard memory: load captured history + subscribe to live updates.
   try { state.clipHistory = await window.restash.clipboardHistory.load(); } catch { state.clipHistory = []; }
   window.restash.clipboardHistory.onUpdated((items) => {
     state.clipHistory = Array.isArray(items) ? items : [];
     if (state.mode === 'list') renderRecent();
   });
+  // When the stash-edit window (or any other window) mutates items.json,
+  // main broadcasts 'items:changed'. Reload from disk and re-render so the
+  // popover's next persist() doesn't blind-overwrite that external change
+  // with our stale in-memory array (last-writer-wins clobber).
+  if (typeof window.restash.onItemsChanged === 'function') {
+    window.restash.onItemsChanged(async () => {
+      try {
+        const fresh = await window.restash.loadItems();
+        if (Array.isArray(fresh)) {
+          state.items = fresh;
+          render();
+        }
+      } catch {}
+    });
+  }
   try {
     availableStashes = await window.restash.listStashes();
   } catch { availableStashes = []; }

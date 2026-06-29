@@ -1,9 +1,10 @@
 const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, clipboard, shell, screen, globalShortcut, systemPreferences, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
-const { execFile } = require('node:child_process');
+const { execFile, execFileSync } = require('node:child_process');
 const os = require('node:os');
 const crypto = require('node:crypto');
+const https = require('node:https');
 const QRCode = require('qrcode');
 // Platform-abstraction layer — every native call routes through this so main.js
 // is OS-agnostic and the zero-install bundling policy is enforced in one place.
@@ -20,100 +21,7 @@ if (!app.requestSingleInstanceLock()) {
   process.exit(0);
 }
 
-// ── Lemon Squeezy licensing ──────────────────────────────────────────────
-// Restash stays serverless: Lemon Squeezy mints the license keys and its
-// public license API verifies them, so the app talks to LS directly — no
-// backend. Two things get filled in once the LS store + products exist:
-//
-//   1. Checkout URLs — in renderer.js (CHECKOUT_URLS).
-//   2. The VARIANT-ID → tier map below. In Lemon Squeezy open Store →
-//      Products; every variant has a numeric ID. Turn ON "license keys" for
-//      each product, with an activation limit (e.g. 3 devices).
-const LS_LICENSE_API = 'https://api.lemonsqueezy.com/v1/licenses';
-const LS_VARIANT_TIERS = {
-  // 'REPLACE-MONTHLY-VARIANT-ID':      'monthly',
-  // 'REPLACE-YEARLY-VARIANT-ID':       'yearly',
-  // 'REPLACE-LIFETIME-VARIANT-ID':     'lifetime',
-  // 'REPLACE-OTO-YEARLY-VARIANT-ID':   'yearly',
-  // 'REPLACE-OTO-LIFETIME-VARIANT-ID': 'lifetime',
-};
-
-// A valid-but-unmapped variant still unlocks the app (fail open for the user).
-function tierForVariant(variantId) {
-  return LS_VARIANT_TIERS[String(variantId)] || 'lifetime';
-}
-// Cross-platform stable machine id for the Lemon Squeezy activation instance.
-// os.hostname() + a persisted random UUID (generated once, stored in userData)
-// so the 3-device activation limit counts consistently on every OS and survives
-// reinstalls within the same userData. No new dependency (crypto + os built-in).
-const MACHINE_ID_FILE = path.join(app.getPath('userData'), 'machineId');
-function getMachineId() {
-  try {
-    if (fs.existsSync(MACHINE_ID_FILE)) {
-      const id = fs.readFileSync(MACHINE_ID_FILE, 'utf8').trim();
-      if (id) return id;
-    }
-  } catch {}
-  const id = require('node:crypto').randomUUID();
-  try {
-    fs.mkdirSync(path.dirname(MACHINE_ID_FILE), { recursive: true });
-    fs.writeFileSync(MACHINE_ID_FILE, id);
-  } catch {}
-  return id;
-}
-function licenseInstanceName() {
-  try { return `Restash · ${os.hostname()} · ${getMachineId().slice(0, 8)}`; }
-  catch { return `Restash · ${getMachineId().slice(0, 8)}`; }
-}
-function maskKey(key) {
-  const k = String(key || '');
-  return k.length <= 8 ? k : `${k.slice(0, 4)}····${k.slice(-4)}`;
-}
-
-// POST to the Lemon Squeezy license API (activate / validate / deactivate).
-// These endpoints are unauthenticated — designed to be called straight from
-// the client — so no API key is needed.
-async function lsLicenseCall(action, params) {
-  try {
-    const res = await fetch(`${LS_LICENSE_API}/${action}`, {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams(params).toString(),
-    });
-    return (await res.json().catch(() => ({}))) || {};
-  } catch (err) {
-    return { error: (err && err.message) || 'network error', _network: true };
-  }
-}
-
-// On launch, re-check the stored license so refunds / expiries / disabled
-// keys downgrade the app. Offline → keep current state, never punish.
-async function revalidateLicense() {
-  const lic = readSettings().license;
-  if (!lic || !lic.key) return;
-  const r = await lsLicenseCall('validate', {
-    license_key: lic.key,
-    instance_id: lic.instanceId || '',
-  });
-  if (r && r._network) return;
-  const lk = r && r.license_key;
-  const stillValid = !!(r && r.valid && lk && lk.status === 'active');
-  const s = readSettings();
-  if (!s.license) return;
-  if (stillValid) {
-    s.license.status = 'active';
-    s.license.expiresAt = (lk && lk.expires_at) || s.license.expiresAt || null;
-    writeSettings(s);
-  } else {
-    s.license = null;
-    s.tier = 'free';
-    writeSettings(s);
-    if (win && !win.isDestroyed()) win.webContents.send('entitlement:changed');
-  }
-}
+// Restash is free + open source — no licensing, billing, trial, or caps.
 
 // Show in Dock so users can see Restash is running and click to open it.
 
@@ -124,51 +32,78 @@ const STORE_FILE = path.join(app.getPath('userData'), 'items.json');
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
 const CLIPBOARD_HISTORY_FILE = path.join(app.getPath('userData'), 'clipboard-history.json');
 
-// ── Owner build ──────────────────────────────────────────────────────────
-// Grants permanent full access without a license — for your own machines.
-// Two ways to enable it, both safe for distributed builds (which have neither):
-//   • run with the env var:  RESTASH_OWNER=1 npm start
-//   • or create a marker file (works for a packaged personal build, no rebuild):
-//       touch "$HOME/Library/Application Support/restash/.owner"
-// Never ship a build with the marker bundled — it's read from userData, so a
-// normal release on someone else's Mac simply won't have it.
-const OWNER_MARKER = path.join(app.getPath('userData'), '.owner');
-function isOwnerBuild() {
-  if (process.env.RESTASH_OWNER === '1') return true;
-  try { return fs.existsSync(OWNER_MARKER); } catch { return false; }
-}
-
 // Per-OS safe defaults via the platform layer: macOS keeps ⌘⇧V / ⌃⇧F; Win/Linux
 // move OFF Ctrl+Shift+V (universal paste-as-plain-text) to non-colliding
 // Ctrl+Alt+V / Ctrl+Alt+F. Customization UI + tryRegisterHotkey rollback intact.
 const DEFAULT_HOTKEY    = platform.defaultHotkeys.summon;
 const DEFAULT_QR_HOTKEY = platform.defaultHotkeys.qr;
 
-function readStore() {
+const STORE_BAK_FILE = STORE_FILE + '.bak';
+
+// Parse a store file, returning the parsed array or null if missing/invalid.
+function tryParseStore(file) {
   try {
-    if (!fs.existsSync(STORE_FILE)) return [];
-    return JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
+    if (!fs.existsSync(file)) return null;
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return Array.isArray(data) ? data : null;
   } catch {
-    return [];
+    return null;
   }
 }
 
-function writeStore(items) {
-  fs.mkdirSync(path.dirname(STORE_FILE), { recursive: true });
-  fs.writeFileSync(STORE_FILE, JSON.stringify(items, null, 2));
+// Read the user's items. On a corrupt/unparseable primary store we DO NOT
+// silently return [] (which would let the next save clobber recoverable data):
+// we preserve the corrupt file as a timestamped .corrupt copy and fall back to
+// the rolling .bak so a single bad write can't lose the vault.
+function readStore() {
+  const primary = tryParseStore(STORE_FILE);
+  if (primary) return primary;
+
+  // Primary missing → fresh install (or empty), nothing to recover.
+  if (!fs.existsSync(STORE_FILE)) {
+    const fromBak = tryParseStore(STORE_BAK_FILE);
+    return fromBak || [];
+  }
+
+  // Primary EXISTS but is corrupt — preserve it, then recover from .bak.
+  try {
+    const corruptPath = `${STORE_FILE}.corrupt-${Date.now()}`;
+    fs.copyFileSync(STORE_FILE, corruptPath);
+    console.warn(`[Restash] items.json was corrupt; preserved a copy at ${corruptPath} and recovered from backup.`);
+  } catch {}
+  const fromBak = tryParseStore(STORE_BAK_FILE);
+  return fromBak || [];
 }
 
-const TRIAL_DAYS = 30;
-// Free-tier ceilings, applied once the trial ends and the user hasn't paid.
-const FREE_LIMITS = { stashes: 1, pins: 9, items: 15, fileBytes: 100 * 1024 * 1024 };
+// Atomic write: serialize to a temp file (with fsync), roll the previous good
+// store to .bak, then rename the temp into place. A crash mid-write leaves
+// either the prior store or the .bak intact — never a truncated items.json.
+function writeStore(items) {
+  const dir = path.dirname(STORE_FILE);
+  fs.mkdirSync(dir, { recursive: true });
+  const json = JSON.stringify(items, null, 2);
+  const tmp = `${STORE_FILE}.tmp-${process.pid}-${Date.now()}`;
+
+  const fd = fs.openSync(tmp, 'w');
+  try {
+    fs.writeFileSync(fd, json);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+
+  // Roll the current good store to .bak before replacing it.
+  try {
+    if (fs.existsSync(STORE_FILE)) fs.copyFileSync(STORE_FILE, STORE_BAK_FILE);
+  } catch {}
+
+  fs.renameSync(tmp, STORE_FILE);
+}
 
 function readSettings() {
   const defaults = {
     hotkey: DEFAULT_HOTKEY, qrHotkey: DEFAULT_QR_HOTKEY, theme: 'light',
-    onboarded: false, stashes: [], tier: 'free',
-    license: null,     // { key, instanceId, variantId, tier, status, expiresAt } once activated
-    trialStartedAt: 0, // 0 = not yet stamped; ensureTrialStamp() sets it on first run
-    otoShown: false,   // one-time-offer fires once, ever
+    onboarded: false, stashes: [],
     menuSize: null,    // {width,height} — user-resized list popover (null = default)
     gridSize: null,    // {width,height} — user-resized cursor numpad (null = default)
     clipboardHistoryMax: 3, // Clipboard memory: # of recent copies to auto-capture (0 = Off)
@@ -201,13 +136,83 @@ const CLIP_POLL_MS = 700;                 // clipboard watcher interval
 const CLIP_WRITE_DEBOUNCE_MS = 250;       // debounce json writes
 const CLIP_OWN_WRITE_WINDOW_MS = 2000;    // drop captures that match our own write
 const CLIP_OWN_WRITE_RING = 8;            // cap of the own-write ring buffer
+const MAX_FILE_BYTES = 100 * 1024 * 1024; // 100 MB ceiling for stored files/images
 
 let clipHistory = [];          // in-memory items, newest-first
 let clipHistoryLoaded = false;
 let clipWatchTimer = null;
 let clipLastHash = null;       // SHA-1 of the last clipboard text we saw
+let clipLastImageHash = null;  // SHA-1 of the last clipboard image PNG we saw
+let clipLastFilesHash = null;  // SHA-1 of the last copied-file selection we saw
 let clipOwnWrites = [];        // ring of { hash, at } for Restash-originated writes
 let clipWriteTimer = null;
+let clipHistoryMax = 0;        // cached clipboardHistoryMax (refreshed by syncClipboardWatcher)
+
+// Where auto-captured images live on disk — mirrors the FILES_DIR used by the
+// file-item save path so captured images render through the renderer's existing
+// image-thumbnail code with no new shape (files:[{ storedPath, mime }]).
+const CLIP_FILES_DIR = path.join(app.getPath('userData'), 'files');
+
+// Committed Swift helpers live alongside the app in bin/.
+const BIN = path.join(__dirname, 'bin');
+
+// Module-scope MIME guesser (the IPC handler closure has its own copy; this one
+// is needed by the clipboard file-capture path which runs outside that closure).
+function guessMimeForExt(ext) {
+  const e = String(ext || '').toLowerCase();
+  const map = {
+    '.pdf':  'application/pdf',
+    '.png':  'image/png',  '.jpg': 'image/jpeg',  '.jpeg': 'image/jpeg',
+    '.gif':  'image/gif',  '.webp': 'image/webp', '.svg':  'image/svg+xml',
+    '.heic': 'image/heic',
+    '.mp4':  'video/mp4',  '.mov':  'video/quicktime', '.webm': 'video/webm',
+    '.m4v':  'video/x-m4v', '.avi': 'video/x-msvideo', '.mkv': 'video/x-matroska',
+    '.mp3':  'audio/mpeg', '.wav':  'audio/wav',  '.m4a':  'audio/mp4',
+    '.doc':  'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xls':  'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.ppt':  'application/vnd.ms-powerpoint',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    '.txt':  'text/plain', '.md': 'text/markdown',
+    '.html': 'text/html',  '.htm': 'text/html',
+    '.json': 'application/json',
+    '.zip':  'application/zip',
+  };
+  return map[e] || 'application/octet-stream';
+}
+
+// Video MIME / extension detection — videos are stored BY-REFERENCE only
+// (never copied into the vault) so a multi-GB clip doesn't balloon storage.
+const VIDEO_EXTS = new Set(['.mp4', '.mov', '.webm', '.m4v', '.avi', '.mkv']);
+function isVideoFile(mime, ext) {
+  if (String(mime || '').toLowerCase().startsWith('video/')) return true;
+  return VIDEO_EXTS.has(String(ext || '').toLowerCase());
+}
+
+// Stable signature for a copied-file SELECTION: sha1 of the sorted absolute
+// paths joined by NUL. Used both to dedup across watcher polls and to mark our
+// own paste-path file writes so they aren't re-captured as recents.
+function filesSignature(paths) {
+  const sorted = (paths || []).filter(Boolean).slice().sort();
+  return sha1(sorted.join(' '));
+}
+
+function sha1Buffer(buf) {
+  return crypto.createHash('sha1').update(buf).digest('hex');
+}
+
+// Persist a captured NativeImage to CLIP_FILES_DIR as PNG and return its path,
+// reusing the on-disk naming convention of the file-item save path.
+function saveClipImage(img) {
+  const png = img.toPNG();
+  if (!png || !png.length) return null;
+  fs.mkdirSync(CLIP_FILES_DIR, { recursive: true });
+  const storedName = `${Date.now().toString(36)}_clip.png`;
+  const destPath = path.join(CLIP_FILES_DIR, storedName);
+  fs.writeFileSync(destPath, png);
+  return destPath;
+}
 
 function sha1(text) {
   return crypto.createHash('sha1').update(String(text), 'utf8').digest('hex');
@@ -250,16 +255,31 @@ function broadcastClipHistory() {
   }
 }
 
-// Every Restash-originated clipboard write must go through this so the watcher
-// doesn't capture our own paste/copy as a "recent" item (which would create a
-// loop). We record the hash BEFORE writing, then drop matching captures inside
-// CLIP_OWN_WRITE_WINDOW_MS.
-function restashWriteClipboard(text) {
-  const str = String(text ?? '');
-  clipOwnWrites.push({ hash: sha1(str), at: Date.now() });
+// Every Restash-originated clipboard write must record its hash BEFORE writing,
+// so the watcher drops matching captures inside CLIP_OWN_WRITE_WINDOW_MS and
+// doesn't capture our own paste/copy/restore as a "recent" item (a feedback
+// loop). Accepts a string (text payload) OR a Buffer (e.g. a PNG image),
+// hashing each the same way checkClipboard() hashes the corresponding clipboard
+// read so the guard matches for both text and image writes from the paste path.
+function recordOwnWrite(payload) {
+  let hash = null;
+  if (Buffer.isBuffer(payload)) {
+    if (!payload.length) return;
+    hash = sha1Buffer(payload);
+  } else {
+    const str = String(payload ?? '');
+    if (!str) return;
+    hash = sha1(str);
+  }
+  clipOwnWrites.push({ hash, at: Date.now() });
   if (clipOwnWrites.length > CLIP_OWN_WRITE_RING) {
     clipOwnWrites = clipOwnWrites.slice(-CLIP_OWN_WRITE_RING);
   }
+}
+
+function restashWriteClipboard(text) {
+  const str = String(text ?? '');
+  recordOwnWrite(str);
   clipboard.writeText(str);
 }
 
@@ -274,24 +294,204 @@ function trimClipHistory(max) {
   if (clipHistory.length > max) clipHistory = clipHistory.slice(0, max);
 }
 
+function genClipId() {
+  return 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+// Detect COPIED FILES on the pasteboard (⌘C / right-click → Copy in Finder or
+// any app) and capture them as a single kind:'file' recent. Electron can't read
+// file URLs, so we shell out to the committed Swift helper (restash-read-clip-files)
+// which prints existing copied file paths one per line. Returns true when a file
+// selection was handled this tick (so checkClipboard must not also capture text).
+//
+// Storage policy (Kevin's rule):
+//   - VIDEO (video/* mime or video extension) → store BY-REFERENCE; keep the
+//     original path + metadata, never copy the bytes. Marked needsDownload so the
+//     UI offers a "Save"/"Download" action (file:saveCopy) that copies on demand.
+//   - NON-VIDEO ≤ MAX_FILE_BYTES → copy the bytes into FILES_DIR (self-contained
+//     recents), same scheme as the file:add handler.
+//   - NON-VIDEO > MAX_FILE_BYTES → store by-reference too rather than copying a
+//     huge file into the vault.
+function captureClipboardFiles(max) {
+  // Electron normalizes pasteboard types in availableFormats() — a Finder file
+  // copy shows up as ["text/plain","text/uri-list"], NOT 'public.file-url' — so
+  // detect copied files via clipboard.has() against the real pasteboard UTIs.
+  let hasFileType = false;
+  try { hasFileType = clipboard.has('public.file-url') || clipboard.has('NSFilenamesPboardType'); } catch { hasFileType = false; }
+  if (!hasFileType) {
+    let formats = [];
+    try { formats = clipboard.availableFormats(); } catch { formats = []; }
+    hasFileType = formats.some((f) => f.includes('file-url') || f.includes('uri-list') || f.includes('NSFilenames'));
+  }
+  if (!hasFileType) return false;
+
+  let out = '';
+  try {
+    out = execFileSync(path.join(BIN, 'restash-read-clip-files'), { timeout: 4000, encoding: 'utf8' });
+  } catch (err) {
+    // exit 1 (nothing) or exit 3 (file PROMISE with no resolvable path) →
+    // execFileSync throws; treat both as "no capturable files" and bail. File
+    // promises are intentionally skipped (no real bytes/path to capture).
+    return false;
+  }
+
+  const paths = String(out || '')
+    .split('\n')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (!paths.length) return false;
+
+  // Dedup across polls: the same selection sits on the pasteboard for many
+  // 700ms ticks; only capture it once.
+  const sig = filesSignature(paths);
+  if (sig === clipLastFilesHash) return true; // already handled this selection
+  clipLastFilesHash = sig;
+
+  // Own-write guard: when Restash itself wrote these files to the clipboard
+  // during a paste, don't re-capture them as a recent.
+  if (isOwnRecentWrite(sig)) return true;
+
+  // Build one files[] entry per path; classify + store per the policy above.
+  const files = [];
+  let needsDownload = false;
+  for (const p of paths) {
+    let stat = null;
+    try { stat = fs.statSync(p); } catch { stat = null; }
+    if (!stat || !stat.isFile()) continue;
+    const ext = path.extname(p);
+    const mime = guessMimeForExt(ext);
+    const name = path.basename(p);
+    const size = stat.size;
+
+    if (isVideoFile(mime, ext)) {
+      // VIDEO → by-reference only; never copy the bytes.
+      files.push({ path: p, name, size, mime, byRef: true });
+      needsDownload = true;
+    } else if (size > MAX_FILE_BYTES) {
+      // Too big to copy into the vault → by-reference too.
+      files.push({ path: p, name, size, mime, byRef: true });
+      needsDownload = true;
+    } else {
+      // NON-VIDEO under the ceiling → copy bytes into FILES_DIR (file:add scheme).
+      let storedPath = null;
+      try {
+        fs.mkdirSync(CLIP_FILES_DIR, { recursive: true });
+        const base = path.basename(p, ext);
+        const safeBase = base.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 60);
+        const storedName = `${Date.now().toString(36)}_${safeBase}${ext}`;
+        const destPath = path.join(CLIP_FILES_DIR, storedName);
+        fs.copyFileSync(p, destPath);
+        storedPath = destPath;
+      } catch { storedPath = null; }
+      if (storedPath) {
+        files.push({ storedPath, name, size, mime });
+      } else {
+        // Copy failed (permissions, gone) → fall back to by-reference.
+        files.push({ path: p, name, size, mime, byRef: true });
+        needsDownload = true;
+      }
+    }
+  }
+  if (!files.length) return true; // nothing usable, but a file selection was present
+
+  ensureClipHistoryLoaded();
+  // Full-ring dedup by the selection signature, then move-to-front.
+  clipHistory = clipHistory.filter((e) => e.filesHash !== sig);
+  const entry = {
+    id: genClipId(),
+    kind: 'file',
+    text: '',
+    files,
+    filesHash: sig,
+    capturedAt: Date.now(),
+  };
+  if (needsDownload) entry.needsDownload = true;
+  clipHistory.unshift(entry);
+  trimClipHistory(max);
+  scheduleClipHistoryWrite();
+  broadcastClipHistory();
+  return true;
+}
+
 // Read the clipboard and, if it changed to something new and capturable,
-// prepend it to the history. No-op when the feature is Off.
+// prepend it to the history. No-op when the feature is Off. Uses the cached
+// clipHistoryMax instead of re-reading settings from disk every poll tick.
 function checkClipboard() {
-  const max = readSettings().clipboardHistoryMax || 0;
+  const max = clipHistoryMax;
   if (max <= 0) return;
+
   let text = '';
-  try { text = clipboard.readText() || ''; } catch { return; }
+  try { text = clipboard.readText() || ''; } catch { text = ''; }
+  const textHash = text ? sha1(text) : null;
+
+  // Capture an IMAGE when the clipboard holds one that is newer than the last
+  // text we saw (a fresh image copy clears/lags the text representation). This
+  // mirrors the existing image-File item shape so the renderer's thumbnail path
+  // renders it with no new shape: files:[{ storedPath, mime:'image/png' }].
+  if (!text || textHash !== clipLastHash) {
+    let img = null;
+    try {
+      const formats = clipboard.availableFormats();
+      if (formats.some((f) => f.startsWith('image/'))) img = clipboard.readImage();
+    } catch { img = null; }
+    if (img && !img.isEmpty()) {
+      let png = null;
+      try { png = img.toPNG(); } catch { png = null; }
+      if (png && png.length) {
+        const imgHash = sha1Buffer(png);
+        if (imgHash !== clipLastImageHash) {
+          clipLastImageHash = imgHash;
+          // Don't re-capture our own image writes, and skip oversized images.
+          if (!isOwnRecentWrite(imgHash) && png.length <= MAX_FILE_BYTES) {
+            let storedPath = null;
+            try { storedPath = saveClipImage(img); } catch { storedPath = null; }
+            if (storedPath) {
+              ensureClipHistoryLoaded();
+              // Full-ring dedup by stored content hash, then move-to-front.
+              clipHistory = clipHistory.filter((e) => e.imageHash !== imgHash);
+              clipHistory.unshift({
+                id: genClipId(),
+                kind: 'file',
+                text: '',
+                files: [{ storedPath, mime: 'image/png' }],
+                imageHash: imgHash,
+                capturedAt: Date.now(),
+              });
+              trimClipHistory(max);
+              scheduleClipHistoryWrite();
+              broadcastClipHistory();
+            }
+          }
+        }
+        // An image was present this tick; don't also capture stale text below.
+        return;
+      }
+    }
+  }
+
+  // Capture COPIED FILES (Finder ⌘C / right-click Copy). A copied file puts a
+  // file-URL on the pasteboard plus a text fallback; capture it as a file recent
+  // and return so it doesn't also fall through to the text path below.
+  if (captureClipboardFiles(max)) {
+    // The file's text fallback (newline-joined paths) shouldn't be captured as a
+    // separate text recent on the next tick, so adopt its hash as "seen text".
+    if (textHash) clipLastHash = textHash;
+    return;
+  }
+
   if (!text) return;                                  // skip empty
-  const hash = sha1(text);
-  if (hash === clipLastHash) return;                  // unchanged since last poll
-  clipLastHash = hash;
-  if (isOwnRecentWrite(hash)) return;                 // our own paste/copy — ignore
+  if (textHash === clipLastHash) return;              // unchanged since last poll
+  clipLastHash = textHash;
+  if (isOwnRecentWrite(textHash)) return;             // our own paste/copy — ignore
   if (Buffer.byteLength(text, 'utf8') > CLIP_MAX_BYTES) return; // too large
   ensureClipHistoryLoaded();
-  if (clipHistory[0] && clipHistory[0].text === text) return;   // dup of top
+
+  // Full-ring dedup: re-copying an older clip moves it to the front rather than
+  // creating a duplicate row (natural most-recently-used ordering).
+  clipHistory = clipHistory.filter((e) => e.text !== text || (e.files && e.files.length));
 
   clipHistory.unshift({
-    id: 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    id: genClipId(),
     text,
     capturedAt: Date.now(),
   });
@@ -301,73 +501,45 @@ function checkClipboard() {
 }
 
 // Start/stop the polling watcher based on the current setting. Idempotent.
+// Caches the max into clipHistoryMax so checkClipboard() doesn't re-read
+// settings from disk on every poll tick. The clipboardHistory:setMax handler
+// calls this whenever the value changes, keeping the cache fresh.
 function syncClipboardWatcher() {
   const max = readSettings().clipboardHistoryMax || 0;
+  clipHistoryMax = max;
   if (max > 0) {
     if (!clipWatchTimer) {
-      // Seed clipLastHash with the current clipboard so we don't capture
-      // whatever happened to be there before the watcher started.
+      // Seed clipLastHash/clipLastImageHash with the current clipboard so we
+      // don't capture whatever happened to be there before the watcher started.
       try { clipLastHash = sha1(clipboard.readText() || ''); } catch { clipLastHash = null; }
+      try {
+        const formats = clipboard.availableFormats();
+        if (formats.some((f) => f.startsWith('image/'))) {
+          const img0 = clipboard.readImage();
+          clipLastImageHash = (img0 && !img0.isEmpty()) ? sha1Buffer(img0.toPNG()) : null;
+        } else {
+          clipLastImageHash = null;
+        }
+      } catch { clipLastImageHash = null; }
+      // Seed clipLastFilesHash with any files already on the pasteboard so a
+      // pre-existing copied-file selection isn't grabbed the instant the watcher
+      // starts (mirrors the text/image seeding above).
+      try {
+        const formats = clipboard.availableFormats();
+        if (formats.some((f) => f.includes('file-url') || f.includes('NSFilenamesPboardType'))) {
+          const out = execFileSync(path.join(BIN, 'restash-read-clip-files'), { timeout: 4000, encoding: 'utf8' });
+          const paths = String(out || '').split('\n').map((p) => p.trim()).filter(Boolean);
+          clipLastFilesHash = paths.length ? filesSignature(paths) : null;
+        } else {
+          clipLastFilesHash = null;
+        }
+      } catch { clipLastFilesHash = null; }
       clipWatchTimer = setInterval(checkClipboard, CLIP_POLL_MS);
     }
   } else if (clipWatchTimer) {
     clearInterval(clipWatchTimer);
     clipWatchTimer = null;
   }
-}
-
-// Stamp the trial start the first time the app runs. Idempotent.
-function ensureTrialStamp() {
-  const s = readSettings();
-  if (!s.trialStartedAt) {
-    s.trialStartedAt = Date.now();
-    writeSettings(s);
-  }
-  return s.trialStartedAt;
-}
-
-// While Restash is given away with full access (pre-open-source), EVERY install
-// gets complete access — no trial countdown, no caps, no license needed. Flip
-// this to false to restore the trial / free-tier / paid plans below.
-const OPEN_ACCESS = true;
-
-// Resolve what the user can actually do right now:
-//   - OPEN_ACCESS (current)          → complete access for everyone
-//   - paid (monthly/yearly/lifetime) → full access
-//   - within the 30-day window      → full access (trial)
-//   - otherwise                     → limited free tier
-// Returns { tier, effective: 'full'|'free', trialDaysLeft, trialActive }.
-function resolveEntitlement() {
-  // Everyone (and any owner build) gets permanent complete access.
-  if (OPEN_ACCESS || isOwnerBuild()) {
-    return {
-      tier: 'complete',
-      effective: 'full',
-      trialDaysLeft: 0,
-      trialActive: false,
-      limits: FREE_LIMITS,
-      license: { status: 'open', tier: 'complete', keyMasked: 'COMPLETE ACCESS', expiresAt: null },
-    };
-  }
-  const s = readSettings();
-  // An activated Lemon Squeezy license is the source of truth for paid status.
-  const lic = s.license;
-  const licensed = !!(lic && lic.status === 'active');
-  const tier = licensed ? (lic.tier || 'lifetime') : 'free';
-  const started = s.trialStartedAt || Date.now();
-  const msLeft = (started + TRIAL_DAYS * 864e5) - Date.now();
-  const trialDaysLeft = Math.max(0, Math.ceil(msLeft / 864e5));
-  const trialActive = !licensed && msLeft > 0;
-  return {
-    tier,
-    effective: (licensed || trialActive) ? 'full' : 'free',
-    trialDaysLeft,
-    trialActive,
-    limits: FREE_LIMITS,
-    license: lic
-      ? { status: lic.status, tier: lic.tier, keyMasked: maskKey(lic.key), expiresAt: lic.expiresAt || null }
-      : null,
-  };
 }
 
 let currentHotkey   = DEFAULT_HOTKEY;      // popover summon
@@ -401,6 +573,192 @@ function registerHotkeySlot(slot, accel) {
 // Back-compat shim — the popover-summon recorder in Settings still calls this.
 function tryRegisterHotkey(accel) {
   return registerHotkeySlot('summon', accel);
+}
+
+// ============================================================
+// "Check for updates" — real GitHub Releases check.
+// Hits the public Releases API for cooped-labs/restash, compares the latest tag to
+// the running version with a tiny semver compare, and degrades gracefully: any
+// network error / timeout, or a 404 (the repo is currently PRIVATE), returns
+// status:'error' with releasesUrl set so the UI can route the user to GitHub.
+// Successful results are cached with a ~daily throttle so background checks
+// don't hammer GitHub; a forced (manual) check bypasses the cache.
+// ============================================================
+const RELEASES_URL = 'https://github.com/cooped-labs/restash/releases';
+const UPDATE_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+let _updateCache = null; // { at: <ms>, result: <obj> }
+
+// Compare two dotted numeric versions. Returns 1 if a>b, -1 if a<b, 0 if equal.
+function compareSemver(a, b) {
+  const norm = (v) => String(v || '')
+    .trim()
+    .replace(/^v/i, '')
+    .split(/[-+]/)[0]            // drop pre-release / build metadata
+    .split('.')
+    .map((n) => parseInt(n, 10) || 0);
+  const pa = norm(a);
+  const pb = norm(b);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const x = pa[i] || 0;
+    const y = pb[i] || 0;
+    if (x > y) return 1;
+    if (x < y) return -1;
+  }
+  return 0;
+}
+
+// Fetch the latest release JSON from GitHub with a ~6s timeout. Resolves to the
+// parsed object, or rejects on network error / timeout / non-200 status.
+function fetchLatestRelease() {
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      'https://api.github.com/repos/cooped-labs/restash/releases/latest',
+      {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Restash',
+          Accept: 'application/vnd.github+json',
+        },
+      },
+      (res) => {
+        const { statusCode } = res;
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          if (statusCode !== 200) {
+            // 404 = private/no releases; any other non-200 is treated the same.
+            reject(new Error(`github status ${statusCode}`));
+            return;
+          }
+          try {
+            resolve(JSON.parse(body));
+          } catch (e) {
+            reject(e);
+          }
+        });
+      },
+    );
+    req.setTimeout(6000, () => {
+      req.destroy(new Error('timeout'));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+async function checkForUpdates(force) {
+  const current = app.getVersion();
+
+  // Serve a cached successful result for background (non-forced) checks within
+  // the throttle window. We never cache errors, so a transient failure won't
+  // suppress the next background check.
+  if (!force && _updateCache && (Date.now() - _updateCache.at) < UPDATE_CACHE_TTL_MS) {
+    return _updateCache.result;
+  }
+
+  try {
+    const rel = await fetchLatestRelease();
+    const latest = String(rel.tag_name || '').trim().replace(/^v/i, '');
+    // Release notes: prefer body, fall back to name; keep a short one-liner.
+    const rawNotes = (rel.body || rel.name || '').toString();
+    let notes = rawNotes.split(/\r?\n/).map((s) => s.trim()).find(Boolean) || '';
+    if (notes.length > 140) notes = `${notes.slice(0, 139).trimEnd()}…`;
+    const url = rel.html_url || RELEASES_URL;
+
+    const isNewer = latest && compareSemver(latest, current) > 0;
+    const result = {
+      ok: true,
+      status: isNewer ? 'available' : 'up-to-date',
+      current,
+      latest: latest || current,
+      notes,
+      url,
+      releasesUrl: RELEASES_URL,
+    };
+    _updateCache = { at: Date.now(), result };
+    return result;
+  } catch (err) {
+    // 404 (private repo) or any network/timeout error — never throw.
+    return {
+      ok: false,
+      status: 'error',
+      current,
+      latest: null,
+      notes: '',
+      url: RELEASES_URL,
+      releasesUrl: RELEASES_URL,
+      error: (err && err.message) || 'check failed',
+    };
+  }
+}
+
+// ============================================================
+// GitHub star count — powers the immersive "Support Restash" card and the
+// inline count on the ★ footer button. Reuses the same node:https request
+// pattern as fetchLatestRelease. Degrades gracefully: a 404 (the repo is
+// currently PRIVATE) or any network/timeout error returns { ok:false,
+// stars:null } and never throws. Successful values are cached for ~1h so we
+// don't hammer GitHub on every popover open.
+// ============================================================
+const STARS_CACHE_TTL_MS = 60 * 60 * 1000; // 1h
+let _starsCache = null; // { at: <ms>, stars: <number> }
+
+function fetchStargazerCount() {
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      'https://api.github.com/repos/cooped-labs/restash',
+      {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Restash',
+          Accept: 'application/vnd.github+json',
+        },
+      },
+      (res) => {
+        const { statusCode } = res;
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          if (statusCode !== 200) {
+            // 404 = private repo; any other non-200 is treated the same.
+            reject(new Error(`github status ${statusCode}`));
+            return;
+          }
+          try {
+            const json = JSON.parse(body);
+            const stars = Number(json.stargazers_count);
+            if (Number.isFinite(stars)) resolve(stars);
+            else reject(new Error('no stargazers_count'));
+          } catch (e) {
+            reject(e);
+          }
+        });
+      },
+    );
+    req.setTimeout(6000, () => {
+      req.destroy(new Error('timeout'));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+async function getStarCount() {
+  // Serve a cached successful value within the TTL window.
+  if (_starsCache && (Date.now() - _starsCache.at) < STARS_CACHE_TTL_MS) {
+    return { ok: true, stars: _starsCache.stars };
+  }
+  try {
+    const stars = await fetchStargazerCount();
+    _starsCache = { at: Date.now(), stars };
+    return { ok: true, stars };
+  } catch {
+    // 404 (private repo) or any network/timeout error — never throw.
+    return { ok: false, stars: null };
+  }
 }
 
 // ============================================================
@@ -804,7 +1162,6 @@ let currentMode = 'list';
 const SIZE_GRID    = { width: 240, height: 332 };  // grid (numpad) default
 const SIZE_LIST    = { width: 300, height: 428 };  // list (menu) default
 const SIZE_QR      = { width: 300, height: 380 };  // QR preview — compact card layout
-const SIZE_BILLING = { width: 300, height: 532 };  // billing modal — fits Option B, no scroll
 const SIZE_EDITOR  = { width: 340, height: 500 };  // add/edit-item modal — roomier than the list
 
 // Resize bounds for the user-customisable modals (visible card, no gutter).
@@ -820,12 +1177,11 @@ function clampCard(sz, b) {
 }
 
 // Visible card size for a mode — user-customised for list/grid (persisted in
-// settings.json), fixed for qr/billing.
+// settings.json), fixed for qr.
 function cardSize(mode) {
   const s = readSettings();
   if (mode === 'grid')    return clampCard(s.gridSize || SIZE_GRID, GRID_BOUNDS);
   if (mode === 'qr')      return SIZE_QR;
-  if (mode === 'billing') return SIZE_BILLING;
   return clampCard(s.menuSize || SIZE_LIST, MENU_BOUNDS);
 }
 
@@ -1084,7 +1440,7 @@ app.whenReady().then(() => {
     { type: 'separator' },
     { label: 'Settings…', accelerator: isMac ? 'Cmd+,' : undefined, click: () => { togglePopover(); setTimeout(() => win?.webContents.send('open:settings'), 120); } },
     { label: 'Check for Updates…', click: () => win?.webContents.send('open:updates') },
-    { label: 'Billing & Account…', click: () => win?.webContents.send('open:billing') },
+    { label: 'Star on GitHub…', click: () => shell.openExternal('https://github.com/cooped-labs/restash') },
     { type: 'separator' },
     { label: 'Quit Restash', accelerator: 'CommandOrControl+Q', click: () => app.quit() },
   ]);
@@ -1110,7 +1466,7 @@ app.whenReady().then(() => {
           { type: 'separator' },
           { label: 'Settings…', click: () => { togglePopover(); setTimeout(() => win?.webContents.send('open:settings'), 120); } },
           { label: 'Check for Updates…', click: () => win?.webContents.send('open:updates') },
-          { label: 'Billing & Account…', click: () => win?.webContents.send('open:billing') },
+          { label: 'Star on GitHub…', click: () => shell.openExternal('https://github.com/cooped-labs/restash') },
           { type: 'separator' },
           { role: 'quit' },
         ],
@@ -1312,8 +1668,7 @@ app.whenReady().then(() => {
   // ---------- File items ----------
   // Files saved to Restash live in userData/files/. We copy in on save so
   // items don't break if the user moves or deletes the source.
-  const FILES_DIR = path.join(app.getPath('userData'), 'files');
-  const MAX_FILE_BYTES = 100 * 1024 * 1024; // 100 MB ceiling
+  const FILES_DIR = CLIP_FILES_DIR; // userData/files — shared with clip image capture
 
   function ensureFilesDir() {
     if (!fs.existsSync(FILES_DIR)) fs.mkdirSync(FILES_DIR, { recursive: true });
@@ -1424,9 +1779,46 @@ app.whenReady().then(() => {
     return { ok: true };
   });
 
+  // Save a BY-REFERENCE recent (e.g. a copied video kept by path, never copied
+  // into the vault) to the user's Downloads folder, on demand. De-duplicates the
+  // filename if one already exists ("name.ext" → "name (1).ext"). Returns
+  // { ok, savedPath } or { ok:false, reason }.
+  ipcMain.handle('file:saveCopy', async (_e, srcPath) => {
+    if (typeof srcPath !== 'string' || !srcPath) return { ok: false, reason: 'bad-input' };
+    try {
+      const stat = fs.statSync(srcPath);
+      if (!stat.isFile()) return { ok: false, reason: 'not-a-file' };
+      const downloads = app.getPath('downloads');
+      fs.mkdirSync(downloads, { recursive: true });
+      const ext = path.extname(srcPath);
+      const base = path.basename(srcPath, ext);
+      let dest = path.join(downloads, `${base}${ext}`);
+      let n = 1;
+      while (fs.existsSync(dest)) {
+        dest = path.join(downloads, `${base} (${n})${ext}`);
+        n += 1;
+      }
+      fs.copyFileSync(srcPath, dest);
+      return { ok: true, savedPath: dest };
+    } catch (err) {
+      return { ok: false, reason: 'copy-failed', error: err.message };
+    }
+  });
+
   ipcMain.handle('items:load', () => readStore());
-  ipcMain.handle('items:save', (_e, items) => {
+  ipcMain.handle('items:save', (e, items) => {
+    // writeStore is synchronous, so concurrent items:save IPCs from the popover
+    // and the stash-edit window are already serialized in the main process —
+    // no interleaved/torn write. To stop last-writer-wins CLOBBER of the other
+    // window's stale in-memory view, broadcast the change so each non-sending
+    // window reloads from disk after a save.
     writeStore(items);
+    const senderId = e.sender && e.sender.id;
+    for (const w of [win, stashEditWin]) {
+      if (w && !w.isDestroyed() && w.webContents.id !== senderId) {
+        w.webContents.send('items:changed');
+      }
+    }
     return true;
   });
 
@@ -1651,6 +2043,15 @@ end if`;
     try { platform.openSites(byProfile, { separate: urlMode === 'separate' }); } catch {}
     return { ok: true };
   });
+
+  // Per-site Chrome profile picker — forwards to the platform implementation
+  // (getChromeProfiles is exported by darwin/win32/linux). Renderer gates the
+  // profile dropdown on a non-empty list, so a missing handler made it dead.
+  ipcMain.handle('chrome:profiles', () => {
+    try { return platform.getChromeProfiles ? platform.getChromeProfiles() : []; }
+    catch { return []; }
+  });
+
   ipcMain.handle('qr:dataurl', (_e, text) => QRCode.toDataURL(String(text ?? ''), {
     errorCorrectionLevel: 'H',
     margin: 1,
@@ -1664,9 +2065,9 @@ end if`;
   // share sheet, so platform.share returns { fallback: true } and the renderer
   // shows an in-app Copy / Open URL / Reveal file / Email action set (all via
   // already-cross-platform Electron shell APIs — zero new native deps).
-  ipcMain.handle('share:item', (e, { text, url, filePath, label, iconPath } = {}) => {
+  ipcMain.handle('share:item', (e, { text, url, filePath, filePaths, label, iconPath } = {}) => {
     return platform.share(
-      { text, url, filePath, label, iconPath },
+      { text, url, filePath, filePaths, label, iconPath },
       {
         beforeShare: () => {
           // Suppress blur-hide + drop window level so the system picker floats above.
@@ -1801,12 +2202,13 @@ end if`;
           if (win && win.isVisible()) win.hide();
           if (process.platform === 'darwin') app.hide();
         },
+        // Route every clipboard write the paste path makes (the injected value
+        // AND the snapshot it restores) through the own-write ring so the
+        // watcher doesn't re-capture pasted items as duplicate "recents".
+        markOwnWrite: (payload) => recordOwnWrite(payload),
       }
     );
   });
-
-  // Stamp the trial clock on first run.
-  ensureTrialStamp();
 
   // Global hotkey: summon the popover at the cursor location.
   // Load user-saved hotkey, fall back to default if unset or in-use.
@@ -1834,10 +2236,7 @@ end if`;
     ...readSettings(),
     currentHotkey,
     currentQRHotkey,
-    entitlement: resolveEntitlement(),
   }));
-  // Renderer asks for a fresh entitlement read (e.g. after the billing modal).
-  ipcMain.handle('entitlement:get', () => resolveEntitlement());
 
   // ── Clipboard memory IPC (RES-11) ──────────────────────────────────────
   ipcMain.handle('clipboardHistory:load', () => {
@@ -1883,63 +2282,6 @@ end if`;
   // Load history into memory and start the watcher per the saved setting.
   ensureClipHistoryLoaded();
   syncClipboardWatcher();
-
-  // ── Lemon Squeezy license activation ──────────────────────────────────
-  // Activate a license key on this device; on success the entitlement flips
-  // to the matching paid tier and is persisted to settings.json.
-  ipcMain.handle('license:activate', async (_e, rawKey) => {
-    const key = String(rawKey || '').trim();
-    if (!key) return { ok: false, error: 'Enter your license key.' };
-    const r = await lsLicenseCall('activate', {
-      license_key: key,
-      instance_name: licenseInstanceName(),
-    });
-    if (r && r.activated) {
-      const variantId = r.meta && r.meta.variant_id;
-      const lk = r.license_key || {};
-      const s = readSettings();
-      s.license = {
-        key,
-        instanceId: (r.instance && r.instance.id) || null,
-        variantId: variantId != null ? String(variantId) : null,
-        tier: tierForVariant(variantId),
-        status: 'active',
-        expiresAt: lk.expires_at || null,
-        activatedAt: Date.now(),
-      };
-      s.tier = s.license.tier;
-      writeSettings(s);
-      return { ok: true, entitlement: resolveEntitlement() };
-    }
-    let error = (r && r.error) || 'That license key could not be activated.';
-    if (r && r._network) error = 'Could not reach Lemon Squeezy — check your connection.';
-    return { ok: false, error };
-  });
-
-  // Release this device's activation slot and drop back to the free tier.
-  ipcMain.handle('license:deactivate', async () => {
-    const s = readSettings();
-    const lic = s.license;
-    if (lic && lic.key && lic.instanceId) {
-      await lsLicenseCall('deactivate', { license_key: lic.key, instance_id: lic.instanceId });
-    }
-    s.license = null;
-    s.tier = 'free';
-    writeSettings(s);
-    return { ok: true, entitlement: resolveEntitlement() };
-  });
-
-  // Fire-and-forget: re-verify the stored license against Lemon Squeezy.
-  revalidateLicense();
-  // Mark the one-time offer as shown so it never fires again.
-  ipcMain.handle('oto:markShown', () => {
-    const s = readSettings();
-    s.otoShown = true;
-    writeSettings(s);
-    return { ok: true };
-  });
-  // Billing is an overlay inside the existing window — no resize needed.
-  ipcMain.handle('billing:window', (_e, _open) => { return { ok: true }; });
 
   // The add/edit-item modal needs more room than the list. While it's open,
   // grow the window to SIZE_EDITOR — but never below the user's current list
@@ -2107,33 +2449,15 @@ end if`;
     return result;
   });
 
-  // --- Stubs for menu-bar dropdown actions ---
-  ipcMain.handle('app:check-updates', async () => {
-    // electron-updater: NSIS differential on Windows, AppImage zsync on Linux.
-    // macOS auto-update needs Squirrel.Mac signing+notarization (out of scope);
-    // mac just reports its version. The updater is loaded lazily so dev runs and
-    // unpackaged builds (where update metadata is absent) never throw.
-    if (process.platform === 'darwin' || !app.isPackaged) {
-      return { ok: true, status: 'up-to-date', version: app.getVersion() };
-    }
-    try {
-      // eslint-disable-next-line global-require
-      const { autoUpdater } = require('electron-updater');
-      autoUpdater.autoDownload = true;
-      const result = await autoUpdater.checkForUpdates();
-      const remote = result && result.updateInfo && result.updateInfo.version;
-      if (remote && remote !== app.getVersion()) {
-        return { ok: true, status: 'downloading', version: remote };
-      }
-      return { ok: true, status: 'up-to-date', version: app.getVersion() };
-    } catch (err) {
-      return { ok: false, status: 'error', error: err && err.message, version: app.getVersion() };
-    }
+  // --- Menu-bar dropdown actions ---
+  ipcMain.handle('app:check-updates', async (_evt, opts) => {
+    return checkForUpdates(opts && opts.force);
   });
 
-  ipcMain.handle('app:open-billing', async () => {
-    // TODO: open a billing URL once we have one. For now just a placeholder.
-    return { ok: true, status: 'coming-soon' };
+  // Live GitHub star count for the immersive "Support Restash" card. Never
+  // throws — returns { ok:false, stars:null } while the repo is private/offline.
+  ipcMain.handle('github:stars', async () => {
+    return getStarCount();
   });
 
   ipcMain.handle('app:quit', () => {
@@ -2150,8 +2474,10 @@ end if`;
     return result;
   });
 
-  // Auto-open the popover on first launch so it's discoverable.
-  setTimeout(togglePopover, 400);
+  // First-run discoverability is handled by the tutorial window (gated on
+  // !onboarded, above). We intentionally do NOT auto-open the popover on
+  // launch: it was unguarded and popped open on every cold start of this
+  // background menu-bar app, which is unwanted for established users.
 });
 
 app.on('will-quit', () => {

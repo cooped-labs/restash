@@ -1,7 +1,7 @@
 # Restash — first-run guide (read this first)
 
-**Restash is a finished macOS app. You build it from this source *once*, then
-install and use the built app.** There's no prebuilt download to fetch.
+**Restash is a finished macOS app.** This guide covers building it from source:
+install the built app *once*, then use it like any other app.
 
 > ## Cross-platform (Windows + Linux)
 > Restash also targets Windows 10/11 and Linux (X11 + Wayland) with a strict
@@ -51,7 +51,7 @@ xattr -cr /Applications/Restash.app      # clear quarantine, just in case
 open /Applications/Restash.app
 ```
 
-`npm run dist` also writes a double-clickable **`dist/Restash-1.1.0-arm64.dmg`**
+`npm run dist` also writes a double-clickable **`dist/Restash-1.2.0-arm64.dmg`**
 if you'd rather drag **Restash** into **Applications** the classic way.
 
 After launch, Restash appears in **both the menu bar and the Dock**. Press
@@ -93,3 +93,25 @@ Notes for agents:
 `npm start` runs a live dev build via Electron for fast iteration. Its permission
 prompts read "Electron"/your terminal name — expected for a dev process, and
 exactly why everyone *using* the app installs the built bundle instead.
+
+### Native helper binaries (`bin/`)
+
+The macOS Swift helpers — `restash-share`, `restash-clip-file`, `restash-decode-qr`,
+`restash-windows` — are committed as prebuilt **arm64 Mach-O binaries** alongside
+their `.swift` sources (each source's header comment carries the exact `swiftc`
+build command). These are large compiled blobs tracked in git.
+
+**Maintainer recommendation:** before/just after open-sourcing, move these out of
+plain git tracking. Either
+
+- track them with **[git-lfs](https://git-lfs.com/)** (`git lfs track "bin/restash-*"`,
+  keeping the `.swift` sources in regular git), or
+- **generate them at build time** from the `.swift` sources via a `build:mac-helpers`
+  step run before `electron-builder` (then add the four `bin/restash-*` binaries to
+  `.gitignore`). `package.json` `build.files` already references these paths, so they
+  only need to exist at pack time.
+
+They are also currently **arm64-only**; if Intel/universal macOS builds are ever
+shipped, rebuild them as universal binaries (`lipo -create` of arm64 + x86_64 slices)
+or the file-paste, share, QR-decode, and window-listing features will silently
+degrade on Intel.

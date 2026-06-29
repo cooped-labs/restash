@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; script-src 'self'; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com;" />
+        content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https: file:; script-src 'self'; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com;" />
   <title>Restash</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -67,8 +67,8 @@
     <div class="footer-spacer"></div>
     <button class="footer-btn icon-only" data-act="theme" id="themeToggle" title="Toggle dark mode">☾</button>
     <button class="footer-btn icon-only" data-act="settings" title="Settings (⌘,)">⚙</button>
-    <button class="footer-btn icon-only" data-act="updates" title="Check for updates">↻</button>
-    <button class="footer-btn icon-only" data-act="billing" title="Billing & account">＄</button>
+    <button class="footer-btn icon-only" data-act="updates" id="updatesBtn" title="Check for updates">↻</button>
+    <button class="footer-btn icon-only" data-act="star" id="starBtn" title="Support Restash"><span class="star-glyph">★</span><span class="star-count hidden" id="starCount"></span></button>
     <button class="footer-btn icon-only danger" data-act="quit" title="Quit Restash">⏻</button>
   </footer>
 
@@ -200,7 +200,7 @@
             <button type="button" data-n="2">2</button>
             <button type="button" data-n="3">3</button>
             <button type="button" data-n="5">5</button>
-            <button type="button" data-n="10">10</button>
+            <button type="button" data-n="9">9</button>
           </div>
           <div class="clip-help">Auto-capture your most-recent copies. Restash never sends clipboard data anywhere.</div>
           <div class="clip-clear-row">
@@ -213,6 +213,14 @@
             <div id="accessStatusText">Checking…</div>
             <button id="accessOpenBtn" class="btn">Open Settings</button>
           </div>
+        </div>
+        <div class="field">
+          <span>About &amp; support</span>
+          <div class="about-row">
+            <button id="contactSupportBtn" type="button" class="btn">Contact support</button>
+            <button id="viewGithubBtn" type="button" class="btn ghost">View on GitHub</button>
+          </div>
+          <div class="clip-help">Restash is free and open source (AGPL-3.0). Support &amp; commercial licensing: <strong>coopedlabs@gmail.com</strong></div>
         </div>
         <div class="settings-note">
           <div><strong>Hotkey tips</strong></div>
@@ -230,22 +238,43 @@
     </div>
   </div>
 
-  <!-- Billing modal — body is rendered by renderBilling() based on tier. -->
-  <div id="billingBackdrop" class="backdrop hidden">
-    <div class="modal">
-      <div class="modal-header">Billing</div>
-      <div class="modal-body" id="billingBody"></div>
-      <div class="modal-footer">
-        <button class="btn ghost" id="billingSupportBtn">Contact support</button>
-        <div class="spacer"></div>
-        <button class="btn primary" data-close="billing">Done</button>
+  <!-- Update-available card — shown by the "Check for updates" flow when a newer
+       GitHub release exists. Body (version + notes) is filled by renderer. -->
+  <div id="updateBackdrop" class="backdrop hidden">
+    <div class="update-card">
+      <div class="uc-head">
+        <span class="uc-ico" aria-hidden="true">⟳</span>
+        <span class="uc-title">Update available · <span id="ucVersion">—</span></span>
+        <button type="button" class="uc-close" data-close="update" aria-label="Dismiss">✕</button>
+      </div>
+      <div class="uc-notes" id="ucNotes"></div>
+      <div class="uc-actions">
+        <button type="button" class="uc-btn" data-update-whatsnew>What's new</button>
+        <button type="button" class="uc-btn primary" data-update-get>Get it ▸</button>
       </div>
     </div>
   </div>
 
-  <!-- One-time offer — a single high-intent conversion card. Body filled by renderOTO(). -->
-  <div id="otoBackdrop" class="backdrop hidden">
-    <div class="oto-card" id="otoCard"></div>
+  <!-- Support Restash card (★ footer button) -->
+  <div id="starBackdrop" class="backdrop hidden">
+    <div class="update-card star-card">
+      <div class="uc-head">
+        <span class="uc-ico" aria-hidden="true">★</span>
+        <span class="uc-title">Support Restash</span>
+        <button type="button" class="uc-close" data-close="star" aria-label="Dismiss">✕</button>
+      </div>
+      <div class="support-stars" id="supportStars">
+        <span class="support-star-big" aria-hidden="true">★</span>
+        <span class="support-star-num" id="supportStarNum">Star the project</span>
+      </div>
+      <div class="uc-notes support-ask">
+        Restash is free and open source. If it's useful to you, a ⭐ helps more
+        people find it — it only takes two seconds.
+      </div>
+      <div class="uc-actions">
+        <button type="button" class="uc-btn primary" data-support-star>★ Star on GitHub</button>
+      </div>
+    </div>
   </div>
 
   <!-- QR modal -->
@@ -265,20 +294,6 @@
 
   <!-- Toast -->
   <div id="toast" class="toast hidden"></div>
-
-  <!-- Free-tier upgrade nudge (Option C) — slides up when a limit is hit. -->
-  <div id="limitNudge" class="limit-nudge hidden">
-    <span class="ln-ic">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>
-      </svg>
-    </span>
-    <span class="ln-text">
-      <span class="ln-title">Limit reached</span>
-      <span class="ln-sub">Free plan</span>
-    </span>
-    <button class="ln-btn" id="limitNudgeBtn">Upgrade</button>
-  </div>
 
   </div><!-- /.shell -->
 

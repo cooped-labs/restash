@@ -3,18 +3,23 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('restash', {
   loadItems: () => ipcRenderer.invoke('items:load'),
   saveItems: (items) => ipcRenderer.invoke('items:save', items),
+  // Fired when the OTHER window (popover ↔ stash-edit) saves items, so this
+  // window can reload from disk instead of clobbering with a stale view.
+  onItemsChanged: (cb) => ipcRenderer.on('items:changed', cb),
   copy: (text) => ipcRenderer.invoke('clipboard:write', text),
   openExternal: (url) => ipcRenderer.invoke('shell:open', url),
   hideWindow: () => ipcRenderer.invoke('window:hide'),
   resizeWindow: (payload) => ipcRenderer.invoke('window:resize', payload),
   qrDataURL: (text) => ipcRenderer.invoke('qr:dataurl', text),
-  shareItem: ({ text, url, filePath, label, iconPath }) =>
-    ipcRenderer.invoke('share:item', { text, url, filePath, label, iconPath }),
+  shareItem: ({ text, url, filePath, filePaths, label, iconPath }) =>
+    ipcRenderer.invoke('share:item', { text, url, filePath, filePaths, label, iconPath }),
   // File item flow
   pickFile: () => ipcRenderer.invoke('file:pick'),
   addFile:  (srcPath) => ipcRenderer.invoke('file:add', srcPath),
   openFile: (storedPath) => ipcRenderer.invoke('file:open', storedPath),
   revealFile: (storedPath) => ipcRenderer.invoke('file:reveal', storedPath),
+  // Copy a by-reference (video/oversized) recent to ~/Downloads on demand.
+  saveFileCopy: (p) => ipcRenderer.invoke('file:saveCopy', p),
   onPopoverShown: (cb) => ipcRenderer.on('popover:shown', cb),
 
   // Environment kind: capture the current workspace + open a whole env.
@@ -24,14 +29,7 @@ contextBridge.exposeInMainWorld('restash', {
   openEnvironment: (env) => ipcRenderer.invoke('env:open', env),
 
   loadSettings: () => ipcRenderer.invoke('settings:load'),
-  getEntitlement: () => ipcRenderer.invoke('entitlement:get'),
-  // Lemon Squeezy license activation
-  activateLicense:   (key) => ipcRenderer.invoke('license:activate', key),
-  deactivateLicense: () => ipcRenderer.invoke('license:deactivate'),
-  onEntitlementChanged: (cb) => ipcRenderer.on('entitlement:changed', cb),
-  setBillingWindow: (open) => ipcRenderer.invoke('billing:window', open),
   setEditorWindow: (open) => ipcRenderer.invoke('editor:window', open),
-  markOTOShown: () => ipcRenderer.invoke('oto:markShown'),
   setHotkey: (accel) => ipcRenderer.invoke('hotkey:set', accel),
   resetHotkey: () => ipcRenderer.invoke('hotkey:reset'),
   setTheme: (theme) => ipcRenderer.invoke('theme:set', theme),
@@ -82,8 +80,8 @@ contextBridge.exposeInMainWorld('restash', {
   // Menu bar dropdown actions (Option C footer).
   onOpenSettings: (cb) => ipcRenderer.on('open:settings', cb),
   onOpenUpdates: (cb) => ipcRenderer.on('open:updates', cb),
-  onOpenBilling: (cb) => ipcRenderer.on('open:billing', cb),
-  checkUpdates: () => ipcRenderer.invoke('app:check-updates'),
-  openBilling: () => ipcRenderer.invoke('app:open-billing'),
+  checkUpdates: (opts) => ipcRenderer.invoke('app:check-updates', opts),
+  // Live GitHub star count for the ★ footer button / Support card.
+  getStars: () => ipcRenderer.invoke('github:stars'),
   quit: () => ipcRenderer.invoke('app:quit'),
 });
