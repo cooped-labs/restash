@@ -2603,6 +2603,10 @@ function renderEnvEditor() {
         <span class="cap-lbl">Everything open</span>
       </button>
     </div>
+    <div class="env-manual-add">
+      <input type="url" class="env-manual-input" id="envManualInput" placeholder="Add a site — coinbase.com" />
+      <button type="button" class="env-manual-btn" id="envManualBtn" title="Add site">+ Add site</button>
+    </div>
     <div class="env-cap-hint" id="envCapHint">${count
       ? `${siteN} ${siteN === 1 ? 'site' : 'sites'} · ${appN} ${appN === 1 ? 'app' : 'apps'} — remove anything you don't want.`
       : '“This desktop” grabs what’s on your current Space. “Everything open” grabs every app + tab.'}</div>
@@ -2644,6 +2648,24 @@ function renderEnvEditor() {
   };
   $('envCapDesktop')?.addEventListener('click', (e) => doCapture('desktop', e.currentTarget));
   $('envCapAll')?.addEventListener('click', (e) => doCapture('all', e.currentTarget));
+
+  // Manual add — type a URL, press Enter or click + Add site. The save-time
+  // 6-site cap is the source of truth; we don't pre-block here so a user can
+  // type-then-decide which to remove.
+  const doManualAdd = () => {
+    const inp = $('envManualInput');
+    if (!inp) return;
+    const v = inp.value.trim();
+    if (!v) return;
+    editorEnvTargets.push({ type: 'site', value: v });
+    renderEnvEditor();
+    // Refocus the (newly rendered) input so the user can add another fast.
+    setTimeout(() => $('envManualInput')?.focus(), 0);
+  };
+  $('envManualBtn')?.addEventListener('click', doManualAdd);
+  $('envManualInput')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); doManualAdd(); }
+  });
 
   // Remove buttons.
   host.querySelectorAll('.env-x').forEach((btn) => {
@@ -2922,6 +2944,13 @@ async function saveFromEditor() {
     if (!label || !contactValue) return;
   } else if (isEnv) {
     if (!label || !envTargets.length) return;
+    // Cap site count at 6 — past that, browsers race window/tab creation and
+    // some sites silently fail to open. Apps don't have the same problem.
+    const siteCount = envTargets.filter((t) => t.type === 'site').length;
+    if (siteCount > 6) {
+      toast(`Environment capped at 6 sites — you have ${siteCount}. Remove some to save.`);
+      return;
+    }
   } else {
     const value = $('fValue').value.trim();
     if (!label || !value) return;

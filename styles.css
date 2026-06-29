@@ -922,6 +922,27 @@ body.theme-dark .modal { box-shadow: 0 16px 40px rgba(0,0,0,0.55); }
 .env-capture-btn.busy .cap-ic { animation: env-spin 0.8s linear infinite; }
 @keyframes env-spin { to { transform: rotate(360deg); } }
 
+/* Manual add — type a URL alongside the capture buttons. */
+.env-manual-add { display: flex; gap: 6px; align-items: center; }
+.env-manual-input {
+  flex: 1; min-width: 0;
+  font: inherit; font-size: 12px;
+  padding: 7px 9px;
+  background: var(--bg-elev); color: var(--fg);
+  border: 1px solid var(--divider); border-radius: 8px;
+  outline: none;
+}
+.env-manual-input::placeholder { color: var(--fg-muted); }
+.env-manual-input:focus { border-color: var(--tint); }
+.env-manual-btn {
+  flex: 0 0 auto;
+  font: inherit; font-size: 12px; font-weight: 500;
+  padding: 7px 10px;
+  background: var(--bg-elev); color: var(--fg);
+  border: 1px solid var(--divider); border-radius: 8px; cursor: pointer;
+}
+.env-manual-btn:hover { background: var(--bg-elev-2); }
+
 /* Per-site Chrome-profile picker inside a captured row. */
 .env-profile {
   flex: 0 0 auto; max-width: 116px;
