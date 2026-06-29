@@ -15,7 +15,7 @@
     "dist:linux": "electron-builder --linux"
   },
   "author": "Restash",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "private": true,
   "dependencies": {
     "@resvg/resvg-js": "2.6.2",

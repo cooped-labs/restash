@@ -10,7 +10,7 @@ A macOS menu-bar + Dock app that keeps the things you reach for — wallet
 addresses, links, snippets, commands, contacts, files, AI agent prompts, even
 whole browser/app *environments* — one hotkey away from any app you're in.
 
-`v1.2.0` &nbsp;·&nbsp; macOS 12+ &nbsp;·&nbsp; Apple Silicon &nbsp;·&nbsp; Proprietary
+`v1.2.0` &nbsp;·&nbsp; macOS 12+ &nbsp;·&nbsp; Apple Silicon &nbsp;·&nbsp; AGPL-3.0 + Commercial
 
 </div>
 
@@ -115,5 +115,16 @@ permission dialog reads **"Restash"**.
 
 ## License
 
-Proprietary. All rights reserved. This source is private and not licensed for
-redistribution or reuse.
+Restash is **dual-licensed**:
+
+- **Open source — [GNU AGPL-3.0](LICENSE).** Free to use, modify, and self-host. If you
+  distribute Restash or a derivative, or run a modified version as a network service, you
+  must make your source available under the AGPL.
+- **Commercial license.** For companies that want to embed Restash in a closed-source or
+  SaaS product without AGPL obligations, or that need enterprise terms and support, a
+  commercial license is available — contact **progresswithpuello@gmail.com**.
+
+Copyright © 2026 Progress with Puello LLC.
+
+Contributions are accepted under the [Contributor License Agreement](CLA.md); see
+[CONTRIBUTING.md](CONTRIBUTING.md).
