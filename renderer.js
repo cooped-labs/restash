@@ -707,7 +707,7 @@ async function handleUpdatesCheck() {
   try {
     r = await window.restash.checkUpdates({ force: true });
   } catch {
-    r = { status: 'error', releasesUrl: 'https://github.com/pue-llo/restash/releases' };
+    r = { status: 'error', releasesUrl: 'https://github.com/cooped-labs/restash/releases' };
   }
   if (r && r.status === 'available') {
     clearUpdateBadge();
@@ -716,14 +716,14 @@ async function handleUpdatesCheck() {
     toast(`✓ You're on the latest (v${r.current})`);
   } else {
     toast('Couldn’t check — opening GitHub');
-    window.restash.openExternal((r && r.releasesUrl) || 'https://github.com/pue-llo/restash/releases');
+    window.restash.openExternal((r && r.releasesUrl) || 'https://github.com/cooped-labs/restash/releases');
   }
 }
 
 // ---------- update available card ----------
 const updateBackdrop = $('updateBackdrop');
 // The release URL the card's buttons open — set when the card is shown.
-let _updateReleaseUrl = 'https://github.com/pue-llo/restash/releases';
+let _updateReleaseUrl = 'https://github.com/cooped-labs/restash/releases';
 
 function setUpdateBadge() {
   $('updatesBtn')?.classList.add('has-update');
@@ -734,7 +734,7 @@ function clearUpdateBadge() {
 
 function openUpdateCard(r) {
   if (!updateBackdrop) return;
-  _updateReleaseUrl = (r && r.url) || 'https://github.com/pue-llo/restash/releases';
+  _updateReleaseUrl = (r && r.url) || 'https://github.com/cooped-labs/restash/releases';
   const ver = $('ucVersion');
   if (ver) ver.textContent = `v${(r && r.latest) || ''}`;
   const notes = $('ucNotes');
@@ -758,6 +758,74 @@ async function backgroundUpdateCheck() {
     const r = await window.restash.checkUpdates();
     if (r && r.status === 'available') setUpdateBadge();
   } catch { /* silent — background only */ }
+}
+
+// ---------- support / star count ----------
+const REPO_URL = 'https://github.com/cooped-labs/restash';
+// Last known star count (number) or null while private/offline.
+let _starCount = null;
+const starBackdrop = $('starBackdrop');
+
+// Compact number format: 1234 → "1.2k", 12000 → "12k", 999 → "999".
+function formatStars(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v < 1000) return String(Math.max(0, Math.round(v) || 0));
+  const k = v / 1000;
+  // One decimal under 10k (1.2k), none above (12k); trim a trailing ".0".
+  const s = k < 10 ? k.toFixed(1).replace(/\.0$/, '') : String(Math.round(k));
+  return `${s}k`;
+}
+
+// Render the inline count on the ★ footer button. A number shows "★ 1.2k";
+// null (private/offline) just shows the bare ★.
+function renderStarBadge() {
+  const el = $('starCount');
+  if (!el) return;
+  if (typeof _starCount === 'number') {
+    el.textContent = formatStars(_starCount);
+    el.classList.remove('hidden');
+  } else {
+    el.textContent = '';
+    el.classList.add('hidden');
+  }
+}
+
+// Fetch the live star count; store + render it. Never throws.
+async function loadStarCount() {
+  try {
+    const r = await window.restash.getStars();
+    _starCount = (r && r.ok && typeof r.stars === 'number') ? r.stars : null;
+  } catch {
+    _starCount = null;
+  }
+  renderStarBadge();
+}
+
+// Update the big number inside the open support card. Stars of 0 / null show a
+// friendly "Be the first to star ★" instead of a cold "0".
+function renderSupportStars() {
+  const num = $('supportStarNum');
+  if (!num) return;
+  if (typeof _starCount === 'number' && _starCount > 0) {
+    num.textContent = formatStars(_starCount);
+    num.classList.remove('support-empty');
+  } else {
+    num.textContent = 'Be the first to star ★';
+    num.classList.add('support-empty');
+  }
+}
+
+function openStarCard() {
+  if (!starBackdrop) return;
+  renderSupportStars();
+  starBackdrop.classList.remove('hidden');
+  // Refresh the count when the card opens so it's current; re-render on return.
+  loadStarCount().then(renderSupportStars);
+}
+function closeStarCard() {
+  if (!starBackdrop) return;
+  starBackdrop.classList.add('hidden');
+  focusSearch();
 }
 
 
@@ -3041,6 +3109,7 @@ document.addEventListener('click', (e) => {
   else if (which === 'editor') { e.preventDefault(); closeEditor(); }
   else if (which === 'settings') { e.preventDefault(); closeSettings(); }
   else if (which === 'update') { e.preventDefault(); closeUpdateCard(); }
+  else if (which === 'star') { e.preventDefault(); closeStarCard(); }
 });
 
 // Update card interactions — both buttons open the release page on GitHub.
@@ -3053,6 +3122,19 @@ document.addEventListener('click', (e) => {
 if (updateBackdrop) {
   updateBackdrop.addEventListener('click', (e) => {
     if (e.target === updateBackdrop) closeUpdateCard();
+  });
+}
+
+// Support card — primary button opens the repo to star; outside-click dismisses.
+document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-support-star]')) {
+    window.restash.openExternal(REPO_URL);
+    closeStarCard();
+  }
+});
+if (starBackdrop) {
+  starBackdrop.addEventListener('click', (e) => {
+    if (e.target === starBackdrop) closeStarCard();
   });
 }
 
@@ -3283,7 +3365,7 @@ function wire() {
     if (act === 'theme') return toggleTheme();
     if (act === 'settings') return openSettings();
     if (act === 'updates') return handleUpdatesCheck();
-    if (act === 'star') return window.restash.openExternal('https://github.com/pue-llo/restash');
+    if (act === 'star') return openStarCard();
     if (act === 'quit') return window.restash.quit();
   });
 
@@ -3320,7 +3402,7 @@ function wire() {
   $('contactSupportBtn')?.addEventListener('click', () =>
     window.restash.openExternal('mailto:coopedlabs@gmail.com?subject=Restash%20support'));
   $('viewGithubBtn')?.addEventListener('click', () =>
-    window.restash.openExternal('https://github.com/pue-llo/restash'));
+    window.restash.openExternal('https://github.com/cooped-labs/restash'));
 
   // Stash edit lives in its own BrowserWindow (stash-edit.html). When the
   // user clicks Done / Delete there, main emits stashes:changed; we refresh
@@ -3390,6 +3472,7 @@ function wire() {
     const qrOpen = !qrBackdrop.classList.contains('hidden');
     const settingsOpen = !settingsBackdrop.classList.contains('hidden');
     const updateOpen = updateBackdrop && !updateBackdrop.classList.contains('hidden');
+    const starOpen = starBackdrop && !starBackdrop.classList.contains('hidden');
 
     // Either hotkey recorder (summon or QR) swallows everything while active.
     if (recording || qrRecording) {
@@ -3422,7 +3505,8 @@ function wire() {
     }
 
     if (e.key === 'Escape') {
-      if (updateOpen) closeUpdateCard();
+      if (starOpen) closeStarCard();
+      else if (updateOpen) closeUpdateCard();
       else if (editorOpen) closeEditor();
       else if (qrOpen) closeQR();
       else if (settingsOpen) closeSettings();
@@ -3430,7 +3514,7 @@ function wire() {
       return;
     }
 
-    if (editorOpen || qrOpen || settingsOpen || updateOpen) return;
+    if (editorOpen || qrOpen || settingsOpen || updateOpen || starOpen) return;
 
     if (e.metaKey && e.key === ',') {
       e.preventDefault();
@@ -3585,6 +3669,9 @@ function wire() {
   // Quiet, cached background update check — badges the ↻ button if a newer
   // GitHub release exists. Errors (incl. the private-repo 404) stay silent.
   backgroundUpdateCheck();
+  // Live star count → inline ★ {count} on the footer button. Silent on
+  // private/offline (just shows a bare ★).
+  loadStarCount();
   // Clipboard memory: load captured history + subscribe to live updates.
   try { state.clipHistory = await window.restash.clipboardHistory.load(); } catch { state.clipHistory = []; }
   window.restash.clipboardHistory.onUpdated((items) => {

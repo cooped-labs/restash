@@ -170,7 +170,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "pue-llo",
+        "owner": "cooped-labs",
         "repo": "restash"
       }
     ]

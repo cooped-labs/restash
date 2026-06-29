@@ -81,5 +81,7 @@ contextBridge.exposeInMainWorld('restash', {
   onOpenSettings: (cb) => ipcRenderer.on('open:settings', cb),
   onOpenUpdates: (cb) => ipcRenderer.on('open:updates', cb),
   checkUpdates: (opts) => ipcRenderer.invoke('app:check-updates', opts),
+  // Live GitHub star count for the ★ footer button / Support card.
+  getStars: () => ipcRenderer.invoke('github:stars'),
   quit: () => ipcRenderer.invoke('app:quit'),
 });

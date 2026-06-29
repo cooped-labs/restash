@@ -68,7 +68,7 @@
     <button class="footer-btn icon-only" data-act="theme" id="themeToggle" title="Toggle dark mode">☾</button>
     <button class="footer-btn icon-only" data-act="settings" title="Settings (⌘,)">⚙</button>
     <button class="footer-btn icon-only" data-act="updates" id="updatesBtn" title="Check for updates">↻</button>
-    <button class="footer-btn icon-only" data-act="star" title="Star on GitHub">★</button>
+    <button class="footer-btn icon-only" data-act="star" id="starBtn" title="Support Restash"><span class="star-glyph">★</span><span class="star-count hidden" id="starCount"></span></button>
     <button class="footer-btn icon-only danger" data-act="quit" title="Quit Restash">⏻</button>
   </footer>
 
@@ -251,6 +251,28 @@
       <div class="uc-actions">
         <button type="button" class="uc-btn" data-update-whatsnew>What's new</button>
         <button type="button" class="uc-btn primary" data-update-get>Get it ▸</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Support Restash card (★ footer button) -->
+  <div id="starBackdrop" class="backdrop hidden">
+    <div class="update-card star-card">
+      <div class="uc-head">
+        <span class="uc-ico" aria-hidden="true">★</span>
+        <span class="uc-title">Support Restash</span>
+        <button type="button" class="uc-close" data-close="star" aria-label="Dismiss">✕</button>
+      </div>
+      <div class="support-stars" id="supportStars">
+        <span class="support-star-big" aria-hidden="true">★</span>
+        <span class="support-star-num" id="supportStarNum">Star the project</span>
+      </div>
+      <div class="uc-notes support-ask">
+        Restash is free and open source. If it's useful to you, a ⭐ helps more
+        people find it — it only takes two seconds.
+      </div>
+      <div class="uc-actions">
+        <button type="button" class="uc-btn primary" data-support-star>★ Star on GitHub</button>
       </div>
     </div>
   </div>

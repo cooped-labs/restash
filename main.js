@@ -577,14 +577,14 @@ function tryRegisterHotkey(accel) {
 
 // ============================================================
 // "Check for updates" — real GitHub Releases check.
-// Hits the public Releases API for pue-llo/restash, compares the latest tag to
+// Hits the public Releases API for cooped-labs/restash, compares the latest tag to
 // the running version with a tiny semver compare, and degrades gracefully: any
 // network error / timeout, or a 404 (the repo is currently PRIVATE), returns
 // status:'error' with releasesUrl set so the UI can route the user to GitHub.
 // Successful results are cached with a ~daily throttle so background checks
 // don't hammer GitHub; a forced (manual) check bypasses the cache.
 // ============================================================
-const RELEASES_URL = 'https://github.com/pue-llo/restash/releases';
+const RELEASES_URL = 'https://github.com/cooped-labs/restash/releases';
 const UPDATE_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 let _updateCache = null; // { at: <ms>, result: <obj> }
 
@@ -613,7 +613,7 @@ function compareSemver(a, b) {
 function fetchLatestRelease() {
   return new Promise((resolve, reject) => {
     const req = https.request(
-      'https://api.github.com/repos/pue-llo/restash/releases/latest',
+      'https://api.github.com/repos/cooped-labs/restash/releases/latest',
       {
         method: 'GET',
         headers: {
@@ -691,6 +691,73 @@ async function checkForUpdates(force) {
       releasesUrl: RELEASES_URL,
       error: (err && err.message) || 'check failed',
     };
+  }
+}
+
+// ============================================================
+// GitHub star count — powers the immersive "Support Restash" card and the
+// inline count on the ★ footer button. Reuses the same node:https request
+// pattern as fetchLatestRelease. Degrades gracefully: a 404 (the repo is
+// currently PRIVATE) or any network/timeout error returns { ok:false,
+// stars:null } and never throws. Successful values are cached for ~1h so we
+// don't hammer GitHub on every popover open.
+// ============================================================
+const STARS_CACHE_TTL_MS = 60 * 60 * 1000; // 1h
+let _starsCache = null; // { at: <ms>, stars: <number> }
+
+function fetchStargazerCount() {
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      'https://api.github.com/repos/cooped-labs/restash',
+      {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Restash',
+          Accept: 'application/vnd.github+json',
+        },
+      },
+      (res) => {
+        const { statusCode } = res;
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          if (statusCode !== 200) {
+            // 404 = private repo; any other non-200 is treated the same.
+            reject(new Error(`github status ${statusCode}`));
+            return;
+          }
+          try {
+            const json = JSON.parse(body);
+            const stars = Number(json.stargazers_count);
+            if (Number.isFinite(stars)) resolve(stars);
+            else reject(new Error('no stargazers_count'));
+          } catch (e) {
+            reject(e);
+          }
+        });
+      },
+    );
+    req.setTimeout(6000, () => {
+      req.destroy(new Error('timeout'));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+async function getStarCount() {
+  // Serve a cached successful value within the TTL window.
+  if (_starsCache && (Date.now() - _starsCache.at) < STARS_CACHE_TTL_MS) {
+    return { ok: true, stars: _starsCache.stars };
+  }
+  try {
+    const stars = await fetchStargazerCount();
+    _starsCache = { at: Date.now(), stars };
+    return { ok: true, stars };
+  } catch {
+    // 404 (private repo) or any network/timeout error — never throw.
+    return { ok: false, stars: null };
   }
 }
 
@@ -1373,7 +1440,7 @@ app.whenReady().then(() => {
     { type: 'separator' },
     { label: 'Settings…', accelerator: isMac ? 'Cmd+,' : undefined, click: () => { togglePopover(); setTimeout(() => win?.webContents.send('open:settings'), 120); } },
     { label: 'Check for Updates…', click: () => win?.webContents.send('open:updates') },
-    { label: 'Star on GitHub…', click: () => shell.openExternal('https://github.com/pue-llo/restash') },
+    { label: 'Star on GitHub…', click: () => shell.openExternal('https://github.com/cooped-labs/restash') },
     { type: 'separator' },
     { label: 'Quit Restash', accelerator: 'CommandOrControl+Q', click: () => app.quit() },
   ]);
@@ -1399,7 +1466,7 @@ app.whenReady().then(() => {
           { type: 'separator' },
           { label: 'Settings…', click: () => { togglePopover(); setTimeout(() => win?.webContents.send('open:settings'), 120); } },
           { label: 'Check for Updates…', click: () => win?.webContents.send('open:updates') },
-          { label: 'Star on GitHub…', click: () => shell.openExternal('https://github.com/pue-llo/restash') },
+          { label: 'Star on GitHub…', click: () => shell.openExternal('https://github.com/cooped-labs/restash') },
           { type: 'separator' },
           { role: 'quit' },
         ],
@@ -2385,6 +2452,12 @@ end if`;
   // --- Menu-bar dropdown actions ---
   ipcMain.handle('app:check-updates', async (_evt, opts) => {
     return checkForUpdates(opts && opts.force);
+  });
+
+  // Live GitHub star count for the immersive "Support Restash" card. Never
+  // throws — returns { ok:false, stars:null } while the repo is private/offline.
+  ipcMain.handle('github:stars', async () => {
+    return getStarCount();
   });
 
   ipcMain.handle('app:quit', () => {

@@ -18,7 +18,7 @@ whole browser/app *environments* — one hotkey away from any app you're in.
 
 > ### 📦 To use it: **download the DMG and drag Restash to Applications.**
 > Grab the latest **`Restash-1.2.0-arm64.dmg`** from the
-> [Releases](https://github.com/pue-llo/restash/releases) page, open it, and drag
+> [Releases](https://github.com/cooped-labs/restash/releases) page, open it, and drag
 > **Restash** into **Applications**. That's it.
 >
 > Want to build from source instead? See [Building from source](#building-from-source).
@@ -30,7 +30,7 @@ whole browser/app *environments* — one hotkey away from any app you're in.
 Requires **macOS 12+ on Apple Silicon**. No Node, Xcode, or other tooling needed.
 
 1. Download **`Restash-1.2.0-arm64.dmg`** from the
-   [Releases](https://github.com/pue-llo/restash/releases) page.
+   [Releases](https://github.com/cooped-labs/restash/releases) page.
 2. Open the DMG and drag **Restash** into **Applications**.
 3. Launch **Restash** from Applications.
 
@@ -103,7 +103,7 @@ Requires **Node.js 18+** on Apple Silicon (macOS 12+). No Xcode needed — the
 native helpers are prebuilt and committed.
 
 ```bash
-git clone https://github.com/pue-llo/restash.git
+git clone https://github.com/cooped-labs/restash.git
 cd restash
 npm install
 npm start          # dev build via Electron (prompts read "Electron", not "Restash")

@@ -660,6 +660,45 @@ body.theme-dark .modal { box-shadow: 0 16px 40px rgba(0,0,0,0.55); }
   background: var(--tint); box-shadow: 0 0 0 1.5px var(--modal-bg, var(--bg));
 }
 
+/* ===================== Support Restash card ===================== */
+/* The ★ footer button can grow an inline count: "★ 1.2k". */
+.footer-btn[data-act="star"] {
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.footer-btn[data-act="star"] .star-glyph { line-height: 1; }
+.footer-btn[data-act="star"] .star-count {
+  font-size: 10.5px; font-weight: 700; line-height: 1;
+  color: var(--fg-muted);
+}
+.footer-btn[data-act="star"] .star-count.hidden { display: none; }
+.footer-btn[data-act="star"]:hover .star-count { color: var(--fg); }
+
+.star-card { width: 280px; align-items: stretch; }
+.star-card .uc-ico { color: #f5b301; }
+.support-stars {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 10px 0 2px;
+}
+.support-star-big {
+  font-size: 34px; line-height: 1; color: #f5b301;
+  filter: drop-shadow(0 2px 6px rgba(245, 179, 1, 0.35));
+  animation: starPop 360ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.support-star-num {
+  font-size: 30px; font-weight: 800; line-height: 1; color: var(--fg);
+  letter-spacing: -0.01em;
+}
+.support-star-num.support-empty {
+  font-size: 15px; font-weight: 700; color: var(--fg-muted);
+}
+.support-ask { text-align: center; }
+
+@keyframes starPop {
+  0%   { transform: scale(0.4); opacity: 0; }
+  60%  { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
 .kind-picker { display: flex; flex-wrap: wrap; gap: 5px; }
 .chip {
   display: inline-flex; align-items: center; gap: 5px;
