@@ -10,24 +10,36 @@ A macOS menu-bar + Dock app that keeps the things you reach for — wallet
 addresses, links, snippets, commands, contacts, files, AI agent prompts, even
 whole browser/app *environments* — one hotkey away from any app you're in.
 
-`v1.2.0` &nbsp;·&nbsp; macOS 12+ &nbsp;·&nbsp; Apple Silicon &nbsp;·&nbsp; AGPL-3.0 + Commercial
+[![Latest release](https://img.shields.io/github/v/release/cooped-labs/restash?label=release&color=2ea44f)](https://github.com/cooped-labs/restash/releases/latest)
+[![Stars](https://img.shields.io/github/stars/cooped-labs/restash?color=f0b400)](https://github.com/cooped-labs/restash/stargazers)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
+![Platform: macOS](https://img.shields.io/badge/macOS%2012%2B-Apple%20Silicon-black)
 
 </div>
 
 ---
 
-> ### 📦 To use it: **download the DMG and drag Restash to Applications.**
-> Grab the latest **`Restash-1.2.0-arm64.dmg`** from the
-> [Releases](https://github.com/cooped-labs/restash/releases) page, open it, and drag
-> **Restash** into **Applications**. That's it.
->
-> Want to build from source instead? See [Building from source](#building-from-source).
+> ### Install in one line:
+> ```sh
+> brew install --cask cooped-labs/restash/restash
+> ```
+> Prefer a direct download? Grab **`Restash-1.2.0-arm64.dmg`** from the
+> [Releases](https://github.com/cooped-labs/restash/releases) page and drag **Restash** into **Applications**.
+> Building from source? See [Building from source](#building-from-source).
 
 ---
 
-## Install (download the DMG)
+## Install
 
 Requires **macOS 12+ on Apple Silicon**. No Node, Xcode, or other tooling needed.
+
+**Homebrew (recommended):**
+
+```sh
+brew install --cask cooped-labs/restash/restash
+```
+
+**Or download the DMG:**
 
 1. Download **`Restash-1.2.0-arm64.dmg`** from the
    [Releases](https://github.com/cooped-labs/restash/releases) page.
@@ -58,6 +70,7 @@ app had focus — Mail, a terminal, a wallet, a DM.
 |---|---|
 | 🎯 **Cursor numpad** | Press the global hotkey and a 3×3 pad appears at your cursor. Keys `1`–`9` paste instantly. |
 | 📋 **Menu-bar dropdown** | A searchable list — type, hit `↵`, it's pasted. Fully resizable. |
+| 🕘 **Clipboard memory** | Auto-capture your last *N* copies — text, images (with thumbnails), and files. Videos are kept by-reference with one-tap Save. |
 | 🗂 **Stashes** | Group items (Work, Wallets, Personal…). Each stash has its own 9-slot numpad; cycle with one hotkey. |
 | 🌐 **Environments** | Save a set of sites + apps and open them in one click. Capture **this desktop** (current Space) or **everything open**, and reopen each tab in its assigned **Chrome profile**. |
 | 🤖 **Agent templates** | Save Markdown AI personas (Strategist, Researcher, CEO…) and drop them into Claude / ChatGPT / Cursor in a tap. |
@@ -84,15 +97,14 @@ posts `⌘V` — so the paste always lands where you meant it to.
 
 ## Roadmap
 
-- 📱 **Mobile companion** — cross-device clipboard sync (parked, see `ideas/`)
-- 🕘 **Clipboard memory** — auto-capture the last *N* copies
+- 📱 **Mobile companion** — cross-device clipboard sync (parked)
 - 🔏 **Signed & notarized builds** — one-click install with no Gatekeeper step
 
 ## Tech
 
 Electron 33 · Swift helper binaries (native share sheet, multi-file pasteboard,
 Vision QR decoding, current-Space window list) · zero servers — items live in a
-local file; licensing via Lemon Squeezy.
+local file. Free and open source under **AGPL-3.0** (commercial license available).
 
 ## Building from source
 
