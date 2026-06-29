@@ -13,6 +13,6 @@ If that does not fit your use — for example you want to:
 a **commercial license** is available. It removes the AGPL's copyleft obligations under
 commercial terms.
 
-Contact: **progresswithpuello@gmail.com**
+Contact: **coopedlabs@gmail.com**
 
 Copyright © 2026 Progress with Puello LLC. All rights reserved.

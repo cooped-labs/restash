@@ -761,7 +761,7 @@ const CHECKOUT_URLS = {
   otoLifetime: 'https://restash.lemonsqueezy.com/buy/REPLACE-OTO-LIFETIME',
   otoYearly:   'https://restash.lemonsqueezy.com/buy/REPLACE-OTO-YEARLY',
 };
-const SUPPORT_EMAIL = 'support@restash.app'; // REPLACE with real support inbox
+const SUPPORT_EMAIL = 'coopedlabs@gmail.com';
 
 // Plan currently highlighted in the Free-state segmented picker.
 let billingSelectedPlan = 'yearly';

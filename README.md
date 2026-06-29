@@ -122,7 +122,7 @@ Restash is **dual-licensed**:
   must make your source available under the AGPL.
 - **Commercial license.** For companies that want to embed Restash in a closed-source or
   SaaS product without AGPL obligations, or that need enterprise terms and support, a
-  commercial license is available — contact **progresswithpuello@gmail.com**.
+  commercial license is available — contact **coopedlabs@gmail.com**.
 
 Copyright © 2026 Progress with Puello LLC.
 
