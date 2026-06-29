@@ -426,9 +426,16 @@ function genClipId() {
 //   - NON-VIDEO > MAX_FILE_BYTES → store by-reference too rather than copying a
 //     huge file into the vault.
 function captureClipboardFiles(max) {
-  let formats = [];
-  try { formats = clipboard.availableFormats(); } catch { formats = []; }
-  const hasFileType = formats.some((f) => f.includes('file-url') || f.includes('NSFilenamesPboardType'));
+  // Electron normalizes pasteboard types in availableFormats() — a Finder file
+  // copy shows up as ["text/plain","text/uri-list"], NOT 'public.file-url' — so
+  // detect copied files via clipboard.has() against the real pasteboard UTIs.
+  let hasFileType = false;
+  try { hasFileType = clipboard.has('public.file-url') || clipboard.has('NSFilenamesPboardType'); } catch { hasFileType = false; }
+  if (!hasFileType) {
+    let formats = [];
+    try { formats = clipboard.availableFormats(); } catch { formats = []; }
+    hasFileType = formats.some((f) => f.includes('file-url') || f.includes('uri-list') || f.includes('NSFilenames'));
+  }
   if (!hasFileType) return false;
 
   let out = '';

@@ -57,7 +57,7 @@ const RECENT_GLYPH = { url: ICONS.url, crypto: ICONS.cryptoWallet, clip: ICONS.c
 function recentImageFile(entry) {
   if (!entry || !Array.isArray(entry.files) || !entry.files.length) return null;
   const f = entry.files[0] || {};
-  return ((f.mime || '').startsWith('image/') && f.storedPath) ? f : null;
+  return ((f.mime || '').startsWith('image/') && (f.storedPath || f.path)) ? f : null;
 }
 
 // True when a recent is a copied-FILE entry (kind:'file' with a files[] array)
@@ -1637,7 +1637,7 @@ function buildModalRecentRow(entry, i) {
     const onerr = thumbOnError(`<span class="glyph" title="image">${fileGlyph(img.mime)}</span>`);
     row.classList.add('rrow-image');
     row.innerHTML = `
-      <img class="glyph rrow-thumb" src="${fileThumbSrc(img.storedPath)}" alt="" onerror="${onerr}" />
+      <img class="glyph rrow-thumb" src="${fileThumbSrc(img.storedPath || img.path)}" alt="" onerror="${onerr}" />
       <span class="clip">${escapeHtml(displayFileName(img) || 'Image')}</span>
       <span class="qkey">${hasKey ? (i + 1) : '·'}</span>`;
   } else if (file) {
@@ -2086,7 +2086,7 @@ function buildRecentRow(entry) {
   const kind = img ? 'image' : (file ? 'file' : detectRecentKind(oneLine));
   let iconHtml;
   if (img) {
-    iconHtml = `<img class="file-thumb" src="${fileThumbSrc(img.storedPath)}" alt="" onerror="${thumbOnError(fileGlyph(img.mime))}" />`;
+    iconHtml = `<img class="file-thumb" src="${fileThumbSrc(img.storedPath || img.path)}" alt="" onerror="${thumbOnError(fileGlyph(img.mime))}" />`;
   } else if (file) {
     iconHtml = fileGlyph(file.mime);
   } else {
