@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const { execFile, execFileSync } = require('node:child_process');
 const os = require('node:os');
 const crypto = require('node:crypto');
+const https = require('node:https');
 const QRCode = require('qrcode');
 // Platform-abstraction layer — every native call routes through this so main.js
 // is OS-agnostic and the zero-install bundling policy is enforced in one place.
@@ -20,100 +21,7 @@ if (!app.requestSingleInstanceLock()) {
   process.exit(0);
 }
 
-// ── Lemon Squeezy licensing ──────────────────────────────────────────────
-// Restash stays serverless: Lemon Squeezy mints the license keys and its
-// public license API verifies them, so the app talks to LS directly — no
-// backend. Two things get filled in once the LS store + products exist:
-//
-//   1. Checkout URLs — in renderer.js (CHECKOUT_URLS).
-//   2. The VARIANT-ID → tier map below. In Lemon Squeezy open Store →
-//      Products; every variant has a numeric ID. Turn ON "license keys" for
-//      each product, with an activation limit (e.g. 3 devices).
-const LS_LICENSE_API = 'https://api.lemonsqueezy.com/v1/licenses';
-const LS_VARIANT_TIERS = {
-  // 'REPLACE-MONTHLY-VARIANT-ID':      'monthly',
-  // 'REPLACE-YEARLY-VARIANT-ID':       'yearly',
-  // 'REPLACE-LIFETIME-VARIANT-ID':     'lifetime',
-  // 'REPLACE-OTO-YEARLY-VARIANT-ID':   'yearly',
-  // 'REPLACE-OTO-LIFETIME-VARIANT-ID': 'lifetime',
-};
-
-// A valid-but-unmapped variant still unlocks the app (fail open for the user).
-function tierForVariant(variantId) {
-  return LS_VARIANT_TIERS[String(variantId)] || 'lifetime';
-}
-// Cross-platform stable machine id for the Lemon Squeezy activation instance.
-// os.hostname() + a persisted random UUID (generated once, stored in userData)
-// so the 3-device activation limit counts consistently on every OS and survives
-// reinstalls within the same userData. No new dependency (crypto + os built-in).
-const MACHINE_ID_FILE = path.join(app.getPath('userData'), 'machineId');
-function getMachineId() {
-  try {
-    if (fs.existsSync(MACHINE_ID_FILE)) {
-      const id = fs.readFileSync(MACHINE_ID_FILE, 'utf8').trim();
-      if (id) return id;
-    }
-  } catch {}
-  const id = require('node:crypto').randomUUID();
-  try {
-    fs.mkdirSync(path.dirname(MACHINE_ID_FILE), { recursive: true });
-    fs.writeFileSync(MACHINE_ID_FILE, id);
-  } catch {}
-  return id;
-}
-function licenseInstanceName() {
-  try { return `Restash · ${os.hostname()} · ${getMachineId().slice(0, 8)}`; }
-  catch { return `Restash · ${getMachineId().slice(0, 8)}`; }
-}
-function maskKey(key) {
-  const k = String(key || '');
-  return k.length <= 8 ? k : `${k.slice(0, 4)}····${k.slice(-4)}`;
-}
-
-// POST to the Lemon Squeezy license API (activate / validate / deactivate).
-// These endpoints are unauthenticated — designed to be called straight from
-// the client — so no API key is needed.
-async function lsLicenseCall(action, params) {
-  try {
-    const res = await fetch(`${LS_LICENSE_API}/${action}`, {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams(params).toString(),
-    });
-    return (await res.json().catch(() => ({}))) || {};
-  } catch (err) {
-    return { error: (err && err.message) || 'network error', _network: true };
-  }
-}
-
-// On launch, re-check the stored license so refunds / expiries / disabled
-// keys downgrade the app. Offline → keep current state, never punish.
-async function revalidateLicense() {
-  const lic = readSettings().license;
-  if (!lic || !lic.key) return;
-  const r = await lsLicenseCall('validate', {
-    license_key: lic.key,
-    instance_id: lic.instanceId || '',
-  });
-  if (r && r._network) return;
-  const lk = r && r.license_key;
-  const stillValid = !!(r && r.valid && lk && lk.status === 'active');
-  const s = readSettings();
-  if (!s.license) return;
-  if (stillValid) {
-    s.license.status = 'active';
-    s.license.expiresAt = (lk && lk.expires_at) || s.license.expiresAt || null;
-    writeSettings(s);
-  } else {
-    s.license = null;
-    s.tier = 'free';
-    writeSettings(s);
-    if (win && !win.isDestroyed()) win.webContents.send('entitlement:changed');
-  }
-}
+// Restash is free + open source — no licensing, billing, trial, or caps.
 
 // Show in Dock so users can see Restash is running and click to open it.
 
@@ -123,20 +31,6 @@ let win = null;
 const STORE_FILE = path.join(app.getPath('userData'), 'items.json');
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
 const CLIPBOARD_HISTORY_FILE = path.join(app.getPath('userData'), 'clipboard-history.json');
-
-// ── Owner build ──────────────────────────────────────────────────────────
-// Grants permanent full access without a license — for your own machines.
-// Two ways to enable it, both safe for distributed builds (which have neither):
-//   • run with the env var:  RESTASH_OWNER=1 npm start
-//   • or create a marker file (works for a packaged personal build, no rebuild):
-//       touch "$HOME/Library/Application Support/restash/.owner"
-// Never ship a build with the marker bundled — it's read from userData, so a
-// normal release on someone else's Mac simply won't have it.
-const OWNER_MARKER = path.join(app.getPath('userData'), '.owner');
-function isOwnerBuild() {
-  if (process.env.RESTASH_OWNER === '1') return true;
-  try { return fs.existsSync(OWNER_MARKER); } catch { return false; }
-}
 
 // Per-OS safe defaults via the platform layer: macOS keeps ⌘⇧V / ⌃⇧F; Win/Linux
 // move OFF Ctrl+Shift+V (universal paste-as-plain-text) to non-colliding
@@ -206,17 +100,10 @@ function writeStore(items) {
   fs.renameSync(tmp, STORE_FILE);
 }
 
-const TRIAL_DAYS = 30;
-// Free-tier ceilings, applied once the trial ends and the user hasn't paid.
-const FREE_LIMITS = { stashes: 1, pins: 9, items: 15, fileBytes: 100 * 1024 * 1024 };
-
 function readSettings() {
   const defaults = {
     hotkey: DEFAULT_HOTKEY, qrHotkey: DEFAULT_QR_HOTKEY, theme: 'light',
-    onboarded: false, stashes: [], tier: 'free',
-    license: null,     // { key, instanceId, variantId, tier, status, expiresAt } once activated
-    trialStartedAt: 0, // 0 = not yet stamped; ensureTrialStamp() sets it on first run
-    otoShown: false,   // one-time-offer fires once, ever
+    onboarded: false, stashes: [],
     menuSize: null,    // {width,height} — user-resized list popover (null = default)
     gridSize: null,    // {width,height} — user-resized cursor numpad (null = default)
     clipboardHistoryMax: 3, // Clipboard memory: # of recent copies to auto-capture (0 = Off)
@@ -655,60 +542,6 @@ function syncClipboardWatcher() {
   }
 }
 
-// Stamp the trial start the first time the app runs. Idempotent.
-function ensureTrialStamp() {
-  const s = readSettings();
-  if (!s.trialStartedAt) {
-    s.trialStartedAt = Date.now();
-    writeSettings(s);
-  }
-  return s.trialStartedAt;
-}
-
-// While Restash is given away with full access (pre-open-source), EVERY install
-// gets complete access — no trial countdown, no caps, no license needed. Flip
-// this to false to restore the trial / free-tier / paid plans below.
-const OPEN_ACCESS = true;
-
-// Resolve what the user can actually do right now:
-//   - OPEN_ACCESS (current)          → complete access for everyone
-//   - paid (monthly/yearly/lifetime) → full access
-//   - within the 30-day window      → full access (trial)
-//   - otherwise                     → limited free tier
-// Returns { tier, effective: 'full'|'free', trialDaysLeft, trialActive }.
-function resolveEntitlement() {
-  // Everyone (and any owner build) gets permanent complete access.
-  if (OPEN_ACCESS || isOwnerBuild()) {
-    return {
-      tier: 'complete',
-      effective: 'full',
-      trialDaysLeft: 0,
-      trialActive: false,
-      limits: FREE_LIMITS,
-      license: { status: 'open', tier: 'complete', keyMasked: 'COMPLETE ACCESS', expiresAt: null },
-    };
-  }
-  const s = readSettings();
-  // An activated Lemon Squeezy license is the source of truth for paid status.
-  const lic = s.license;
-  const licensed = !!(lic && lic.status === 'active');
-  const tier = licensed ? (lic.tier || 'lifetime') : 'free';
-  const started = s.trialStartedAt || Date.now();
-  const msLeft = (started + TRIAL_DAYS * 864e5) - Date.now();
-  const trialDaysLeft = Math.max(0, Math.ceil(msLeft / 864e5));
-  const trialActive = !licensed && msLeft > 0;
-  return {
-    tier,
-    effective: (licensed || trialActive) ? 'full' : 'free',
-    trialDaysLeft,
-    trialActive,
-    limits: FREE_LIMITS,
-    license: lic
-      ? { status: lic.status, tier: lic.tier, keyMasked: maskKey(lic.key), expiresAt: lic.expiresAt || null }
-      : null,
-  };
-}
-
 let currentHotkey   = DEFAULT_HOTKEY;      // popover summon
 let currentQRHotkey = DEFAULT_QR_HOTKEY;   // QR decoder
 
@@ -740,6 +573,125 @@ function registerHotkeySlot(slot, accel) {
 // Back-compat shim — the popover-summon recorder in Settings still calls this.
 function tryRegisterHotkey(accel) {
   return registerHotkeySlot('summon', accel);
+}
+
+// ============================================================
+// "Check for updates" — real GitHub Releases check.
+// Hits the public Releases API for pue-llo/restash, compares the latest tag to
+// the running version with a tiny semver compare, and degrades gracefully: any
+// network error / timeout, or a 404 (the repo is currently PRIVATE), returns
+// status:'error' with releasesUrl set so the UI can route the user to GitHub.
+// Successful results are cached with a ~daily throttle so background checks
+// don't hammer GitHub; a forced (manual) check bypasses the cache.
+// ============================================================
+const RELEASES_URL = 'https://github.com/pue-llo/restash/releases';
+const UPDATE_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+let _updateCache = null; // { at: <ms>, result: <obj> }
+
+// Compare two dotted numeric versions. Returns 1 if a>b, -1 if a<b, 0 if equal.
+function compareSemver(a, b) {
+  const norm = (v) => String(v || '')
+    .trim()
+    .replace(/^v/i, '')
+    .split(/[-+]/)[0]            // drop pre-release / build metadata
+    .split('.')
+    .map((n) => parseInt(n, 10) || 0);
+  const pa = norm(a);
+  const pb = norm(b);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const x = pa[i] || 0;
+    const y = pb[i] || 0;
+    if (x > y) return 1;
+    if (x < y) return -1;
+  }
+  return 0;
+}
+
+// Fetch the latest release JSON from GitHub with a ~6s timeout. Resolves to the
+// parsed object, or rejects on network error / timeout / non-200 status.
+function fetchLatestRelease() {
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      'https://api.github.com/repos/pue-llo/restash/releases/latest',
+      {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Restash',
+          Accept: 'application/vnd.github+json',
+        },
+      },
+      (res) => {
+        const { statusCode } = res;
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          if (statusCode !== 200) {
+            // 404 = private/no releases; any other non-200 is treated the same.
+            reject(new Error(`github status ${statusCode}`));
+            return;
+          }
+          try {
+            resolve(JSON.parse(body));
+          } catch (e) {
+            reject(e);
+          }
+        });
+      },
+    );
+    req.setTimeout(6000, () => {
+      req.destroy(new Error('timeout'));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+async function checkForUpdates(force) {
+  const current = app.getVersion();
+
+  // Serve a cached successful result for background (non-forced) checks within
+  // the throttle window. We never cache errors, so a transient failure won't
+  // suppress the next background check.
+  if (!force && _updateCache && (Date.now() - _updateCache.at) < UPDATE_CACHE_TTL_MS) {
+    return _updateCache.result;
+  }
+
+  try {
+    const rel = await fetchLatestRelease();
+    const latest = String(rel.tag_name || '').trim().replace(/^v/i, '');
+    // Release notes: prefer body, fall back to name; keep a short one-liner.
+    const rawNotes = (rel.body || rel.name || '').toString();
+    let notes = rawNotes.split(/\r?\n/).map((s) => s.trim()).find(Boolean) || '';
+    if (notes.length > 140) notes = `${notes.slice(0, 139).trimEnd()}…`;
+    const url = rel.html_url || RELEASES_URL;
+
+    const isNewer = latest && compareSemver(latest, current) > 0;
+    const result = {
+      ok: true,
+      status: isNewer ? 'available' : 'up-to-date',
+      current,
+      latest: latest || current,
+      notes,
+      url,
+      releasesUrl: RELEASES_URL,
+    };
+    _updateCache = { at: Date.now(), result };
+    return result;
+  } catch (err) {
+    // 404 (private repo) or any network/timeout error — never throw.
+    return {
+      ok: false,
+      status: 'error',
+      current,
+      latest: null,
+      notes: '',
+      url: RELEASES_URL,
+      releasesUrl: RELEASES_URL,
+      error: (err && err.message) || 'check failed',
+    };
+  }
 }
 
 // ============================================================
@@ -1143,7 +1095,6 @@ let currentMode = 'list';
 const SIZE_GRID    = { width: 240, height: 332 };  // grid (numpad) default
 const SIZE_LIST    = { width: 300, height: 428 };  // list (menu) default
 const SIZE_QR      = { width: 300, height: 380 };  // QR preview — compact card layout
-const SIZE_BILLING = { width: 300, height: 532 };  // billing modal — fits Option B, no scroll
 const SIZE_EDITOR  = { width: 340, height: 500 };  // add/edit-item modal — roomier than the list
 
 // Resize bounds for the user-customisable modals (visible card, no gutter).
@@ -1159,12 +1110,11 @@ function clampCard(sz, b) {
 }
 
 // Visible card size for a mode — user-customised for list/grid (persisted in
-// settings.json), fixed for qr/billing.
+// settings.json), fixed for qr.
 function cardSize(mode) {
   const s = readSettings();
   if (mode === 'grid')    return clampCard(s.gridSize || SIZE_GRID, GRID_BOUNDS);
   if (mode === 'qr')      return SIZE_QR;
-  if (mode === 'billing') return SIZE_BILLING;
   return clampCard(s.menuSize || SIZE_LIST, MENU_BOUNDS);
 }
 
@@ -1423,7 +1373,7 @@ app.whenReady().then(() => {
     { type: 'separator' },
     { label: 'Settings…', accelerator: isMac ? 'Cmd+,' : undefined, click: () => { togglePopover(); setTimeout(() => win?.webContents.send('open:settings'), 120); } },
     { label: 'Check for Updates…', click: () => win?.webContents.send('open:updates') },
-    { label: 'Billing & Account…', click: () => win?.webContents.send('open:billing') },
+    { label: 'Star on GitHub…', click: () => shell.openExternal('https://github.com/pue-llo/restash') },
     { type: 'separator' },
     { label: 'Quit Restash', accelerator: 'CommandOrControl+Q', click: () => app.quit() },
   ]);
@@ -1449,7 +1399,7 @@ app.whenReady().then(() => {
           { type: 'separator' },
           { label: 'Settings…', click: () => { togglePopover(); setTimeout(() => win?.webContents.send('open:settings'), 120); } },
           { label: 'Check for Updates…', click: () => win?.webContents.send('open:updates') },
-          { label: 'Billing & Account…', click: () => win?.webContents.send('open:billing') },
+          { label: 'Star on GitHub…', click: () => shell.openExternal('https://github.com/pue-llo/restash') },
           { type: 'separator' },
           { role: 'quit' },
         ],
@@ -2193,9 +2143,6 @@ end if`;
     );
   });
 
-  // Stamp the trial clock on first run.
-  ensureTrialStamp();
-
   // Global hotkey: summon the popover at the cursor location.
   // Load user-saved hotkey, fall back to default if unset or in-use.
   const settings = readSettings();
@@ -2222,10 +2169,7 @@ end if`;
     ...readSettings(),
     currentHotkey,
     currentQRHotkey,
-    entitlement: resolveEntitlement(),
   }));
-  // Renderer asks for a fresh entitlement read (e.g. after the billing modal).
-  ipcMain.handle('entitlement:get', () => resolveEntitlement());
 
   // ── Clipboard memory IPC (RES-11) ──────────────────────────────────────
   ipcMain.handle('clipboardHistory:load', () => {
@@ -2271,63 +2215,6 @@ end if`;
   // Load history into memory and start the watcher per the saved setting.
   ensureClipHistoryLoaded();
   syncClipboardWatcher();
-
-  // ── Lemon Squeezy license activation ──────────────────────────────────
-  // Activate a license key on this device; on success the entitlement flips
-  // to the matching paid tier and is persisted to settings.json.
-  ipcMain.handle('license:activate', async (_e, rawKey) => {
-    const key = String(rawKey || '').trim();
-    if (!key) return { ok: false, error: 'Enter your license key.' };
-    const r = await lsLicenseCall('activate', {
-      license_key: key,
-      instance_name: licenseInstanceName(),
-    });
-    if (r && r.activated) {
-      const variantId = r.meta && r.meta.variant_id;
-      const lk = r.license_key || {};
-      const s = readSettings();
-      s.license = {
-        key,
-        instanceId: (r.instance && r.instance.id) || null,
-        variantId: variantId != null ? String(variantId) : null,
-        tier: tierForVariant(variantId),
-        status: 'active',
-        expiresAt: lk.expires_at || null,
-        activatedAt: Date.now(),
-      };
-      s.tier = s.license.tier;
-      writeSettings(s);
-      return { ok: true, entitlement: resolveEntitlement() };
-    }
-    let error = (r && r.error) || 'That license key could not be activated.';
-    if (r && r._network) error = 'Could not reach Lemon Squeezy — check your connection.';
-    return { ok: false, error };
-  });
-
-  // Release this device's activation slot and drop back to the free tier.
-  ipcMain.handle('license:deactivate', async () => {
-    const s = readSettings();
-    const lic = s.license;
-    if (lic && lic.key && lic.instanceId) {
-      await lsLicenseCall('deactivate', { license_key: lic.key, instance_id: lic.instanceId });
-    }
-    s.license = null;
-    s.tier = 'free';
-    writeSettings(s);
-    return { ok: true, entitlement: resolveEntitlement() };
-  });
-
-  // Fire-and-forget: re-verify the stored license against Lemon Squeezy.
-  revalidateLicense();
-  // Mark the one-time offer as shown so it never fires again.
-  ipcMain.handle('oto:markShown', () => {
-    const s = readSettings();
-    s.otoShown = true;
-    writeSettings(s);
-    return { ok: true };
-  });
-  // Billing is an overlay inside the existing window — no resize needed.
-  ipcMain.handle('billing:window', (_e, _open) => { return { ok: true }; });
 
   // The add/edit-item modal needs more room than the list. While it's open,
   // grow the window to SIZE_EDITOR — but never below the user's current list
@@ -2495,33 +2382,9 @@ end if`;
     return result;
   });
 
-  // --- Stubs for menu-bar dropdown actions ---
-  ipcMain.handle('app:check-updates', async () => {
-    // electron-updater: NSIS differential on Windows, AppImage zsync on Linux.
-    // macOS auto-update needs Squirrel.Mac signing+notarization (out of scope);
-    // mac just reports its version. The updater is loaded lazily so dev runs and
-    // unpackaged builds (where update metadata is absent) never throw.
-    if (process.platform === 'darwin' || !app.isPackaged) {
-      return { ok: true, status: 'up-to-date', version: app.getVersion() };
-    }
-    try {
-      // eslint-disable-next-line global-require
-      const { autoUpdater } = require('electron-updater');
-      autoUpdater.autoDownload = true;
-      const result = await autoUpdater.checkForUpdates();
-      const remote = result && result.updateInfo && result.updateInfo.version;
-      if (remote && remote !== app.getVersion()) {
-        return { ok: true, status: 'downloading', version: remote };
-      }
-      return { ok: true, status: 'up-to-date', version: app.getVersion() };
-    } catch (err) {
-      return { ok: false, status: 'error', error: err && err.message, version: app.getVersion() };
-    }
-  });
-
-  ipcMain.handle('app:open-billing', async () => {
-    // TODO: open a billing URL once we have one. For now just a placeholder.
-    return { ok: true, status: 'coming-soon' };
+  // --- Menu-bar dropdown actions ---
+  ipcMain.handle('app:check-updates', async (_evt, opts) => {
+    return checkForUpdates(opts && opts.force);
   });
 
   ipcMain.handle('app:quit', () => {

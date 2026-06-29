@@ -67,8 +67,8 @@
     <div class="footer-spacer"></div>
     <button class="footer-btn icon-only" data-act="theme" id="themeToggle" title="Toggle dark mode">☾</button>
     <button class="footer-btn icon-only" data-act="settings" title="Settings (⌘,)">⚙</button>
-    <button class="footer-btn icon-only" data-act="updates" title="Check for updates">↻</button>
-    <button class="footer-btn icon-only" data-act="billing" title="Billing & account">＄</button>
+    <button class="footer-btn icon-only" data-act="updates" id="updatesBtn" title="Check for updates">↻</button>
+    <button class="footer-btn icon-only" data-act="star" title="Star on GitHub">★</button>
     <button class="footer-btn icon-only danger" data-act="quit" title="Quit Restash">⏻</button>
   </footer>
 
@@ -214,6 +214,14 @@
             <button id="accessOpenBtn" class="btn">Open Settings</button>
           </div>
         </div>
+        <div class="field">
+          <span>About &amp; support</span>
+          <div class="about-row">
+            <button id="contactSupportBtn" type="button" class="btn">Contact support</button>
+            <button id="viewGithubBtn" type="button" class="btn ghost">View on GitHub</button>
+          </div>
+          <div class="clip-help">Restash is free and open source (AGPL-3.0). Support &amp; commercial licensing: <strong>coopedlabs@gmail.com</strong></div>
+        </div>
         <div class="settings-note">
           <div><strong>Hotkey tips</strong></div>
           <ul>
@@ -230,22 +238,21 @@
     </div>
   </div>
 
-  <!-- Billing modal — body is rendered by renderBilling() based on tier. -->
-  <div id="billingBackdrop" class="backdrop hidden">
-    <div class="modal">
-      <div class="modal-header">Billing</div>
-      <div class="modal-body" id="billingBody"></div>
-      <div class="modal-footer">
-        <button class="btn ghost" id="billingSupportBtn">Contact support</button>
-        <div class="spacer"></div>
-        <button class="btn primary" data-close="billing">Done</button>
+  <!-- Update-available card — shown by the "Check for updates" flow when a newer
+       GitHub release exists. Body (version + notes) is filled by renderer. -->
+  <div id="updateBackdrop" class="backdrop hidden">
+    <div class="update-card">
+      <div class="uc-head">
+        <span class="uc-ico" aria-hidden="true">⟳</span>
+        <span class="uc-title">Update available · <span id="ucVersion">—</span></span>
+        <button type="button" class="uc-close" data-close="update" aria-label="Dismiss">✕</button>
+      </div>
+      <div class="uc-notes" id="ucNotes"></div>
+      <div class="uc-actions">
+        <button type="button" class="uc-btn" data-update-whatsnew>What's new</button>
+        <button type="button" class="uc-btn primary" data-update-get>Get it ▸</button>
       </div>
     </div>
-  </div>
-
-  <!-- One-time offer — a single high-intent conversion card. Body filled by renderOTO(). -->
-  <div id="otoBackdrop" class="backdrop hidden">
-    <div class="oto-card" id="otoCard"></div>
   </div>
 
   <!-- QR modal -->
@@ -265,20 +272,6 @@
 
   <!-- Toast -->
   <div id="toast" class="toast hidden"></div>
-
-  <!-- Free-tier upgrade nudge (Option C) — slides up when a limit is hit. -->
-  <div id="limitNudge" class="limit-nudge hidden">
-    <span class="ln-ic">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>
-      </svg>
-    </span>
-    <span class="ln-text">
-      <span class="ln-title">Limit reached</span>
-      <span class="ln-sub">Free plan</span>
-    </span>
-    <button class="ln-btn" id="limitNudgeBtn">Upgrade</button>
-  </div>
 
   </div><!-- /.shell -->
 

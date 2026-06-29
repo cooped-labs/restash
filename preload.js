@@ -29,14 +29,7 @@ contextBridge.exposeInMainWorld('restash', {
   openEnvironment: (env) => ipcRenderer.invoke('env:open', env),
 
   loadSettings: () => ipcRenderer.invoke('settings:load'),
-  getEntitlement: () => ipcRenderer.invoke('entitlement:get'),
-  // Lemon Squeezy license activation
-  activateLicense:   (key) => ipcRenderer.invoke('license:activate', key),
-  deactivateLicense: () => ipcRenderer.invoke('license:deactivate'),
-  onEntitlementChanged: (cb) => ipcRenderer.on('entitlement:changed', cb),
-  setBillingWindow: (open) => ipcRenderer.invoke('billing:window', open),
   setEditorWindow: (open) => ipcRenderer.invoke('editor:window', open),
-  markOTOShown: () => ipcRenderer.invoke('oto:markShown'),
   setHotkey: (accel) => ipcRenderer.invoke('hotkey:set', accel),
   resetHotkey: () => ipcRenderer.invoke('hotkey:reset'),
   setTheme: (theme) => ipcRenderer.invoke('theme:set', theme),
@@ -87,8 +80,6 @@ contextBridge.exposeInMainWorld('restash', {
   // Menu bar dropdown actions (Option C footer).
   onOpenSettings: (cb) => ipcRenderer.on('open:settings', cb),
   onOpenUpdates: (cb) => ipcRenderer.on('open:updates', cb),
-  onOpenBilling: (cb) => ipcRenderer.on('open:billing', cb),
-  checkUpdates: () => ipcRenderer.invoke('app:check-updates'),
-  openBilling: () => ipcRenderer.invoke('app:open-billing'),
+  checkUpdates: (opts) => ipcRenderer.invoke('app:check-updates', opts),
   quit: () => ipcRenderer.invoke('app:quit'),
 });

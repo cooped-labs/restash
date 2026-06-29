@@ -671,43 +671,6 @@ function toast(msg) {
   setTimeout(() => toastEl.classList.add('hidden'), 1400);
 }
 
-// ---------- free-tier enforcement ----------
-// Limits apply only once the trial is over (effective === 'free'). During the
-// trial, effective === 'full' and nothing is capped.
-function isFree() {
-  return (state.entitlement && state.entitlement.effective) === 'free';
-}
-
-// Returns true if a NEW `kind` would exceed the free cap — and fires the
-// upgrade nudge. Returns false when allowed. Existing over-limit data is never
-// touched; this only blocks fresh additions.
-function hitsFreeLimit(kind) {
-  if (!isFree()) return false;
-  const lim = (state.entitlement && state.entitlement.limits)
-    || { items: 15, stashes: 1, pins: 9 };
-  let count, cap;
-  if (kind === 'items')        { count = state.items.length; cap = lim.items; }
-  else if (kind === 'stashes') { count = availableStashes.length; cap = lim.stashes; }
-  else if (kind === 'pins')    { count = pinnedInStash(activeStashId()).length; cap = lim.pins; }
-  else return false;
-  if (count < cap) return false;
-  const noun = { items: 'Item', stashes: 'Stash', pins: 'Pin' }[kind];
-  showLimitNudge(`${noun} limit reached (${count}/${cap})`);
-  return true;
-}
-
-let _limitNudgeTimer = null;
-function showLimitNudge(title) {
-  const el = $('limitNudge');
-  if (!el) return;
-  const t = el.querySelector('.ln-title');
-  if (t) t.textContent = title;
-  el.classList.remove('hidden');
-  el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
-  clearTimeout(_limitNudgeTimer);
-  _limitNudgeTimer = setTimeout(() => el.classList.add('hidden'), 5500);
-}
-
 async function persist() {
   await window.restash.saveItems(state.items);
 }
@@ -736,297 +699,65 @@ async function toggleTheme() {
 }
 
 // ---------- footer actions (list mode) ----------
+// "Check for updates" — manual (forced) check. Routes to the update card on a
+// newer release, a toast when current, and always to GitHub on any error
+// (incl. the private-repo 404).
 async function handleUpdatesCheck() {
+  let r;
+  try {
+    r = await window.restash.checkUpdates({ force: true });
+  } catch {
+    r = { status: 'error', releasesUrl: 'https://github.com/pue-llo/restash/releases' };
+  }
+  if (r && r.status === 'available') {
+    clearUpdateBadge();
+    openUpdateCard(r);
+  } else if (r && r.status === 'up-to-date') {
+    toast(`✓ You're on the latest (v${r.current})`);
+  } else {
+    toast('Couldn’t check — opening GitHub');
+    window.restash.openExternal((r && r.releasesUrl) || 'https://github.com/pue-llo/restash/releases');
+  }
+}
+
+// ---------- update available card ----------
+const updateBackdrop = $('updateBackdrop');
+// The release URL the card's buttons open — set when the card is shown.
+let _updateReleaseUrl = 'https://github.com/pue-llo/restash/releases';
+
+function setUpdateBadge() {
+  $('updatesBtn')?.classList.add('has-update');
+}
+function clearUpdateBadge() {
+  $('updatesBtn')?.classList.remove('has-update');
+}
+
+function openUpdateCard(r) {
+  if (!updateBackdrop) return;
+  _updateReleaseUrl = (r && r.url) || 'https://github.com/pue-llo/restash/releases';
+  const ver = $('ucVersion');
+  if (ver) ver.textContent = `v${(r && r.latest) || ''}`;
+  const notes = $('ucNotes');
+  if (notes) {
+    const text = (r && r.notes) || '';
+    notes.textContent = text;
+    notes.classList.toggle('hidden', !text);
+  }
+  updateBackdrop.classList.remove('hidden');
+}
+function closeUpdateCard() {
+  if (!updateBackdrop) return;
+  updateBackdrop.classList.add('hidden');
+  focusSearch();
+}
+
+// Quiet background check on load: cached/non-forced. Badge the ↻ button when a
+// newer release exists; never surfaces errors (private-repo 404 stays silent).
+async function backgroundUpdateCheck() {
   try {
     const r = await window.restash.checkUpdates();
-    if (r.status === 'up-to-date') toast(`You're on the latest (v${r.version})`);
-    else toast(`Update available: ${r.version}`);
-  } catch {
-    toast('Could not check updates');
-  }
-}
-
-function handleBillingOpen() {
-  openBilling();
-}
-
-// ---------- billing ----------
-// Lemon Squeezy checkout URLs — REPLACE with the real product links once the
-// store is set up. Each opens in the user's browser.
-const CHECKOUT_URLS = {
-  monthly:  'https://restash.lemonsqueezy.com/buy/REPLACE-MONTHLY',
-  yearly:   'https://restash.lemonsqueezy.com/buy/REPLACE-YEARLY',
-  lifetime: 'https://restash.lemonsqueezy.com/buy/REPLACE-LIFETIME',
-  // Discounted one-time-offer checkout links (separate LS products / discount codes).
-  otoLifetime: 'https://restash.lemonsqueezy.com/buy/REPLACE-OTO-LIFETIME',
-  otoYearly:   'https://restash.lemonsqueezy.com/buy/REPLACE-OTO-YEARLY',
-};
-const SUPPORT_EMAIL = 'coopedlabs@gmail.com';
-
-// Plan currently highlighted in the Free-state segmented picker.
-let billingSelectedPlan = 'yearly';
-const PLAN_INFO = {
-  monthly:  { price: '$9.99', unit: '/mo', sub: 'Billed monthly' },
-  yearly:   { price: '$39',   unit: '/yr', sub: '$3.25/mo · billed yearly · save 67%' },
-  lifetime: { price: '$99',   unit: '',    sub: 'One payment · yours forever' },
-};
-const CLOCK_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>`;
-
-const billingBackdrop = $('billingBackdrop');
-
-function openBilling() {
-  renderBilling();
-  window.restash.setBillingWindow?.(true);   // grow the popover so it fits, no scroll
-  billingBackdrop.classList.remove('hidden');
-}
-function closeBilling() {
-  billingBackdrop.classList.add('hidden');
-  window.restash.setBillingWindow?.(false);  // restore list height
-  focusSearch();
-}
-
-// ---------- one-time offer (Option B) ----------
-const otoBackdrop = $('otoBackdrop');
-// Which discounted deal the CTA will buy. 'lifetime' is pre-selected.
-let otoSelectedDeal = 'lifetime';
-const OTO_DEALS = {
-  lifetime: { name: 'Lifetime', sub: 'Pay once · yours forever', now: '$50', was: '$99', url: 'otoLifetime', badge: 'BEST VALUE' },
-  yearly:   { name: '1 Year',   sub: '12 months of Pro',        now: '$30', was: '$39', url: 'otoYearly' },
-};
-
-function renderOTO() {
-  const card = $('otoCard');
-  if (!card) return;
-  const dealRow = (id) => {
-    const d = OTO_DEALS[id];
-    const on = id === otoSelectedDeal;
-    const badge = d.badge ? `<span class="oto-badge">${d.badge}</span>` : '';
-    return `
-      <button type="button" class="oto-deal${on ? ' best' : ''}" data-oto-deal="${id}">
-        <div class="oto-deal-main">
-          <div class="oto-deal-name">${d.name}${badge}</div>
-          <div class="oto-deal-sub">${d.sub}</div>
-        </div>
-        <div class="oto-deal-price">
-          <div class="oto-deal-now">${d.now}</div>
-          <div class="oto-deal-was">${d.was}</div>
-        </div>
-      </button>`;
-  };
-  const sel = OTO_DEALS[otoSelectedDeal];
-  card.innerHTML = `
-    <div class="oto-eyebrow">★ One-time offer</div>
-    <div class="oto-title">A deal that won't<br>come back</div>
-    ${dealRow('lifetime')}
-    ${dealRow('yearly')}
-    <button type="button" class="oto-cta" data-oto-cta>Claim ${sel.name} — ${sel.now}</button>
-    <button type="button" class="oto-ghost" data-oto-dismiss>No thanks</button>
-    <div class="oto-footnote">One-time offer · won't appear again</div>
-  `;
-}
-
-function openOTO() {
-  renderOTO();
-  window.restash.setBillingWindow?.(true); // OTO needs the taller window too
-  otoBackdrop.classList.remove('hidden');
-}
-function closeOTO() {
-  otoBackdrop.classList.add('hidden');
-  window.restash.setBillingWindow?.(false);
-  focusSearch();
-}
-
-// Fire the OTO at most once, at a high-intent moment: trial winding down
-// (≤5 days left) and not yet shown. Persisted via settings.otoShown so it
-// survives restarts.
-async function maybeShowOTO() {
-  const ent = state.entitlement || {};
-  if (state.otoShown) return;
-  const trialEnding = ent.trialActive && (ent.trialDaysLeft || 0) <= 5;
-  if (!trialEnding) return;
-  state.otoShown = true;
-  await window.restash.markOTOShown?.();
-  openOTO();
-}
-
-// Build the billing body for the current tier. `state.tier` is one of
-// 'free' | 'monthly' | 'yearly' | 'lifetime'; `state.billing.renewsAt` is an
-// epoch-ms timestamp for subscribers (drives the time-left bar).
-// Small footer shown on paid billing views: masked license key + a button to
-// release this device's activation.
-function licenseFooterHTML(lic) {
-  if (!lic) return '';
-  return `
-    <div class="license-foot">
-      <span class="lf-key">Licensed · ${escapeHtml(lic.keyMasked || '')}</span>
-      <button class="lf-deact" data-license-deactivate>Deactivate this device</button>
-    </div>`;
-}
-
-function renderBilling() {
-  const body = $('billingBody');
-  const ent = state.entitlement || {};
-  const tier = ent.tier || 'free';
-  const lic = ent.license || null;
-
-  if (tier === 'complete') {
-    body.innerHTML = `
-      <div class="billing-lifetime">
-        <div class="lt-mark">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="4" y="11" width="16" height="7" rx="1.5"/><path d="M6 8h12"/><path d="M8 5h8"/>
-          </svg>
-        </div>
-        <div class="tier-badge"><span class="spark">✦</span> Complete access</div>
-        <div class="billing-note">You have complete access — every feature unlocked, free. No trial, no limits, no expiry.</div>
-      </div>
-    `;
-    return;
-  }
-
-  if (tier === 'lifetime') {
-    body.innerHTML = `
-      <div class="billing-lifetime">
-        <div class="lt-mark">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="4" y="11" width="16" height="7" rx="1.5"/><path d="M6 8h12"/><path d="M8 5h8"/>
-          </svg>
-        </div>
-        <div class="tier-badge"><span class="spark">✦</span> Lifetime</div>
-        <div class="billing-note">You own Restash forever. No renewals, no expiry — every future update included.</div>
-      </div>
-      ${licenseFooterHTML(lic)}
-    `;
-    return;
-  }
-
-  if (tier === 'monthly' || tier === 'yearly') {
-    // Lemon Squeezy reports the subscription's next-renewal date as the
-    // license key's expires_at.
-    const renewsAt = (lic && lic.expiresAt) ? Date.parse(lic.expiresAt) : 0;
-    const periodMs = tier === 'yearly' ? 365 * 864e5 : 30 * 864e5;
-    let barHTML = '';
-    if (renewsAt) {
-      const msLeft = Math.max(0, renewsAt - Date.now());
-      const daysLeft = Math.ceil(msLeft / 864e5);
-      const pct = Math.max(2, Math.min(100, Math.round((msLeft / periodMs) * 100)));
-      const renewDate = new Date(renewsAt).toLocaleDateString(undefined,
-        { month: 'short', day: 'numeric', year: 'numeric' });
-      barHTML = `
-        <div class="renewal">
-          <div class="renewal-line">
-            <span>Renews ${renewDate}</span>
-            <span class="left">${daysLeft} day${daysLeft === 1 ? '' : 's'} left</span>
-          </div>
-          <div class="bar"><div class="bar-fill" style="width:${pct}%"></div></div>
-        </div>`;
-    }
-    const priceLabel = tier === 'yearly' ? '$39 / year' : '$9.99 / month';
-    const upsell = tier === 'monthly'
-      ? `<button class="b-btn" data-billing-upsell="yearly">Switch to Yearly · save 67%</button>`
-      : `<button class="b-btn" data-billing-upsell="lifetime">Upgrade to Lifetime · $99</button>`;
-    body.innerHTML = `
-      <div class="tier-hero">
-        <div class="tier-badge">${tier === 'yearly' ? 'Yearly' : 'Monthly'}</div>
-        <div class="tier-sub">${priceLabel}</div>
-      </div>
-      ${barHTML}
-      <button class="b-btn" data-billing-manage>Manage subscription</button>
-      ${upsell}
-      ${licenseFooterHTML(lic)}
-    `;
-    return;
-  }
-
-  // Free — segmented picker layout. Trial banner + Free→Pro comparison +
-  // a Monthly/Yearly/Lifetime segment that shows one plan + one CTA.
-  const banner = ent.trialActive
-    ? `<div class="trial">
-         <div class="ico">${CLOCK_SVG}</div>
-         <div class="t-main">
-           <div class="t-title">Free trial</div>
-           <div class="t-sub">Full access · then 1 stash / 15 items</div>
-         </div>
-         <div class="t-days">${ent.trialDaysLeft || 0}<small>${(ent.trialDaysLeft || 0) === 1 ? 'day left' : 'days left'}</small></div>
-       </div>`
-    : `<div class="trial">
-         <div class="ico">${CLOCK_SVG}</div>
-         <div class="t-main">
-           <div class="t-title">Free plan</div>
-           <div class="t-sub">Trial ended · limited to 1 stash / 15 items</div>
-         </div>
-       </div>`;
-
-  const sel = billingSelectedPlan;
-  const plan = PLAN_INFO[sel];
-  body.innerHTML = `
-    ${banner}
-    <div class="cmp">
-      <div class="cmp-h">Free → Pro</div>
-      <div class="cmp-row"><span class="cmp-label">Stashes</span><span class="cmp-vals"><span class="cmp-free">1</span><span class="cmp-arrow">→</span><span class="cmp-pro">Unlimited</span></span></div>
-      <div class="cmp-row"><span class="cmp-label">Saved items</span><span class="cmp-vals"><span class="cmp-free">15</span><span class="cmp-arrow">→</span><span class="cmp-pro">Unlimited</span></span></div>
-      <div class="cmp-row"><span class="cmp-label">Pinned slots</span><span class="cmp-vals"><span class="cmp-free">9</span><span class="cmp-arrow">→</span><span class="cmp-pro">Unlimited</span></span></div>
-      <div class="cmp-row"><span class="cmp-label">Max file size</span><span class="cmp-vals"><span class="cmp-free">100 MB</span><span class="cmp-arrow">→</span><span class="cmp-pro">5 GB</span></span></div>
-      <div class="cmp-row"><span class="cmp-label">Support</span><span class="cmp-vals"><span class="cmp-free">Standard</span><span class="cmp-arrow">→</span><span class="cmp-pro">Priority</span></span></div>
-    </div>
-    <div class="section-label">Choose a plan</div>
-    <div class="seg">
-      <button data-billing-seg="monthly"${sel === 'monthly' ? ' class="on"' : ''}>Monthly</button>
-      <button data-billing-seg="yearly"${sel === 'yearly' ? ' class="on"' : ''}>Yearly</button>
-      <button data-billing-seg="lifetime"${sel === 'lifetime' ? ' class="on"' : ''}>Lifetime</button>
-    </div>
-    <div class="seg-detail">
-      <div class="seg-price">${plan.price}<small>${plan.unit}</small></div>
-      <div class="seg-sub">${plan.sub}</div>
-    </div>
-    <button class="big-cta" data-billing-cta>Upgrade to ${sel[0].toUpperCase()}${sel.slice(1)}</button>
-    <div class="activate">
-      <button type="button" class="activate-toggle" data-activate-toggle>Already bought Restash? <b>Enter your license key</b></button>
-      <div class="activate-box hidden" id="activateBox">
-        <input id="licenseKeyInput" type="text" placeholder="License key" autocomplete="off" spellcheck="false" />
-        <button type="button" class="b-btn primary" data-activate-go>Activate</button>
-      </div>
-      <div class="activate-msg hidden" id="activateMsg"></div>
-    </div>
-  `;
-}
-
-// Run a license activation from the billing modal: call Lemon Squeezy, then
-// refresh the entitlement everywhere on success.
-async function activateLicenseFromBilling() {
-  const input = $('licenseKeyInput');
-  const msg = $('activateMsg');
-  const btn = document.querySelector('[data-activate-go]');
-  if (!input) return;
-  const key = input.value.trim();
-  if (!key) { input.focus(); return; }
-  if (btn) { btn.disabled = true; btn.textContent = 'Activating…'; }
-  if (msg) msg.classList.add('hidden');
-  const res = await window.restash.activateLicense(key);
-  if (res && res.ok) {
-    state.entitlement = res.entitlement;
-    state.tier = res.entitlement.tier;
-    renderBilling();        // flips to the paid view
-    render();               // limits lifted — refresh the list
-    toast('Restash unlocked — thank you!');
-  } else {
-    if (btn) { btn.disabled = false; btn.textContent = 'Activate'; }
-    if (msg) {
-      msg.textContent = (res && res.error) || 'Activation failed.';
-      msg.classList.remove('hidden');
-    }
-  }
-}
-
-async function deactivateLicenseFromBilling() {
-  const res = await window.restash.deactivateLicense();
-  if (res && res.ok) {
-    state.entitlement = res.entitlement;
-    state.tier = res.entitlement.tier;
-    renderBilling();
-    render();
-    toast('License released on this device');
-  }
+    if (r && r.status === 'available') setUpdateBadge();
+  } catch { /* silent — background only */ }
 }
 
 
@@ -1956,7 +1687,6 @@ function renderListStashBar() {
       e.preventDefault();
       const name = newInput.value.trim();
       if (!name) return;
-      if (hitsFreeLimit('stashes')) return;
       const res = await window.restash.createStash(name);
       if (res?.ok && res.stash) {
         availableStashes.push(res.stash);
@@ -2937,7 +2667,6 @@ function renderStashPicker() {
       e.preventDefault();
       const name = $('newStashInput').value.trim();
       if (!name) return;
-      if (hitsFreeLimit('stashes')) return;
       const res = await window.restash.createStash(name);
       if (res?.ok && res.stash) {
         availableStashes.push(res.stash);
@@ -3170,10 +2899,6 @@ async function saveFromEditor() {
     if (!label || !value) return;
   }
 
-  // Free-tier cap — block a NEW item past the limit (editing an existing
-  // item is always allowed). Keeps the editor open so input isn't lost.
-  if (!state.editing && hitsFreeLimit('items')) return;
-
   if (isFile) {
     const fileFields = { files: editorFiles.map((f) => ({ ...f })) };
     // Keep `value` populated with the first stored path for back-compat with
@@ -3315,90 +3040,19 @@ document.addEventListener('click', (e) => {
   if (which === 'qr') { e.preventDefault(); closeQR(); }
   else if (which === 'editor') { e.preventDefault(); closeEditor(); }
   else if (which === 'settings') { e.preventDefault(); closeSettings(); }
-  else if (which === 'billing') { e.preventDefault(); closeBilling(); }
+  else if (which === 'update') { e.preventDefault(); closeUpdateCard(); }
 });
 
-// Billing modal interactions — segment switch, CTA, upsell, manage, support.
+// Update card interactions — both buttons open the release page on GitHub.
 document.addEventListener('click', (e) => {
-  const seg = e.target.closest('[data-billing-seg]');
-  if (seg) {
-    billingSelectedPlan = seg.dataset.billingSeg;
-    renderBilling();
-    return;
-  }
-  if (e.target.closest('[data-billing-cta]')) {
-    window.restash.openExternal(CHECKOUT_URLS[billingSelectedPlan]);
-    return;
-  }
-  const upsell = e.target.closest('[data-billing-upsell]');
-  if (upsell) {
-    window.restash.openExternal(CHECKOUT_URLS[upsell.dataset.billingUpsell]);
-    return;
-  }
-  if (e.target.closest('[data-billing-manage]')) {
-    // Lemon Squeezy customer order portal — buyers enter their email to get a
-    // magic link for invoices, plan changes, and cancellation.
-    window.restash.openExternal('https://app.lemonsqueezy.com/my-orders');
-    return;
-  }
-  if (e.target.closest('[data-activate-toggle]')) {
-    const box = $('activateBox');
-    if (box) {
-      box.classList.toggle('hidden');
-      if (!box.classList.contains('hidden')) $('licenseKeyInput')?.focus();
-    }
-    return;
-  }
-  if (e.target.closest('[data-activate-go]')) {
-    activateLicenseFromBilling();
-    return;
-  }
-  if (e.target.closest('[data-license-deactivate]')) {
-    deactivateLicenseFromBilling();
-    return;
-  }
-  if (e.target.closest('#billingSupportBtn')) {
-    window.restash.openExternal(`mailto:${SUPPORT_EMAIL}?subject=Restash%20support`);
+  if (e.target.closest('[data-update-whatsnew]') || e.target.closest('[data-update-get]')) {
+    window.restash.openExternal(_updateReleaseUrl);
+    closeUpdateCard();
   }
 });
-if (billingBackdrop) {
-  billingBackdrop.addEventListener('click', (e) => {
-    if (e.target === billingBackdrop) closeBilling();
-  });
-}
-
-// One-time offer interactions — deal select, claim, dismiss.
-document.addEventListener('click', (e) => {
-  const deal = e.target.closest('[data-oto-deal]');
-  if (deal) {
-    otoSelectedDeal = deal.dataset.otoDeal;
-    renderOTO();
-    return;
-  }
-  if (e.target.closest('[data-oto-cta]')) {
-    window.restash.openExternal(CHECKOUT_URLS[OTO_DEALS[otoSelectedDeal].url]);
-    closeOTO();
-    return;
-  }
-  if (e.target.closest('[data-oto-dismiss]')) {
-    closeOTO();
-  }
-});
-if (otoBackdrop) {
-  otoBackdrop.addEventListener('click', (e) => {
-    // OTO dismisses on outside click too — it's a one-shot, no trapping.
-    if (e.target === otoBackdrop) closeOTO();
-  });
-}
-
-// Upgrade nudge → billing. Hide any open modal first so billing isn't stacked.
-{
-  const lnBtn = $('limitNudgeBtn');
-  if (lnBtn) lnBtn.addEventListener('click', () => {
-    $('limitNudge').classList.add('hidden');
-    editorBackdrop.classList.add('hidden');
-    settingsBackdrop.classList.add('hidden');
-    openBilling();
+if (updateBackdrop) {
+  updateBackdrop.addEventListener('click', (e) => {
+    if (e.target === updateBackdrop) closeUpdateCard();
   });
 }
 
@@ -3629,35 +3283,16 @@ function wire() {
     if (act === 'theme') return toggleTheme();
     if (act === 'settings') return openSettings();
     if (act === 'updates') return handleUpdatesCheck();
-    if (act === 'billing') return handleBillingOpen();
+    if (act === 'star') return window.restash.openExternal('https://github.com/pue-llo/restash');
     if (act === 'quit') return window.restash.quit();
   });
 
   // Right-click tray menu items relay to renderer through these IPC events.
   window.restash.onOpenSettings(() => openSettings());
   window.restash.onOpenUpdates(() => handleUpdatesCheck());
-  window.restash.onOpenBilling(() => handleBillingOpen());
 
   // Main process tells us which mode to render before each show.
   window.restash.onModeSet((mode) => applyMode(mode));
-
-  // License re-check downgraded us (refund / expiry) — refresh entitlement.
-  window.restash.onEntitlementChanged?.(async () => {
-    try {
-      state.entitlement = await window.restash.getEntitlement();
-      state.tier = state.entitlement.tier;
-      if (!billingBackdrop.classList.contains('hidden')) renderBilling();
-      render();
-    } catch {}
-  });
-
-  // Enter inside the license-key field submits the activation.
-  document.addEventListener('keydown', (e) => {
-    if (e.target && e.target.id === 'licenseKeyInput' && e.key === 'Enter') {
-      e.preventDefault();
-      activateLicenseFromBilling();
-    }
-  });
 
   // Drag-to-resize handles + the modal-open watcher that hides them.
   wireResizeHandles();
@@ -3682,6 +3317,10 @@ function wire() {
   });
 
   $('settingsCloseBtn').addEventListener('click', closeSettings);
+  $('contactSupportBtn')?.addEventListener('click', () =>
+    window.restash.openExternal('mailto:coopedlabs@gmail.com?subject=Restash%20support'));
+  $('viewGithubBtn')?.addEventListener('click', () =>
+    window.restash.openExternal('https://github.com/pue-llo/restash'));
 
   // Stash edit lives in its own BrowserWindow (stash-edit.html). When the
   // user clicks Done / Delete there, main emits stashes:changed; we refresh
@@ -3750,8 +3389,7 @@ function wire() {
     const editorOpen = !editorBackdrop.classList.contains('hidden');
     const qrOpen = !qrBackdrop.classList.contains('hidden');
     const settingsOpen = !settingsBackdrop.classList.contains('hidden');
-    const billingOpen = !billingBackdrop.classList.contains('hidden');
-    const otoOpen = otoBackdrop && !otoBackdrop.classList.contains('hidden');
+    const updateOpen = updateBackdrop && !updateBackdrop.classList.contains('hidden');
 
     // Either hotkey recorder (summon or QR) swallows everything while active.
     if (recording || qrRecording) {
@@ -3784,16 +3422,15 @@ function wire() {
     }
 
     if (e.key === 'Escape') {
-      if (otoOpen) closeOTO();
+      if (updateOpen) closeUpdateCard();
       else if (editorOpen) closeEditor();
       else if (qrOpen) closeQR();
       else if (settingsOpen) closeSettings();
-      else if (billingOpen) closeBilling();
       else window.restash.hideWindow();
       return;
     }
 
-    if (editorOpen || qrOpen || settingsOpen || billingOpen || otoOpen) return;
+    if (editorOpen || qrOpen || settingsOpen || updateOpen) return;
 
     if (e.metaKey && e.key === ',') {
       e.preventDefault();
@@ -3899,8 +3536,6 @@ function wire() {
     refreshAccessUI();
     render();
     focusSearch();
-    // One high-intent shot at the discounted offer once the trial's near its end.
-    maybeShowOTO();
   });
 
   // Apply the initial mode so the correct UI shell is shown before any
@@ -3942,15 +3577,14 @@ function wire() {
     const s = await window.restash.loadSettings();
     state.hotkey   = s.currentHotkey   || s.hotkey   || state.hotkey;
     state.qrHotkey = s.currentQRHotkey || s.qrHotkey || state.qrHotkey || 'Command+Shift+F';
-    state.tier        = s.tier || 'free';
-    state.billing     = s.billing || null;
-    state.entitlement = s.entitlement || { tier: 'free', effective: 'free', trialActive: false, trialDaysLeft: 0 };
-    state.otoShown    = !!s.otoShown;
     state.menuSize    = s.menuSize || null;
     state.gridSize    = s.gridSize || null;
     state.clipHistoryMax = (typeof s.clipboardHistoryMax === 'number') ? s.clipboardHistoryMax : 3;
     applyTheme(s.theme || 'light');
   } catch {}
+  // Quiet, cached background update check — badges the ↻ button if a newer
+  // GitHub release exists. Errors (incl. the private-repo 404) stay silent.
+  backgroundUpdateCheck();
   // Clipboard memory: load captured history + subscribe to live updates.
   try { state.clipHistory = await window.restash.clipboardHistory.load(); } catch { state.clipHistory = []; }
   window.restash.clipboardHistory.onUpdated((items) => {
